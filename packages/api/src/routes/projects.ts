@@ -1,0 +1,54 @@
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import { getDb } from '../db/db';
+import { ok, fail } from '@pis/shared';
+
+export const projectsRouter = Router();
+
+const CreateSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional().default(''),
+  status: z.enum(['active', 'paused', 'completed', 'archived']).optional().default('active'),
+  color: z.string().optional().default('#6366f1'),
+});
+
+const UpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  status: z.enum(['active', 'paused', 'completed', 'archived']).optional(),
+  color: z.string().optional(),
+  archived: z.boolean().optional(),
+});
+
+projectsRouter.get('/', (_req: Request, res: Response) => {
+  const projects = getDb().prepare('SELECT * FROM projects WHERE archived = 0 ORDER BY created_at DESC').all();
+  res.json(ok(projects));
+});
+
+projectsRouter.post('/', (req: Request, res: Response) => {
+  const parsed = CreateSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const { name, description, status, color } = parsed.data;
+  const result = getDb().prepare('INSERT INTO projects (name, description, status, color) VALUES (?, ?, ?, ?)').run(name, description, status, color);
+  const project = getDb().prepare('SELECT * FROM projects WHERE id = ?').get(result.lastInsertRowid);
+  res.status(201).json(ok(project));
+});
+
+projectsRouter.get('/:id', (req: Request, res: Response) => {
+  const project = getDb().prepare('SELECT * FROM projects WHERE id = ?').get(Number(req.params['id']));
+  if (!project) { res.status(404).json(fail('Project not found')); return; }
+  const tasks = getDb().prepare('SELECT * FROM tasks WHERE project_id = ? AND archived = 0').all(Number(req.params['id']));
+  const meetings = getDb().prepare('SELECT * FROM meetings WHERE project_id = ?').all(Number(req.params['id']));
+  res.json(ok({ ...project as object, tasks, meetings }));
+});
+
+projectsRouter.patch('/:id', (req: Request, res: Response) => {
+  const parsed = UpdateSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
+  const values = Object.values(parsed.data).filter((v) => v !== undefined);
+  if (fields.length === 0) { res.status(400).json(fail('No fields to update')); return; }
+  getDb().prepare(`UPDATE projects SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, Number(req.params['id']));
+  const updated = getDb().prepare('SELECT * FROM projects WHERE id = ?').get(Number(req.params['id']));
+  res.json(ok(updated));
+});
