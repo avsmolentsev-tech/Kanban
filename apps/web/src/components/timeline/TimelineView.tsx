@@ -68,14 +68,12 @@ function TimelineColumn({ period, tasks, projects, onTaskClick, onToggleDone, pr
   return (
     <div ref={setNodeRef}
       className={`flex flex-col w-64 min-w-[256px] bg-gray-100 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50' : ''}`}>
-      <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
-          {tasks.map((t) => (
-            <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} onToggleDone={onToggleDone} />
-          ))}
-          {tasks.length === 0 && !adding && <div className="text-gray-300 text-xs text-center py-4">Drop here</div>}
-        </div>
-      </SortableContext>
+      <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
+        {tasks.map((t) => (
+          <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} onToggleDone={onToggleDone} />
+        ))}
+        {tasks.length === 0 && !adding && <div className="text-gray-300 text-xs text-center py-4">Drop here</div>}
+      </div>
       {adding ? (
         <div className="mt-2">
           <AddTaskModal status="todo" projectId={projectId} people={people} dueDate={dueDate}
@@ -129,8 +127,11 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
     projectOrder.push({ project: null, tasks: unassigned });
   }
 
+  const allTaskIds = activeTasks.map((t) => t.id);
+
   return (
     <div className="p-4 overflow-auto">
+      <SortableContext items={allTaskIds} strategy={verticalListSortingStrategy}>
       {/* Column headers */}
       <div className="flex mb-2 ml-44">
         {PERIODS.map((p) => (
@@ -195,6 +196,7 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
       </SortableContext>
 
       {projectOrder.length === 0 && <div className="text-gray-400 text-sm text-center py-8">No tasks yet</div>}
+      </SortableContext>
     </div>
   );
 }
