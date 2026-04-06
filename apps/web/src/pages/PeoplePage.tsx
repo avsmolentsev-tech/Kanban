@@ -149,38 +149,38 @@ export function PeoplePage() {
 
       {people.length === 0 && <div className="text-gray-400 text-sm">No people yet</div>}
 
-      <div className="space-y-6">
+      <div className="space-y-4">
         {filteredGrouped.map(({ project, people: groupPeople }) => (
-          <div key={project?.id ?? 'unassigned'}>
-            <div className="flex items-center gap-2 mb-3">
-              <span
-                className="w-3 h-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: project?.color ?? '#9ca3af' }}
-              />
-              <span className="text-sm font-semibold text-gray-600 uppercase tracking-wide">
-                {project?.name ?? 'No project'}
-              </span>
-              <span className="text-xs text-gray-400">({groupPeople.length})</span>
+          <div key={project?.id ?? 'unassigned'} className="flex">
+            {/* Project label on the left */}
+            <div className="w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'No project'}</span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1 ml-5">{groupPeople.length} person{groupPeople.length !== 1 ? 's' : ''}</div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+            {/* People cards */}
+            <div className="flex gap-3 flex-wrap flex-1">
               {groupPeople.map((p) => (
-                <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-start gap-3 cursor-pointer hover:border-indigo-300" onClick={() => setSelected(p)}>
-                  <Avatar name={p.name} size="md" />
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium text-gray-800 truncate">{p.name}</div>
-                    <div className="text-sm text-gray-500 truncate">{p.role}{p.company ? ` @ ${p.company}` : ''}</div>
-                    {(p.email || p.telegram) && <div className="text-xs text-gray-400 mt-0.5 truncate">{p.email || p.telegram}</div>}
-                    {p.projects && p.projects.length > 1 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {p.projects.map(pr => (
-                          <span key={pr.id} className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full" style={{ backgroundColor: pr.color + '22', color: pr.color }}>
-                            {pr.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {p.notes && <div className="text-xs text-gray-500 mt-1.5 line-clamp-2 leading-relaxed">{p.notes}</div>}
+                <div key={p.id} className="bg-white rounded-lg border border-gray-200 p-3 w-56 cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all" onClick={() => setSelected(p)}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Avatar name={p.name} size="sm" />
+                    <div className="font-medium text-sm text-gray-800 truncate">{p.name}</div>
                   </div>
+                  <div className="text-xs text-gray-500 truncate">{p.role}{p.company ? ` @ ${p.company}` : ''}</div>
+                  {(p.email || p.telegram) && <div className="text-xs text-gray-400 mt-0.5 truncate">{p.email || p.telegram}</div>}
+                  {p.projects && p.projects.length > 1 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {p.projects.filter(pr => pr.id !== project?.id).map(pr => (
+                        <span key={pr.id} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: pr.color + '22', color: pr.color }}>
+                          {pr.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {p.notes && <div className="text-xs text-gray-500 mt-1.5 line-clamp-2 leading-relaxed">{p.notes}</div>}
                 </div>
               ))}
             </div>
