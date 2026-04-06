@@ -34,6 +34,7 @@ export function TimelinePage() {
   const { projects, fetchProjects, reorderProjects } = useProjectsStore();
   const [selected, setSelected] = useState<Task | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<number> | null>(null); // null = show all
   const pMap = new Map(projects.map((p) => [p.id, p]));
 
   const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 3 } });
@@ -71,6 +72,22 @@ export function TimelinePage() {
         // Format: timeline-{projectId}-{period}
         const parts = overId.split('-');
         target = parts[parts.length - 1] as TimePeriod | 'none' | 'done';
+        // Extract target project ID for cross-project moves
+        const targetProjectPart = parts.slice(1, -1).join('-'); // e.g. "1", "none"
+        const targetProjectId = targetProjectPart === 'none' ? null : Number(targetProjectPart);
+        const task = tasks.find((t) => t.id === taskId);
+        if (task && task.project_id !== targetProjectId) {
+          // Moving to a different project
+          if (target === 'done') {
+            await tasksApi.update(taskId, { status: 'done', project_id: targetProjectId });
+          } else {
+            const updates: Record<string, unknown> = { due_date: computeDueDate(target), project_id: targetProjectId };
+            if (task.status === 'done') updates.status = 'todo';
+            await tasksApi.update(taskId, updates);
+          }
+          await fetchTasks();
+          return;
+        }
       } else {
         const overTask = tasks.find((t) => t.id === Number(overId));
         if (overTask) {
@@ -94,14 +111,41 @@ export function TimelinePage() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-4 pt-4 pb-2 bg-white border-b">
+      <div className="flex items-center justify-between px-4 pt-4 pb-2 bg-white border-b">
         <h1 className="text-xl font-bold text-gray-800">Timeline</h1>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setSelectedProjectIds(null)}
+            className={`text-xs px-2 py-1 rounded-full border transition-colors ${selectedProjectIds === null ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'}`}
+          >All</button>
+          {projects.map((p) => {
+            const active = selectedProjectIds === null || selectedProjectIds.has(p.id);
+            return (
+              <button key={p.id}
+                onClick={() => {
+                  if (selectedProjectIds === null) {
+                    setSelectedProjectIds(new Set([p.id]));
+                  } else {
+                    const next = new Set(selectedProjectIds);
+                    if (next.has(p.id)) { next.delete(p.id); } else { next.add(p.id); }
+                    setSelectedProjectIds(next.size === 0 || next.size === projects.length ? null : next);
+                  }
+                }}
+                className={`text-xs px-2 py-1 rounded-full border transition-colors flex items-center gap-1 ${active && selectedProjectIds !== null ? 'text-white border-transparent' : selectedProjectIds === null ? 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400' : 'bg-white text-gray-400 border-gray-200'}`}
+                style={active && selectedProjectIds !== null ? { backgroundColor: p.color } : undefined}
+              >
+                <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: p.color }} />
+                {p.name}
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div className="flex-1 overflow-auto">
         <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <TimelineView
-            tasks={tasks}
-            projects={projects}
+            tasks={selectedProjectIds === null ? tasks : tasks.filter((t) => t.project_id !== null && selectedProjectIds.has(t.project_id))}
+            projects={selectedProjectIds === null ? projects : projects.filter((p) => selectedProjectIds.has(p.id))}
             people={people}
             onTaskClick={setSelected}
             onToggleDone={async (id: number, newStatus: TaskStatus) => { await tasksApi.update(id, { status: newStatus }); await fetchTasks(); }}
