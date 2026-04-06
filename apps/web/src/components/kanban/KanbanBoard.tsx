@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DndContext, pointerWithin, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, rectIntersection, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useDroppable } from '@dnd-kit/core';
@@ -8,6 +8,7 @@ import { TaskCard } from './TaskCard';
 import { TaskDetailPanel } from './TaskDetailPanel';
 import { AddTaskModal } from './AddTaskModal';
 import { AddProjectForm } from './AddProjectForm';
+import { tasksApi } from '../../api/tasks.api';
 
 const COLUMNS: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'done', 'someday'];
 const COL_LABELS: Record<TaskStatus, string> = { backlog: 'Backlog', todo: 'To Do', in_progress: 'In Progress', done: 'Done', someday: 'Когда-нибудь' };
@@ -99,17 +100,29 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
         .map((r, i) => ({ id: r.project!.id, order_index: i }));
       onReorderProjects(items);
     } else {
-      const status = overId.split('-').pop() as TaskStatus;
+      // Format: {projectId}-{status} e.g. "1-todo", "none-backlog"
+      const parts = overId.split('-');
+      const status = parts.pop() as TaskStatus;
+      const targetProjectPart = parts.join('-'); // "1", "none", etc.
       if (COLUMNS.includes(status)) {
-        const tasksInCol = tasks.filter((t) => t.status === status);
-        await onMoveTask(Number(active.id), status, tasksInCol.length);
+        const taskId = Number(active.id);
+        const targetProjectId = targetProjectPart === 'none' ? null : Number(targetProjectPart);
+        const task = tasks.find((t) => t.id === taskId);
+        // Update project if moving to a different project swimlane
+        if (task && task.project_id !== targetProjectId) {
+          await tasksApi.update(taskId, { status, project_id: targetProjectId });
+          onRefresh();
+        } else {
+          const tasksInCol = tasks.filter((t) => t.status === status);
+          await onMoveTask(taskId, status, tasksInCol.length);
+        }
       }
     }
   };
 
   return (
     <>
-      <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
+      <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragEnd={handleDragEnd}>
         <div className="p-4 overflow-auto">
           {/* Column headers */}
           <div className="flex mb-2 ml-44">

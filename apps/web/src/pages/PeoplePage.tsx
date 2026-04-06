@@ -3,11 +3,14 @@ import { peopleApi } from '../api/people.api';
 import { projectsApi } from '../api/projects.api';
 import { Avatar } from '../components/ui/Avatar';
 import { PersonDetailPanel } from '../components/people/PersonDetailPanel';
+import { ProjectFilter } from '../components/filters/ProjectFilter';
+import { useFiltersStore } from '../store';
 import type { Person, Project } from '@pis/shared';
 
 export function PeoplePage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const { selectedProjectIds: filterProjectIds } = useFiltersStore();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [company, setCompany] = useState('');
@@ -73,17 +76,25 @@ export function PeoplePage() {
     return (a.project.order_index ?? 0) - (b.project.order_index ?? 0);
   });
 
+  // Apply project filter
+  const filteredGrouped = filterProjectIds === null
+    ? grouped
+    : grouped.filter((g) => g.project !== null && filterProjectIds.has(g.project.id));
+
   const activeProjects = projects.filter(p => !p.archived);
 
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-gray-800">People</h1>
-        {!adding && (
-          <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
+        <div className="flex items-center gap-3">
+          <ProjectFilter projects={projects} />
+          {!adding && (
+            <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 flex-shrink-0">
             + New person
           </button>
-        )}
+          )}
+        </div>
       </div>
 
       {adding && (
@@ -139,7 +150,7 @@ export function PeoplePage() {
       {people.length === 0 && <div className="text-gray-400 text-sm">No people yet</div>}
 
       <div className="space-y-6">
-        {grouped.map(({ project, people: groupPeople }) => (
+        {filteredGrouped.map(({ project, people: groupPeople }) => (
           <div key={project?.id ?? 'unassigned'}>
             <div className="flex items-center gap-2 mb-3">
               <span
