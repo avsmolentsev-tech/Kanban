@@ -56,8 +56,9 @@ function computePeriodDueDate(period: TimePeriod): string {
   }
 }
 
-function TimelineColumn({ period, tasks, projects, onTaskClick, projectId, people, onRefresh, dueDate }: {
+function TimelineColumn({ period, tasks, projects, onTaskClick, onToggleDone, projectId, people, onRefresh, dueDate }: {
   period: TimePeriod | 'none'; tasks: Task[]; projects: Project[]; onTaskClick: (t: Task) => void;
+  onToggleDone: (id: number, newStatus: import('@pis/shared').TaskStatus) => void;
   projectId: number | null; people: Person[]; onRefresh: () => void; dueDate?: string | null;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `timeline-${period}` });
@@ -70,7 +71,7 @@ function TimelineColumn({ period, tasks, projects, onTaskClick, projectId, peopl
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
           {tasks.map((t) => (
-            <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} />
+            <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} onToggleDone={onToggleDone} />
           ))}
           {tasks.length === 0 && !adding && <div className="text-gray-300 text-xs text-center py-4">Drop here</div>}
         </div>
@@ -102,11 +103,12 @@ interface Props {
   projects: Project[];
   people: Person[];
   onTaskClick: (t: Task) => void;
+  onToggleDone: (id: number, newStatus: import('@pis/shared').TaskStatus) => void;
   onReorderProjects: (items: Array<{ id: number; order_index: number }>) => void;
   onRefresh: () => void;
 }
 
-export function TimelineView({ tasks, projects, people, onTaskClick, onReorderProjects, onRefresh }: Props) {
+export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDone, onReorderProjects, onRefresh }: Props) {
   const activeTasks = tasks.filter((t) => !t.archived);
 
   // Group by project, then by period
@@ -172,11 +174,11 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onReorderPr
                   <div className="flex gap-4">
                     {PERIODS.map((period) => (
                       <TimelineColumn key={`${project?.id ?? 'none'}-${period}`} period={period} tasks={grouped[period]} projects={projects}
-                        onTaskClick={onTaskClick} projectId={project?.id ?? null} people={people} onRefresh={onRefresh}
+                        onTaskClick={onTaskClick} onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh}
                         dueDate={computePeriodDueDate(period)} />
                     ))}
                     <TimelineColumn period="none" tasks={grouped.none} projects={projects} onTaskClick={onTaskClick}
-                      projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                      onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
                   </div>
                 </div>
               )}

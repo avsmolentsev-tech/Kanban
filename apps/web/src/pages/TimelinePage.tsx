@@ -6,7 +6,7 @@ import { tasksApi } from '../api/tasks.api';
 import { peopleApi } from '../api/people.api';
 import { TimelineView, type TimePeriod, classifyTask } from '../components/timeline/TimelineView';
 import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
-import type { Task, Person } from '@pis/shared';
+import type { Task, Person, TaskStatus } from '@pis/shared';
 
 function computeDueDate(period: TimePeriod | 'none'): string | null {
   if (period === 'none') return null;
@@ -85,6 +85,7 @@ export function TimelinePage() {
             projects={projects}
             people={people}
             onTaskClick={setSelected}
+            onToggleDone={async (id: number, newStatus: TaskStatus) => { await tasksApi.update(id, { status: newStatus }); fetchTasks(); }}
             onReorderProjects={reorderProjects}
             onRefresh={() => fetchTasks()}
           />
