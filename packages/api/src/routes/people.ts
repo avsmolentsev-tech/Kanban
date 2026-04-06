@@ -24,6 +24,27 @@ peopleRouter.post('/', (req: Request, res: Response) => {
   res.status(201).json(ok(getDb().prepare('SELECT * FROM people WHERE id = ?').get(result.lastInsertRowid)));
 });
 
+const UpdatePersonSchema = z.object({
+  name: z.string().min(1).optional(),
+  company: z.string().optional(),
+  role: z.string().optional(),
+  telegram: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  notes: z.string().optional(),
+  project_id: z.number().int().nullable().optional(),
+});
+
+peopleRouter.patch('/:id', (req: Request, res: Response) => {
+  const parsed = UpdatePersonSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
+  const values = Object.values(parsed.data).filter((v) => v !== undefined);
+  if (fields.length === 0) { res.status(400).json(fail('No fields')); return; }
+  getDb().prepare(`UPDATE people SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, Number(req.params['id']));
+  res.json(ok(getDb().prepare('SELECT * FROM people WHERE id = ?').get(Number(req.params['id']))));
+});
+
 peopleRouter.get('/:id/history', (req: Request, res: Response) => {
   const person = getDb().prepare('SELECT * FROM people WHERE id = ?').get(Number(req.params['id']));
   if (!person) { res.status(404).json(fail('Person not found')); return; }

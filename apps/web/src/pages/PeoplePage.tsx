@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { peopleApi } from '../api/people.api';
 import { projectsApi } from '../api/projects.api';
 import { Avatar } from '../components/ui/Avatar';
+import { PersonDetailPanel } from '../components/people/PersonDetailPanel';
 import type { Person, Project } from '@pis/shared';
 
 export function PeoplePage() {
@@ -17,6 +18,7 @@ export function PeoplePage() {
   const [notes, setNotes] = useState('');
   const [projectId, setProjectId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [selected, setSelected] = useState<Person | null>(null);
 
   const load = () => {
     peopleApi.list().then(setPeople);
@@ -128,7 +130,7 @@ export function PeoplePage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {groupPeople.map((p) => (
-                <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-start gap-3">
+                <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-start gap-3 cursor-pointer hover:border-indigo-300" onClick={() => setSelected(p)}>
                   <Avatar name={p.name} size="md" />
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-gray-800 truncate">{p.name}</div>
@@ -142,6 +144,8 @@ export function PeoplePage() {
           </div>
         ))}
       </div>
+
+      <PersonDetailPanel person={selected} projects={projects} onClose={() => setSelected(null)} onUpdated={load} />
     </div>
   );
 }
