@@ -15,6 +15,7 @@ export interface Task {
   updated_at: string;
   archived: boolean;
   order_index: number;
+  people?: Array<{ id: number; name: string }>;
 }
 
 export interface CreateTaskDto {
@@ -26,6 +27,7 @@ export interface CreateTaskDto {
   urgency?: number;
   due_date?: string;
   start_date?: string;
+  person_ids?: number[];
 }
 
 export interface UpdateTaskDto {
@@ -38,6 +40,7 @@ export interface UpdateTaskDto {
   start_date?: string | null;
   archived?: boolean;
   project_id?: number | null;
+  person_ids?: number[];
 }
 
 export interface MoveTaskDto {

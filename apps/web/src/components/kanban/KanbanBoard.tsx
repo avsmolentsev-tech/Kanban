@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useDroppable } from '@dnd-kit/core';
-import type { Task, Project, TaskStatus } from '@pis/shared';
+import type { Task, Project, TaskStatus, Person } from '@pis/shared';
 import { TaskCard } from './TaskCard';
 import { TaskDetailPanel } from './TaskDetailPanel';
 import { AddTaskModal } from './AddTaskModal';
@@ -14,12 +14,13 @@ const COL_LABELS: Record<TaskStatus, string> = { backlog: 'Backlog', todo: 'To D
 interface Props {
   tasks: Task[];
   projects: Project[];
+  people: Person[];
   onMoveTask: (id: number, status: TaskStatus, idx: number) => Promise<void>;
   onRefresh: () => void;
 }
 
-function SwimlaneColumn({ droppableId, status, tasks, projects, onTaskClick, projectId, onRefresh }: {
-  droppableId: string; status: TaskStatus; tasks: Task[]; projects: Project[];
+function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskClick, projectId, onRefresh }: {
+  droppableId: string; status: TaskStatus; tasks: Task[]; projects: Project[]; people: Person[];
   onTaskClick: (t: Task) => void; projectId: number | null; onRefresh: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: droppableId });
@@ -35,7 +36,7 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, onTaskClick, pro
       </SortableContext>
       {adding ? (
         <div className="mt-2">
-          <AddTaskModal status={status} projectId={projectId} onCreated={() => { setAdding(false); onRefresh(); }} onCancel={() => setAdding(false)} />
+          <AddTaskModal status={status} projectId={projectId} people={people} onCreated={() => { setAdding(false); onRefresh(); }} onCancel={() => setAdding(false)} />
         </div>
       ) : (
         <button onClick={() => setAdding(true)} className="mt-2 text-xs text-gray-400 hover:text-indigo-600 transition-colors self-center">+ Add</button>
@@ -44,7 +45,7 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, onTaskClick, pro
   );
 }
 
-export function KanbanBoard({ tasks, projects, onMoveTask, onRefresh }: Props) {
+export function KanbanBoard({ tasks, projects, people, onMoveTask, onRefresh }: Props) {
   const [selected, setSelected] = useState<Task | null>(null);
   const pMap = new Map(projects.map((p) => [p.id, p]));
 
@@ -107,6 +108,7 @@ export function KanbanBoard({ tasks, projects, onMoveTask, onRefresh }: Props) {
                     status={status}
                     tasks={pTasks.filter((t) => t.status === status)}
                     projects={projects}
+                    people={people}
                     onTaskClick={setSelected}
                     projectId={project?.id ?? null}
                     onRefresh={onRefresh}
@@ -120,7 +122,13 @@ export function KanbanBoard({ tasks, projects, onMoveTask, onRefresh }: Props) {
           <AddProjectForm onCreated={onRefresh} />
         </div>
       </DndContext>
-      <TaskDetailPanel task={selected} project={selected?.project_id ? pMap.get(selected.project_id) : undefined} onClose={() => setSelected(null)} />
+      <TaskDetailPanel
+        task={selected}
+        project={selected?.project_id ? pMap.get(selected.project_id) : undefined}
+        people={people}
+        onClose={() => setSelected(null)}
+        onUpdated={() => { onRefresh(); setSelected(null); }}
+      />
     </>
   );
 }

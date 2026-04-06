@@ -4,17 +4,19 @@ import { KanbanBoard } from '../components/kanban/KanbanBoard';
 import { FilterBar } from '../components/filters/FilterBar';
 import type { FilterValue } from '../components/filters/filterConfig';
 import type { Person } from '@pis/shared';
+import { peopleApi } from '../api/people.api';
 
 export function KanbanPage() {
   const { tasks, fetchTasks, moveTask } = useTasksStore();
   const { projects, fetchProjects } = useProjectsStore();
   const [filters, setFilters] = useState<FilterValue>({});
+  const [people, setPeople] = useState<Person[]>([]);
 
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
   useEffect(() => { fetchTasks({ project: filters.project, person: filters.person }); }, [fetchTasks, filters.project, filters.person]);
+  useEffect(() => { peopleApi.list().then(setPeople).catch(() => {}); }, []);
 
   const refresh = () => { fetchTasks({ project: filters.project, person: filters.person }); fetchProjects(); };
-  const people: Person[] = [];
 
   return (
     <div className="flex flex-col h-full">
@@ -23,7 +25,7 @@ export function KanbanPage() {
         <FilterBar value={filters} onChange={setFilters} projects={projects} people={people} />
       </div>
       <div className="flex-1 overflow-auto">
-        <KanbanBoard tasks={tasks} projects={projects} onMoveTask={(id, s, i) => moveTask(id, { status: s, order_index: i })} onRefresh={refresh} />
+        <KanbanBoard tasks={tasks} projects={projects} people={people} onMoveTask={(id, s, i) => moveTask(id, { status: s, order_index: i })} onRefresh={refresh} />
       </div>
     </div>
   );

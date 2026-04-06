@@ -1,17 +1,19 @@
 import { useState } from 'react';
 import { tasksApi } from '../../api/tasks.api';
-import type { TaskStatus } from '@pis/shared';
+import type { TaskStatus, Person } from '@pis/shared';
 
 interface Props {
   status: TaskStatus;
   projectId: number | null;
+  people: Person[];
   onCreated: () => void;
   onCancel: () => void;
 }
 
-export function AddTaskModal({ status, projectId, onCreated, onCancel }: Props) {
+export function AddTaskModal({ status, projectId, people, onCreated, onCancel }: Props) {
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState(3);
+  const [personId, setPersonId] = useState<number | null>(people.length > 0 ? people[0].id : null);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -23,6 +25,7 @@ export function AddTaskModal({ status, projectId, onCreated, onCancel }: Props) 
         status,
         priority,
         project_id: projectId ?? undefined,
+        person_ids: personId !== null ? [personId] : [],
       });
       onCreated();
     } finally {
@@ -50,6 +53,22 @@ export function AddTaskModal({ status, projectId, onCreated, onCancel }: Props) 
           </button>
         ))}
       </div>
+      {people.length > 0 && (
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500">Assign:</label>
+          <select
+            className="text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:border-indigo-300"
+            value={personId ?? ''}
+            onChange={(e) => setPersonId(e.target.value ? Number(e.target.value) : null)}
+            disabled={loading}
+          >
+            <option value="">No one</option>
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="flex justify-end gap-2">
         <button onClick={onCancel} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1">Cancel</button>
         <button onClick={submit} disabled={!title.trim() || loading}

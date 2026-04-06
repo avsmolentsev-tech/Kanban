@@ -5,6 +5,10 @@ import { Badge } from '../ui/Badge';
 
 interface TaskCardProps { task: Task; project?: Project; onClick: () => void; }
 
+function initials(name: string): string {
+  return name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
 export function TaskCard({ task, project, onClick }: TaskCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
@@ -20,6 +24,16 @@ export function TaskCard({ task, project, onClick }: TaskCardProps) {
           P{task.priority}
         </span>
         {task.due_date && <span className={`text-xs ${overdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>{task.due_date}</span>}
+        {task.people && task.people.length > 0 && (
+          <div className="flex -space-x-1 ml-auto">
+            {task.people.slice(0, 3).map((p) => (
+              <div key={p.id} title={p.name}
+                className="w-5 h-5 rounded-full bg-indigo-500 text-white text-[9px] font-bold flex items-center justify-center ring-1 ring-white">
+                {initials(p.name)}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
