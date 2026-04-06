@@ -31,6 +31,36 @@ export function initDb(): void {
   try { _db.exec('CREATE TABLE IF NOT EXISTS people_projects (person_id INTEGER NOT NULL REFERENCES people(id), project_id INTEGER NOT NULL REFERENCES projects(id), PRIMARY KEY (person_id, project_id))'); } catch {}
   // Migrate existing project_id data to junction table
   try { _db.exec("INSERT OR IGNORE INTO people_projects (person_id, project_id) SELECT id, project_id FROM people WHERE project_id IS NOT NULL"); } catch {}
+  // Migration: allow 'someday' status (SQLite can't alter CHECK constraints, recreate table)
+  try {
+    const hasCheck = _db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'").get() as { sql: string } | undefined;
+    if (hasCheck && !hasCheck.sql.includes("'someday'")) {
+      _db.exec(`
+        PRAGMA foreign_keys = OFF;
+        ALTER TABLE tasks RENAME TO tasks_old;
+        CREATE TABLE tasks (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id  INTEGER REFERENCES projects(id),
+          title       TEXT    NOT NULL,
+          description TEXT    NOT NULL DEFAULT '',
+          status      TEXT    NOT NULL DEFAULT 'backlog'
+                        CHECK(status IN ('backlog','todo','in_progress','done','someday')),
+          priority    INTEGER NOT NULL DEFAULT 3 CHECK(priority BETWEEN 1 AND 5),
+          urgency     INTEGER NOT NULL DEFAULT 3 CHECK(urgency BETWEEN 1 AND 5),
+          due_date    TEXT,
+          start_date  TEXT,
+          vault_path  TEXT,
+          created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+          updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+          archived    INTEGER NOT NULL DEFAULT 0,
+          order_index INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO tasks SELECT * FROM tasks_old;
+        DROP TABLE tasks_old;
+        PRAGMA foreign_keys = ON;
+      `);
+    }
+  } catch {}
 }
 
 export function initTestDb(): void {

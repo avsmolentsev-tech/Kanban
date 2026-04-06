@@ -1,15 +1,20 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { Task, Project } from '@pis/shared';
+import type { Task, Project, TaskStatus } from '@pis/shared';
 import { Badge } from '../ui/Badge';
 
-interface TaskCardProps { task: Task; project?: Project; onClick: () => void; }
+interface TaskCardProps {
+  task: Task;
+  project?: Project;
+  onClick: () => void;
+  onToggleDone: (id: number, newStatus: TaskStatus) => void;
+}
 
 function initials(name: string): string {
   return name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
-export function TaskCard({ task, project, onClick }: TaskCardProps) {
+export function TaskCard({ task, project, onClick, onToggleDone }: TaskCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
   const overdue = task.due_date ? new Date(task.due_date) < new Date() : false;
@@ -17,7 +22,16 @@ export function TaskCard({ task, project, onClick }: TaskCardProps) {
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={onClick}
       className="bg-white rounded-lg border border-gray-200 p-3 cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all">
-      <div className="text-sm font-medium text-gray-800 mb-2">{task.title}</div>
+      <div className="flex items-start gap-2 mb-2">
+        <input
+          type="checkbox"
+          checked={task.status === 'done'}
+          onClick={(e) => { e.stopPropagation(); onToggleDone(task.id, task.status === 'done' ? 'todo' : 'done'); }}
+          onChange={() => {}}
+          className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600 cursor-pointer flex-shrink-0 mt-0.5"
+        />
+        <div className="text-sm font-medium text-gray-800">{task.title}</div>
+      </div>
       <div className="flex flex-wrap gap-1 items-center">
         {project && <Badge label={project.name} color={project.color} />}
         <span className={`text-xs px-1.5 py-0.5 rounded ${task.priority >= 4 ? 'bg-red-100 text-red-700' : task.priority === 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>

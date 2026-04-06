@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   title       TEXT    NOT NULL,
   description TEXT    NOT NULL DEFAULT '',
   status      TEXT    NOT NULL DEFAULT 'backlog'
-                CHECK(status IN ('backlog','todo','in_progress','done')),
+                CHECK(status IN ('backlog','todo','in_progress','done','someday')),
   priority    INTEGER NOT NULL DEFAULT 3 CHECK(priority BETWEEN 1 AND 5),
   urgency     INTEGER NOT NULL DEFAULT 3 CHECK(urgency BETWEEN 1 AND 5),
   due_date    TEXT,

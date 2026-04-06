@@ -3,8 +3,9 @@ import { useTasksStore, useProjectsStore } from '../store';
 import { KanbanBoard } from '../components/kanban/KanbanBoard';
 import { FilterBar } from '../components/filters/FilterBar';
 import type { FilterValue } from '../components/filters/filterConfig';
-import type { Person } from '@pis/shared';
+import type { Person, TaskStatus } from '@pis/shared';
 import { peopleApi } from '../api/people.api';
+import { tasksApi } from '../api/tasks.api';
 
 export function KanbanPage() {
   const { tasks, fetchTasks, moveTask } = useTasksStore();
@@ -18,6 +19,11 @@ export function KanbanPage() {
 
   const refresh = () => { fetchTasks({ project: filters.project, person: filters.person }); fetchProjects(); };
 
+  const handleToggleDone = async (id: number, newStatus: TaskStatus) => {
+    await tasksApi.update(id, { status: newStatus });
+    refresh();
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b bg-white">
@@ -30,6 +36,7 @@ export function KanbanPage() {
           projects={projects}
           people={people}
           onMoveTask={(id, s, i) => moveTask(id, { status: s, order_index: i })}
+          onToggleDone={handleToggleDone}
           onRefresh={refresh}
           onReorderProjects={reorderProjects}
         />

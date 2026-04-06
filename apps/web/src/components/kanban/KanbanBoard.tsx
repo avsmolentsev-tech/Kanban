@@ -9,21 +9,22 @@ import { TaskDetailPanel } from './TaskDetailPanel';
 import { AddTaskModal } from './AddTaskModal';
 import { AddProjectForm } from './AddProjectForm';
 
-const COLUMNS: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'done'];
-const COL_LABELS: Record<TaskStatus, string> = { backlog: 'Backlog', todo: 'To Do', in_progress: 'In Progress', done: 'Done' };
+const COLUMNS: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'done', 'someday'];
+const COL_LABELS: Record<TaskStatus, string> = { backlog: 'Backlog', todo: 'To Do', in_progress: 'In Progress', done: 'Done', someday: 'Когда-нибудь' };
 
 interface Props {
   tasks: Task[];
   projects: Project[];
   people: Person[];
   onMoveTask: (id: number, status: TaskStatus, idx: number) => Promise<void>;
+  onToggleDone: (id: number, newStatus: TaskStatus) => void;
   onRefresh: () => void;
   onReorderProjects: (items: Array<{ id: number; order_index: number }>) => void;
 }
 
-function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskClick, projectId, onRefresh }: {
+function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskClick, onToggleDone, projectId, onRefresh }: {
   droppableId: string; status: TaskStatus; tasks: Task[]; projects: Project[]; people: Person[];
-  onTaskClick: (t: Task) => void; projectId: number | null; onRefresh: () => void;
+  onTaskClick: (t: Task) => void; onToggleDone: (id: number, newStatus: TaskStatus) => void; projectId: number | null; onRefresh: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: droppableId });
   const pMap = new Map(projects.map((p) => [p.id, p]));
@@ -33,7 +34,7 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
     <div ref={setNodeRef} className={`flex flex-col w-64 min-w-[256px] bg-gray-100 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50' : ''}`}>
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
-          {tasks.map((t) => <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} />)}
+          {tasks.map((t) => <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} onToggleDone={onToggleDone} />)}
         </div>
       </SortableContext>
       {adding ? (
@@ -57,7 +58,7 @@ function SortableProjectRow({ id, children }: { id: string; children: (dragHandl
   );
 }
 
-export function KanbanBoard({ tasks, projects, people, onMoveTask, onRefresh, onReorderProjects }: Props) {
+export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone, onRefresh, onReorderProjects }: Props) {
   const [selected, setSelected] = useState<Task | null>(null);
   const pMap = new Map(projects.map((p) => [p.id, p]));
 
@@ -147,6 +148,7 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onRefresh, on
                           projects={projects}
                           people={people}
                           onTaskClick={setSelected}
+                          onToggleDone={onToggleDone}
                           projectId={project?.id ?? null}
                           onRefresh={onRefresh}
                         />
@@ -164,7 +166,7 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onRefresh, on
       </DndContext>
       <TaskDetailPanel
         task={selected}
-        project={selected?.project_id ? pMap.get(selected.project_id) : undefined}
+        projects={projects}
         people={people}
         onClose={() => setSelected(null)}
         onUpdated={() => { onRefresh(); setSelected(null); }}
