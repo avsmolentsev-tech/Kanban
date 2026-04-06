@@ -9,7 +9,7 @@ const CreateSchema = z.object({
   project_id: z.number().int().optional(),
   title: z.string().min(1),
   description: z.string().optional().default(''),
-  status: z.enum(['backlog', 'todo', 'in_progress', 'done']).optional().default('backlog'),
+  status: z.enum(['backlog', 'todo', 'in_progress', 'done', 'someday']).optional().default('backlog'),
   priority: z.number().int().min(1).max(5).optional().default(3),
   urgency: z.number().int().min(1).max(5).optional().default(3),
   due_date: z.string().optional(),
@@ -20,7 +20,7 @@ const CreateSchema = z.object({
 const UpdateSchema = z.object({
   title: z.string().min(1).optional(),
   description: z.string().optional(),
-  status: z.enum(['backlog', 'todo', 'in_progress', 'done']).optional(),
+  status: z.enum(['backlog', 'todo', 'in_progress', 'done', 'someday']).optional(),
   priority: z.number().int().min(1).max(5).optional(),
   urgency: z.number().int().min(1).max(5).optional(),
   due_date: z.string().nullable().optional(),
@@ -31,7 +31,7 @@ const UpdateSchema = z.object({
 });
 
 const MoveSchema = z.object({
-  status: z.enum(['backlog', 'todo', 'in_progress', 'done']),
+  status: z.enum(['backlog', 'todo', 'in_progress', 'done', 'someday']),
   order_index: z.number().int(),
 });
 
