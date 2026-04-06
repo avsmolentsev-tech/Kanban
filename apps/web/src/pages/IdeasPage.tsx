@@ -4,6 +4,7 @@ import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { useFiltersStore } from '../store';
 import { useProjectsStore } from '../store';
 import type { Project } from '@pis/shared';
+import { IdeaDetailPanel } from '../components/ideas/IdeaDetailPanel';
 
 interface Idea {
   id: number;
@@ -33,6 +34,7 @@ export function IdeasPage() {
   const [category, setCategory] = useState<string>('personal');
   const [projectId, setProjectId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedIdea, setSelectedIdea] = useState<Idea | null>(null);
 
   const load = () => { apiGet<Idea[]>('/ideas').then(setIdeas).catch(() => {}); };
   useEffect(() => { load(); fetchProjects(); }, [fetchProjects]);
@@ -117,7 +119,7 @@ export function IdeasPage() {
                 {(grouped[cat] ?? []).map((idea) => {
                   const proj = idea.project_id ? projectMap.get(idea.project_id) : null;
                   return (
-                    <div key={idea.id} className="bg-white rounded-lg border border-gray-200 p-3 hover:border-indigo-300 hover:shadow-sm transition-all">
+                    <div key={idea.id} className="bg-white rounded-lg border border-gray-200 p-3 hover:border-indigo-300 hover:shadow-sm transition-all cursor-pointer" onClick={() => setSelectedIdea(idea)}>
                       <div className="text-sm font-medium text-gray-800 mb-1">{idea.title}</div>
                       {idea.body && <div className="text-xs text-gray-500 line-clamp-2 mb-1.5">{idea.body}</div>}
                       <div className="flex items-center gap-1.5">
@@ -137,6 +139,13 @@ export function IdeasPage() {
           ))}
         </div>
       </div>
+
+      <IdeaDetailPanel
+        idea={selectedIdea}
+        projects={projects}
+        onClose={() => setSelectedIdea(null)}
+        onUpdated={() => { load(); setSelectedIdea((prev) => prev ? { ...prev } : null); }}
+      />
     </div>
   );
 }

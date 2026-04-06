@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useProjectsStore } from '../store';
 import { projectsApi } from '../api/projects.api';
 import { Badge } from '../components/ui/Badge';
+import { ProjectDetailPanel } from '../components/projects/ProjectDetailPanel';
+import type { Project } from '@pis/shared';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 
@@ -12,6 +14,7 @@ export function ProjectsPage() {
   const [description, setDescription] = useState('');
   const [color, setColor] = useState(COLORS[0]!);
   const [submitting, setSubmitting] = useState(false);
+  const [selected, setSelected] = useState<Project | null>(null);
 
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
@@ -64,12 +67,18 @@ export function ProjectsPage() {
       {loading && <div className="text-gray-400 text-sm">Loading...</div>}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {projects.map((p) => (
-          <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-4">
+          <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-4 cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all" onClick={() => setSelected(p)}>
             <div className="flex items-center gap-2 mb-2"><Badge label={p.status} color={p.color} /><span className="font-medium text-gray-800">{p.name}</span></div>
             <p className="text-sm text-gray-500">{p.description}</p>
           </div>
         ))}
       </div>
+
+      <ProjectDetailPanel
+        project={selected}
+        onClose={() => setSelected(null)}
+        onUpdated={() => { fetchProjects(); setSelected((prev) => prev ? (projects.find((p) => p.id === prev.id) ?? prev) : null); }}
+      />
     </div>
   );
 }
