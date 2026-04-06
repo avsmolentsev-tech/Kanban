@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { config } from '../config';
 import type { MeetingStructured, InboxAnalysis } from '@pis/shared';
 
@@ -15,10 +15,10 @@ export interface SearchResult {
 }
 
 export class ClaudeService {
-  private readonly client: Anthropic;
+  private readonly client: OpenAI;
 
   constructor() {
-    this.client = new Anthropic({ apiKey: config.anthropicApiKey });
+    this.client = new OpenAI({ apiKey: config.openaiApiKey });
   }
 
   private buildSystemPrompt(extra = ''): string {
@@ -32,15 +32,15 @@ export class ClaudeService {
   }
 
   async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = ''): Promise<string> {
-    const response = await this.client.messages.create({
-      model: 'claude-sonnet-4-6',
+    const response = await this.client.chat.completions.create({
+      model: 'gpt-4o-mini',
       max_tokens: 4096,
-      system: this.buildSystemPrompt(systemPrompt),
-      messages,
+      messages: [
+        { role: 'system', content: this.buildSystemPrompt(systemPrompt) },
+        ...messages,
+      ],
     });
-    const block = response.content[0];
-    if (block?.type !== 'text') throw new Error('Unexpected response type from Claude');
-    return block.text;
+    return response.choices[0]?.message?.content ?? '';
   }
 
   async parseMeeting(rawText: string): Promise<MeetingStructured> {
