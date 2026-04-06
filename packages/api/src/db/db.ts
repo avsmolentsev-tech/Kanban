@@ -25,6 +25,8 @@ export function initDb(): void {
   _db.exec(schema);
   // Add order_index if not exists (migration)
   try { _db.exec('ALTER TABLE projects ADD COLUMN order_index INTEGER NOT NULL DEFAULT 0'); } catch {}
+  // Add project_id to people if not exists (migration)
+  try { _db.exec('ALTER TABLE people ADD COLUMN project_id INTEGER REFERENCES projects(id)'); } catch {}
 }
 
 export function initTestDb(): void {
@@ -38,6 +40,8 @@ export function initTestDb(): void {
   _db.exec(schema);
   // Add order_index if not exists (migration)
   try { _db.exec('ALTER TABLE projects ADD COLUMN order_index INTEGER NOT NULL DEFAULT 0'); } catch {}
+  // Add project_id to people if not exists (migration)
+  try { _db.exec('ALTER TABLE people ADD COLUMN project_id INTEGER REFERENCES projects(id)'); } catch {}
 }
 
 export function closeDb(): void {

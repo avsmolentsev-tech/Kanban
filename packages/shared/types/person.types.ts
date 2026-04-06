@@ -8,6 +8,7 @@ export interface Person {
   phone: string;
   notes: string;
   vault_path: string | null;
+  project_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -20,6 +21,7 @@ export interface CreatePersonDto {
   email?: string;
   phone?: string;
   notes?: string;
+  project_id?: number | null;
 }
 
 export interface PersonHistory {

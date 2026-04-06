@@ -9,17 +9,18 @@ const CreateSchema = z.object({
   name: z.string().min(1), company: z.string().optional().default(''), role: z.string().optional().default(''),
   telegram: z.string().optional().default(''), email: z.string().optional().default(''),
   phone: z.string().optional().default(''), notes: z.string().optional().default(''),
+  project_id: z.number().nullable().optional().default(null),
 });
 
 peopleRouter.get('/', (_req: Request, res: Response) => {
-  res.json(ok(getDb().prepare('SELECT * FROM people ORDER BY name ASC').all()));
+  res.json(ok(getDb().prepare('SELECT * FROM people ORDER BY project_id ASC, name ASC').all()));
 });
 
 peopleRouter.post('/', (req: Request, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const { name, company, role, telegram, email, phone, notes } = parsed.data;
-  const result = getDb().prepare('INSERT INTO people (name, company, role, telegram, email, phone, notes) VALUES (?, ?, ?, ?, ?, ?, ?)').run(name, company, role, telegram, email, phone, notes);
+  const { name, company, role, telegram, email, phone, notes, project_id } = parsed.data;
+  const result = getDb().prepare('INSERT INTO people (name, company, role, telegram, email, phone, notes, project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(name, company, role, telegram, email, phone, notes, project_id ?? null);
   res.status(201).json(ok(getDb().prepare('SELECT * FROM people WHERE id = ?').get(result.lastInsertRowid)));
 });
 
