@@ -58,7 +58,7 @@ function computePeriodDueDate(period: TimePeriod): string {
 }
 
 function TimelineColumn({ period, tasks, projects, onTaskClick, onToggleDone, projectId, people, onRefresh, dueDate }: {
-  period: TimePeriod | 'none' | 'done'; tasks: Task[]; projects: Project[]; onTaskClick: (t: Task) => void;
+  period: TimePeriod | 'none' | 'done' | 'someday'; tasks: Task[]; projects: Project[]; onTaskClick: (t: Task) => void;
   onToggleDone: (id: number, newStatus: import('@pis/shared').TaskStatus) => void;
   projectId: number | null; people: Person[]; onRefresh: () => void; dueDate?: string | null;
 }) {
@@ -141,15 +141,18 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
         ))}
         <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-400 text-center">No due date</div>
         <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-green-600 text-center">Done</div>
+        <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-400 text-center">Когда-нибудь</div>
       </div>
 
       {/* Project swimlanes */}
       <SortableContext items={projectOrder.map((p) => `project-row-${p.project?.id ?? 'none'}`)} strategy={verticalListSortingStrategy}>
         {projectOrder.map(({ project, tasks: pTasks }) => {
-          const grouped: Record<TimePeriod | 'none' | 'done', Task[]> = { today: [], week: [], month: [], year: [], none: [], done: [] };
+          const grouped: Record<TimePeriod | 'none' | 'done' | 'someday', Task[]> = { today: [], week: [], month: [], year: [], none: [], done: [], someday: [] };
           for (const t of pTasks) {
             if (t.status === 'done') {
               grouped.done.push(t);
+            } else if (t.status === 'someday') {
+              grouped.someday.push(t);
             } else {
               grouped[classifyTask(t.due_date)].push(t);
             }
@@ -186,6 +189,8 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
                     <TimelineColumn period="none" tasks={grouped.none} projects={projects} onTaskClick={onTaskClick}
                       onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
                     <TimelineColumn period="done" tasks={grouped.done} projects={projects} onTaskClick={onTaskClick}
+                      onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                    <TimelineColumn period="someday" tasks={grouped.someday} projects={projects} onTaskClick={onTaskClick}
                       onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
                   </div>
                 </div>
