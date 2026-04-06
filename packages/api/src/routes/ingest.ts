@@ -22,6 +22,11 @@ ingestRouter.post('/', upload.single('file'), async (req: Request, res: Response
       result = await ingestService.ingestBuffer(req.file.buffer, req.file.originalname);
     } else if (typeof req.body['text'] === 'string') {
       result = await ingestService.ingestText(req.body['text'] as string);
+    } else if (typeof req.body['url'] === 'string') {
+      // URL ingestion - parse URL directly
+      const { parseUrl } = require('../parsers');
+      const text = await parseUrl(req.body['url']);
+      result = await ingestService.ingestBuffer(Buffer.from(text, 'utf-8'), req.body['url']);
     } else {
       res.status(400).json(fail('Provide a file or text field'));
       return;

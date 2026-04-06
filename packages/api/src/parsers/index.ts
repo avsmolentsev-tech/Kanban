@@ -3,7 +3,10 @@ import { parsePdf } from './pdf.parser';
 import { parseDocx } from './docx.parser';
 import { parseImage } from './image.parser';
 import { parseAudio } from './audio.parser';
+import { parseUrl } from './url.parser';
 import type { IngestFileType } from '@pis/shared';
+
+export { parseUrl } from './url.parser';
 
 export async function parseFile(buffer: Buffer, fileType: IngestFileType): Promise<string> {
   switch (fileType) {
@@ -23,6 +26,8 @@ export async function parseFile(buffer: Buffer, fileType: IngestFileType): Promi
     case 'm4a':
     case 'ogg':
       return parseAudio(buffer, fileType);
+    case 'url':
+      throw new Error('URL parsing requires a URL string, not a buffer. Use parseUrl() directly.');
     default:
       throw new Error(`Unsupported file type in Phase 1: ${fileType}`);
   }

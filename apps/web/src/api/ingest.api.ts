@@ -15,6 +15,11 @@ export const ingestApi = {
     if (!res.data.success || !res.data.data) throw new Error(res.data.error ?? 'Ingest failed');
     return res.data.data;
   },
+  ingestUrl: async (url: string, projectId?: number): Promise<IngestResult> => {
+    const res = await apiClient.post<ApiResponse<IngestResult>>('/ingest', { url, project_id: projectId });
+    if (!res.data.success || !res.data.data) throw new Error(res.data.error ?? 'Ingest failed');
+    return res.data.data;
+  },
   listRecent: async (): Promise<InboxItem[]> => {
     const res = await apiClient.get<ApiResponse<InboxItem[]>>('/ingest');
     if (!res.data.success || !res.data.data) return [];

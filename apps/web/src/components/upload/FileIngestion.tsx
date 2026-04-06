@@ -15,6 +15,7 @@ export function FileIngestion({ onComplete, projects, selectedProjectId, onProje
   const [result, setResult] = useState<IngestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState('');
+  const [url, setUrl] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const processFile = async (file: File) => {
@@ -23,6 +24,16 @@ export function FileIngestion({ onComplete, projects, selectedProjectId, onProje
       const r = await ingestApi.uploadFile(file, selectedProjectId ?? undefined);
       setResult(r); onComplete?.(r);
     } catch (e) { setError(e instanceof Error ? e.message : 'Upload failed'); }
+    finally { setLoading(false); }
+  };
+
+  const processUrl = async () => {
+    if (!url.trim()) return;
+    setLoading(true); setError(null); setResult(null);
+    try {
+      const r = await ingestApi.ingestUrl(url.trim(), selectedProjectId ?? undefined);
+      setResult(r); setUrl(''); onComplete?.(r);
+    } catch (e) { setError(e instanceof Error ? e.message : 'URL extraction failed'); }
     finally { setLoading(false); }
   };
 
@@ -60,6 +71,23 @@ export function FileIngestion({ onComplete, projects, selectedProjectId, onProje
         <input ref={fileRef} type="file" className="hidden" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.mp3,.wav,.m4a,.ogg" onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }} />
         <div className="text-gray-500 text-sm">{loading ? 'Processing...' : 'Drop a file here or click to upload'}</div>
         <div className="text-gray-400 text-xs mt-1">Supported: .txt, .md, .pdf, .docx, .png, .jpg, .jpeg, .mp3, .wav, .m4a, .ogg</div>
+      </div>
+      {/* URL input */}
+      <div className="flex gap-2">
+        <input
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-300"
+          placeholder="Paste URL to extract content..."
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') processUrl(); }}
+        />
+        <button
+          onClick={processUrl}
+          disabled={!url.trim() || loading}
+          className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Extract
+        </button>
       </div>
       <div>
         <textarea className="w-full border border-gray-200 rounded-lg p-3 text-sm resize-none focus:outline-none focus:border-indigo-300" rows={4} placeholder="Or paste text here..." value={text} onChange={(e) => setText(e.target.value)} />
