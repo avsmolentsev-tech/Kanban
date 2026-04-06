@@ -21,7 +21,19 @@ const UpdateSchema = z.object({
 });
 
 projectsRouter.get('/', (_req: Request, res: Response) => {
-  const projects = getDb().prepare('SELECT * FROM projects WHERE archived = 0 ORDER BY created_at DESC').all();
+  const projects = getDb().prepare('SELECT * FROM projects WHERE archived = 0 ORDER BY order_index ASC, created_at DESC').all();
+  res.json(ok(projects));
+});
+
+projectsRouter.patch('/reorder', (req: Request, res: Response) => {
+  const parsed = z.array(z.object({ id: z.number(), order_index: z.number() })).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const db = getDb();
+  const stmt = db.prepare('UPDATE projects SET order_index = ? WHERE id = ?');
+  for (const { id, order_index } of parsed.data) {
+    stmt.run(order_index, id);
+  }
+  const projects = db.prepare('SELECT * FROM projects WHERE archived = 0 ORDER BY order_index ASC, created_at DESC').all();
   res.json(ok(projects));
 });
 

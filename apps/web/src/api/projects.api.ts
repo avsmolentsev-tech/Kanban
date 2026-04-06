@@ -6,4 +6,5 @@ export const projectsApi = {
   create: (dto: CreateProjectDto) => apiPost<Project>('/projects', dto),
   get: (id: number) => apiGet<Project & { tasks: unknown[]; meetings: unknown[] }>(`/projects/${id}`),
   update: (id: number, dto: UpdateProjectDto) => apiPatch<Project>(`/projects/${id}`, dto),
+  reorder: (items: Array<{ id: number; order_index: number }>) => apiPatch<Project[]>('/projects/reorder', items),
 };

@@ -17,6 +17,7 @@ interface Props {
   people: Person[];
   onMoveTask: (id: number, status: TaskStatus, idx: number) => Promise<void>;
   onRefresh: () => void;
+  onMoveProject: (projectId: number | null, direction: 'up' | 'down') => void;
 }
 
 function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskClick, projectId, onRefresh }: {
@@ -45,7 +46,7 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
   );
 }
 
-export function KanbanBoard({ tasks, projects, people, onMoveTask, onRefresh }: Props) {
+export function KanbanBoard({ tasks, projects, people, onMoveTask, onRefresh, onMoveProject }: Props) {
   const [selected, setSelected] = useState<Task | null>(null);
   const pMap = new Map(projects.map((p) => [p.id, p]));
 
@@ -97,6 +98,12 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onRefresh }: 
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
                   <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'No project'}</span>
+                  {project && (
+                    <div className="flex gap-0.5 ml-auto">
+                      <button onClick={() => onMoveProject(project.id, 'up')} className="text-gray-300 hover:text-gray-600 text-xs leading-none">▲</button>
+                      <button onClick={() => onMoveProject(project.id, 'down')} className="text-gray-300 hover:text-gray-600 text-xs leading-none">▼</button>
+                    </div>
+                  )}
                 </div>
                 <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} task{pTasks.length !== 1 ? 's' : ''}</div>
               </div>

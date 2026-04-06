@@ -23,6 +23,8 @@ export function initDb(): void {
     'utf-8'
   );
   _db.exec(schema);
+  // Add order_index if not exists (migration)
+  try { _db.exec('ALTER TABLE projects ADD COLUMN order_index INTEGER NOT NULL DEFAULT 0'); } catch {}
 }
 
 export function initTestDb(): void {
@@ -34,6 +36,8 @@ export function initTestDb(): void {
     'utf-8'
   );
   _db.exec(schema);
+  // Add order_index if not exists (migration)
+  try { _db.exec('ALTER TABLE projects ADD COLUMN order_index INTEGER NOT NULL DEFAULT 0'); } catch {}
 }
 
 export function closeDb(): void {

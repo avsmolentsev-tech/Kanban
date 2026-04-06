@@ -29,11 +29,24 @@ function computeDueDate(period: TimePeriod | 'none'): string | null {
 
 export function TimelinePage() {
   const { tasks, fetchTasks } = useTasksStore();
-  const { projects, fetchProjects } = useProjectsStore();
+  const { projects, fetchProjects, reorderProjects } = useProjectsStore();
   const [selected, setSelected] = useState<Task | null>(null);
   const pMap = new Map(projects.map((p) => [p.id, p]));
 
   useEffect(() => { fetchTasks(); fetchProjects(); }, [fetchTasks, fetchProjects]);
+
+  const handleMoveProject = (projectId: number | null, direction: 'up' | 'down') => {
+    if (projectId === null) return;
+    const idx = projects.findIndex((p) => p.id === projectId);
+    if (idx === -1) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= projects.length) return;
+    const items = projects.map((p, i) => ({ id: p.id, order_index: i }));
+    const tmp = items[idx]!.order_index;
+    items[idx]!.order_index = items[swapIdx]!.order_index;
+    items[swapIdx]!.order_index = tmp;
+    reorderProjects(items);
+  };
 
   const handleDragEnd = async (e: DragEndEvent) => {
     const { active, over } = e;
@@ -68,7 +81,7 @@ export function TimelinePage() {
       </div>
       <div className="flex-1 overflow-auto">
         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <TimelineView tasks={tasks} projects={projects} onTaskClick={setSelected} />
+          <TimelineView tasks={tasks} projects={projects} onTaskClick={setSelected} onMoveProject={handleMoveProject} />
         </DndContext>
       </div>
       <TaskDetailPanel task={selected} project={selected?.project_id ? pMap.get(selected.project_id) : undefined} onClose={() => setSelected(null)} />

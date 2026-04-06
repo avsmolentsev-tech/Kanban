@@ -75,9 +75,10 @@ interface Props {
   tasks: Task[];
   projects: Project[];
   onTaskClick: (t: Task) => void;
+  onMoveProject: (projectId: number | null, direction: 'up' | 'down') => void;
 }
 
-export function TimelineView({ tasks, projects, onTaskClick }: Props) {
+export function TimelineView({ tasks, projects, onTaskClick, onMoveProject }: Props) {
   const activeTasks = tasks.filter((t) => !t.archived);
 
   // Group by project, then by period
@@ -124,6 +125,12 @@ export function TimelineView({ tasks, projects, onTaskClick }: Props) {
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
                 <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'No project'}</span>
+                {project && (
+                  <div className="flex gap-0.5 ml-auto">
+                    <button onClick={() => onMoveProject(project.id, 'up')} className="text-gray-300 hover:text-gray-600 text-xs leading-none">▲</button>
+                    <button onClick={() => onMoveProject(project.id, 'down')} className="text-gray-300 hover:text-gray-600 text-xs leading-none">▼</button>
+                  </div>
+                )}
               </div>
               <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} task{pTasks.length !== 1 ? 's' : ''}</div>
             </div>

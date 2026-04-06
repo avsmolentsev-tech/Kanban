@@ -6,6 +6,7 @@ interface ProjectsState {
   projects: Project[];
   loading: boolean;
   fetchProjects: () => Promise<void>;
+  reorderProjects: (items: Array<{ id: number; order_index: number }>) => Promise<void>;
 }
 
 export const useProjectsStore = create<ProjectsState>((set) => ({
@@ -15,5 +16,9 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
     set({ loading: true });
     const projects = await projectsApi.list();
     set({ projects, loading: false });
+  },
+  reorderProjects: async (items) => {
+    const projects = await projectsApi.reorder(items);
+    set({ projects });
   },
 }));

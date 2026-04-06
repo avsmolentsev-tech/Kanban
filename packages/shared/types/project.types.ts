@@ -10,6 +10,7 @@ export interface Project {
   created_at: string;
   updated_at: string;
   archived: boolean;
+  order_index: number;
 }
 
 export interface CreateProjectDto {
