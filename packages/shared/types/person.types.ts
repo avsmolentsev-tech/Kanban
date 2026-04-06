@@ -9,6 +9,8 @@ export interface Person {
   notes: string;
   vault_path: string | null;
   project_id: number | null;
+  project_ids?: number[];
+  projects?: Array<{ id: number; name: string; color: string }>;
   created_at: string;
   updated_at: string;
 }
@@ -22,6 +24,7 @@ export interface CreatePersonDto {
   phone?: string;
   notes?: string;
   project_id?: number | null;
+  project_ids?: number[];
 }
 
 export interface PersonHistory {

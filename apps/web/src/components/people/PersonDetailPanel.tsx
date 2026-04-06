@@ -13,9 +13,13 @@ interface Props {
 
 export function PersonDetailPanel({ person, projects, onClose, onUpdated }: Props) {
   const [form, setForm] = useState<Partial<Person>>({});
+  const [projectIds, setProjectIds] = useState<number[]>([]);
 
   useEffect(() => {
-    if (person) setForm({ ...person });
+    if (person) {
+      setForm({ ...person });
+      setProjectIds(person.project_ids ?? (person.project_id != null ? [person.project_id] : []));
+    }
   }, [person]);
 
   const save = async (field: string, value: string | number | null) => {
@@ -34,6 +38,16 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated }: Prop
     const oldVal = (person as Record<string, unknown>)[field];
     if (newVal !== oldVal) save(field, newVal as string);
   };
+
+  const toggleProject = async (id: number) => {
+    if (!person) return;
+    const next = projectIds.includes(id) ? projectIds.filter(x => x !== id) : [...projectIds, id];
+    setProjectIds(next);
+    await peopleApi.update(person.id, { project_ids: next });
+    onUpdated();
+  };
+
+  const activeProjects = projects.filter(p => !p.archived);
 
   return (
     <SlidePanel open={!!person} onClose={onClose} title={person?.name ?? ''}>
@@ -56,21 +70,28 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated }: Prop
             <Field label="Phone" value={form.phone ?? ''} onChange={(v) => handleChange('phone', v)} onBlur={() => handleBlur('phone')} />
           </div>
 
-          <div>
-            <div className="text-xs text-gray-500 mb-1">Project</div>
-            <select className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 bg-white"
-              value={form.project_id ?? ''}
-              onChange={(e) => {
-                const val = e.target.value ? Number(e.target.value) : null;
-                setForm((f) => ({ ...f, project_id: val }));
-                save('project_id', val);
-              }}>
-              <option value="">No project</option>
-              {projects.filter(p => !p.archived).map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
+          {activeProjects.length > 0 && (
+            <div>
+              <div className="text-xs text-gray-500 mb-1.5">Projects</div>
+              <div className="flex flex-wrap gap-2">
+                {activeProjects.map(p => {
+                  const active = projectIds.includes(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => toggleProject(p.id)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${active ? 'border-transparent text-white' : 'border-gray-200 text-gray-600 bg-white hover:border-gray-300'}`}
+                      style={active ? { backgroundColor: p.color, borderColor: p.color } : {}}
+                    >
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: active ? 'rgba(255,255,255,0.7)' : p.color }} />
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div>
             <div className="text-xs text-gray-500 mb-1">Notes</div>
