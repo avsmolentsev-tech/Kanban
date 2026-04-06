@@ -5,6 +5,8 @@ import { TaskCard } from '../kanban/TaskCard';
 
 export type TimePeriod = 'today' | 'week' | 'month' | 'year';
 
+export { classifyTask };
+
 const PERIOD_LABELS: Record<TimePeriod, string> = {
   today: 'Today',
   week: 'This Week',

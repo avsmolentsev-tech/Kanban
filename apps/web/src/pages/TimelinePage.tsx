@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
 import { useTasksStore, useProjectsStore } from '../store';
 import { tasksApi } from '../api/tasks.api';
-import { TimelineView, type TimePeriod } from '../components/timeline/TimelineView';
+import { TimelineView, type TimePeriod, classifyTask } from '../components/timeline/TimelineView';
 import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
 import type { Task } from '@pis/shared';
 
@@ -39,9 +39,22 @@ export function TimelinePage() {
     const { active, over } = e;
     if (!over) return;
     const overId = String(over.id);
+    const taskId = Number(active.id);
+
+    let target: TimePeriod | 'none' | null = null;
+
     if (overId.startsWith('timeline-')) {
-      const target = overId.replace('timeline-', '') as TimePeriod | 'none';
-      const taskId = Number(active.id);
+      // Dropped on a column
+      target = overId.replace('timeline-', '') as TimePeriod | 'none';
+    } else {
+      // Dropped on another task — find which column that task is in
+      const overTask = tasks.find((t) => t.id === Number(overId));
+      if (overTask) {
+        target = classifyTask(overTask.due_date);
+      }
+    }
+
+    if (target !== null) {
       const newDue = computeDueDate(target);
       await tasksApi.update(taskId, { due_date: newDue });
       await fetchTasks();
