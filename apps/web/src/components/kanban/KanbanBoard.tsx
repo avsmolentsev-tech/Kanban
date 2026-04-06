@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
+import { DndContext, pointerWithin, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useDroppable } from '@dnd-kit/core';
@@ -60,6 +60,9 @@ function SortableProjectRow({ id, children }: { id: string; children: (dragHandl
 
 export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone, onRefresh, onReorderProjects }: Props) {
   const [selected, setSelected] = useState<Task | null>(null);
+  const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 8 } });
+  const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } });
+  const sensors = useSensors(mouseSensor, touchSensor);
   const pMap = new Map(projects.map((p) => [p.id, p]));
 
   const tasksByProject = new Map<number | null, Task[]>();
@@ -106,7 +109,7 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
 
   return (
     <>
-      <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
         <div className="p-4 overflow-auto">
           {/* Column headers */}
           <div className="flex mb-2 ml-44">

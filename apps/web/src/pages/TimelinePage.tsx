@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
+import { DndContext, pointerWithin, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { useTasksStore, useProjectsStore } from '../store';
 import { tasksApi } from '../api/tasks.api';
@@ -35,6 +35,11 @@ export function TimelinePage() {
   const [selected, setSelected] = useState<Task | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const pMap = new Map(projects.map((p) => [p.id, p]));
+
+  // Require 8px movement before drag starts — so checkbox clicks work
+  const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 8 } });
+  const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } });
+  const sensors = useSensors(mouseSensor, touchSensor);
 
   useEffect(() => { fetchTasks(); fetchProjects(); peopleApi.list().then(setPeople); }, [fetchTasks, fetchProjects]);
 
@@ -85,13 +90,13 @@ export function TimelinePage() {
         <h1 className="text-xl font-bold text-gray-800">Timeline</h1>
       </div>
       <div className="flex-1 overflow-auto">
-        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
           <TimelineView
             tasks={tasks}
             projects={projects}
             people={people}
             onTaskClick={setSelected}
-            onToggleDone={async (id: number, newStatus: TaskStatus) => { await tasksApi.update(id, { status: newStatus }); fetchTasks(); }}
+            onToggleDone={async (id: number, newStatus: TaskStatus) => { await tasksApi.update(id, { status: newStatus }); await fetchTasks(); }}
             onReorderProjects={reorderProjects}
             onRefresh={() => fetchTasks()}
           />
