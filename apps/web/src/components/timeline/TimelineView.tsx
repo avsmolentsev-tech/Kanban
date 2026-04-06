@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { Task, Project, Person } from '@pis/shared';
 import { TaskCard } from '../kanban/TaskCard';
 import { AddTaskModal } from '../kanban/AddTaskModal';
@@ -86,16 +87,26 @@ function TimelineColumn({ period, tasks, projects, onTaskClick, projectId, peopl
   );
 }
 
+function SortableProjectRow({ id, children }: { id: string; children: (dragHandleProps: Record<string, unknown>) => React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.7 : 1 };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      {children({ ...listeners })}
+    </div>
+  );
+}
+
 interface Props {
   tasks: Task[];
   projects: Project[];
   people: Person[];
   onTaskClick: (t: Task) => void;
-  onMoveProject: (projectId: number | null, direction: 'up' | 'down') => void;
+  onReorderProjects: (items: Array<{ id: number; order_index: number }>) => void;
   onRefresh: () => void;
 }
 
-export function TimelineView({ tasks, projects, people, onTaskClick, onMoveProject, onRefresh }: Props) {
+export function TimelineView({ tasks, projects, people, onTaskClick, onReorderProjects, onRefresh }: Props) {
   const activeTasks = tasks.filter((t) => !t.archived);
 
   // Group by project, then by period
@@ -129,42 +140,50 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onMoveProje
       </div>
 
       {/* Project swimlanes */}
-      {projectOrder.map(({ project, tasks: pTasks }) => {
-        const grouped: Record<TimePeriod | 'none', Task[]> = { today: [], week: [], month: [], year: [], none: [] };
-        for (const t of pTasks) {
-          grouped[classifyTask(t.due_date)].push(t);
-        }
+      <SortableContext items={projectOrder.map((p) => `project-row-${p.project?.id ?? 'none'}`)} strategy={verticalListSortingStrategy}>
+        {projectOrder.map(({ project, tasks: pTasks }) => {
+          const grouped: Record<TimePeriod | 'none', Task[]> = { today: [], week: [], month: [], year: [], none: [] };
+          for (const t of pTasks) {
+            grouped[classifyTask(t.due_date)].push(t);
+          }
 
-        return (
-          <div key={project?.id ?? 'none'} className="flex mb-4">
-            {/* Project label */}
-            <div className="w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-                <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'No project'}</span>
-                {project && (
-                  <div className="flex gap-0.5 ml-auto">
-                    <button onClick={() => onMoveProject(project.id, 'up')} className="text-gray-300 hover:text-gray-600 text-xs leading-none">▲</button>
-                    <button onClick={() => onMoveProject(project.id, 'down')} className="text-gray-300 hover:text-gray-600 text-xs leading-none">▼</button>
+          return (
+            <SortableProjectRow key={project?.id ?? 'none'} id={`project-row-${project?.id ?? 'none'}`}>
+              {(dragHandleProps) => (
+                <div className="flex mb-4">
+                  {/* Project label */}
+                  <div className="w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3">
+                    <div className="flex items-center gap-2">
+                      {project && (
+                        <div
+                          className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-base leading-none flex-shrink-0 select-none"
+                          {...dragHandleProps}
+                        >
+                          ⠿
+                        </div>
+                      )}
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                      <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'No project'}</span>
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} task{pTasks.length !== 1 ? 's' : ''}</div>
                   </div>
-                )}
-              </div>
-              <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} task{pTasks.length !== 1 ? 's' : ''}</div>
-            </div>
 
-            {/* Period columns */}
-            <div className="flex gap-4">
-              {PERIODS.map((period) => (
-                <TimelineColumn key={`${project?.id ?? 'none'}-${period}`} period={period} tasks={grouped[period]} projects={projects}
-                  onTaskClick={onTaskClick} projectId={project?.id ?? null} people={people} onRefresh={onRefresh}
-                  dueDate={computePeriodDueDate(period)} />
-              ))}
-              <TimelineColumn period="none" tasks={grouped.none} projects={projects} onTaskClick={onTaskClick}
-                projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
-            </div>
-          </div>
-        );
-      })}
+                  {/* Period columns */}
+                  <div className="flex gap-4">
+                    {PERIODS.map((period) => (
+                      <TimelineColumn key={`${project?.id ?? 'none'}-${period}`} period={period} tasks={grouped[period]} projects={projects}
+                        onTaskClick={onTaskClick} projectId={project?.id ?? null} people={people} onRefresh={onRefresh}
+                        dueDate={computePeriodDueDate(period)} />
+                    ))}
+                    <TimelineColumn period="none" tasks={grouped.none} projects={projects} onTaskClick={onTaskClick}
+                      projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                  </div>
+                </div>
+              )}
+            </SortableProjectRow>
+          );
+        })}
+      </SortableContext>
 
       {projectOrder.length === 0 && <div className="text-gray-400 text-sm text-center py-8">No tasks yet</div>}
     </div>

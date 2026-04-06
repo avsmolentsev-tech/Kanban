@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useDroppable } from '@dnd-kit/core';
 import type { Task, Project, TaskStatus, Person } from '@pis/shared';
 import { TaskCard } from './TaskCard';
@@ -17,7 +18,7 @@ interface Props {
   people: Person[];
   onMoveTask: (id: number, status: TaskStatus, idx: number) => Promise<void>;
   onRefresh: () => void;
-  onMoveProject: (projectId: number | null, direction: 'up' | 'down') => void;
+  onReorderProjects: (items: Array<{ id: number; order_index: number }>) => void;
 }
 
 function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskClick, projectId, onRefresh }: {
@@ -46,7 +47,17 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
   );
 }
 
-export function KanbanBoard({ tasks, projects, people, onMoveTask, onRefresh, onMoveProject }: Props) {
+function SortableProjectRow({ id, children }: { id: string; children: (dragHandleProps: Record<string, unknown>) => React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.7 : 1 };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      {children({ ...listeners })}
+    </div>
+  );
+}
+
+export function KanbanBoard({ tasks, projects, people, onMoveTask, onRefresh, onReorderProjects }: Props) {
   const [selected, setSelected] = useState<Task | null>(null);
   const pMap = new Map(projects.map((p) => [p.id, p]));
 
@@ -70,11 +81,25 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onRefresh, on
   const handleDragEnd = async (e: DragEndEvent) => {
     const { active, over } = e;
     if (!over) return;
+    const activeId = String(active.id);
     const overId = String(over.id);
-    const status = overId.split('-').pop() as TaskStatus;
-    if (COLUMNS.includes(status)) {
-      const tasksInCol = tasks.filter((t) => t.status === status);
-      await onMoveTask(Number(active.id), status, tasksInCol.length);
+
+    if (activeId.startsWith('project-row-')) {
+      if (!overId.startsWith('project-row-')) return;
+      const fromIdx = projectOrder.findIndex((p) => `project-row-${p.project?.id ?? 'none'}` === activeId);
+      const toIdx = projectOrder.findIndex((p) => `project-row-${p.project?.id ?? 'none'}` === overId);
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+      const reordered = arrayMove(projectOrder, fromIdx, toIdx);
+      const items = reordered
+        .filter((r) => r.project !== null)
+        .map((r, i) => ({ id: r.project!.id, order_index: i }));
+      onReorderProjects(items);
+    } else {
+      const status = overId.split('-').pop() as TaskStatus;
+      if (COLUMNS.includes(status)) {
+        const tasksInCol = tasks.filter((t) => t.status === status);
+        await onMoveTask(Number(active.id), status, tasksInCol.length);
+      }
     }
   };
 
@@ -92,38 +117,46 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onRefresh, on
           </div>
 
           {/* Project swimlanes */}
-          {projectOrder.map(({ project, tasks: pTasks }) => (
-            <div key={project?.id ?? 'none'} className="flex mb-4">
-              <div className="w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-                  <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'No project'}</span>
-                  {project && (
-                    <div className="flex gap-0.5 ml-auto">
-                      <button onClick={() => onMoveProject(project.id, 'up')} className="text-gray-300 hover:text-gray-600 text-xs leading-none">▲</button>
-                      <button onClick={() => onMoveProject(project.id, 'down')} className="text-gray-300 hover:text-gray-600 text-xs leading-none">▼</button>
+          <SortableContext items={projectOrder.map((p) => `project-row-${p.project?.id ?? 'none'}`)} strategy={verticalListSortingStrategy}>
+            {projectOrder.map(({ project, tasks: pTasks }) => (
+              <SortableProjectRow key={project?.id ?? 'none'} id={`project-row-${project?.id ?? 'none'}`}>
+                {(dragHandleProps) => (
+                  <div className="flex mb-4">
+                    <div className="w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3">
+                      <div className="flex items-center gap-2">
+                        {project && (
+                          <div
+                            className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-base leading-none flex-shrink-0 select-none"
+                            {...dragHandleProps}
+                          >
+                            ⠿
+                          </div>
+                        )}
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                        <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'No project'}</span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} task{pTasks.length !== 1 ? 's' : ''}</div>
                     </div>
-                  )}
-                </div>
-                <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} task{pTasks.length !== 1 ? 's' : ''}</div>
-              </div>
-              <div className="flex gap-4">
-                {COLUMNS.map((status) => (
-                  <SwimlaneColumn
-                    key={`${project?.id ?? 'none'}-${status}`}
-                    droppableId={`${project?.id ?? 'none'}-${status}`}
-                    status={status}
-                    tasks={pTasks.filter((t) => t.status === status)}
-                    projects={projects}
-                    people={people}
-                    onTaskClick={setSelected}
-                    projectId={project?.id ?? null}
-                    onRefresh={onRefresh}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+                    <div className="flex gap-4">
+                      {COLUMNS.map((status) => (
+                        <SwimlaneColumn
+                          key={`${project?.id ?? 'none'}-${status}`}
+                          droppableId={`${project?.id ?? 'none'}-${status}`}
+                          status={status}
+                          tasks={pTasks.filter((t) => t.status === status)}
+                          projects={projects}
+                          people={people}
+                          onTaskClick={setSelected}
+                          projectId={project?.id ?? null}
+                          onRefresh={onRefresh}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </SortableProjectRow>
+            ))}
+          </SortableContext>
 
           {/* Add project button */}
           <AddProjectForm onCreated={onRefresh} />

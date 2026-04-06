@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
+import { arrayMove } from '@dnd-kit/sortable';
 import { useTasksStore, useProjectsStore } from '../store';
 import { tasksApi } from '../api/tasks.api';
 import { peopleApi } from '../api/people.api';
@@ -37,42 +38,38 @@ export function TimelinePage() {
 
   useEffect(() => { fetchTasks(); fetchProjects(); peopleApi.list().then(setPeople); }, [fetchTasks, fetchProjects]);
 
-  const handleMoveProject = (projectId: number | null, direction: 'up' | 'down') => {
-    if (projectId === null) return;
-    const idx = projects.findIndex((p) => p.id === projectId);
-    if (idx === -1) return;
-    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= projects.length) return;
-    const items = projects.map((p, i) => ({ id: p.id, order_index: i }));
-    const tmp = items[idx]!.order_index;
-    items[idx]!.order_index = items[swapIdx]!.order_index;
-    items[swapIdx]!.order_index = tmp;
-    reorderProjects(items);
-  };
-
   const handleDragEnd = async (e: DragEndEvent) => {
     const { active, over } = e;
     if (!over) return;
+    const activeId = String(active.id);
     const overId = String(over.id);
-    const taskId = Number(active.id);
 
-    let target: TimePeriod | 'none' | null = null;
-
-    if (overId.startsWith('timeline-')) {
-      // Dropped on a column
-      target = overId.replace('timeline-', '') as TimePeriod | 'none';
+    if (activeId.startsWith('project-row-')) {
+      if (!overId.startsWith('project-row-')) return;
+      const fromIdx = projects.findIndex((p) => `project-row-${p.id}` === activeId);
+      const toIdx = projects.findIndex((p) => `project-row-${p.id}` === overId);
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+      const reordered = arrayMove(projects, fromIdx, toIdx);
+      const items = reordered.map((p, i) => ({ id: p.id, order_index: i }));
+      reorderProjects(items);
     } else {
-      // Dropped on another task — find which column that task is in
-      const overTask = tasks.find((t) => t.id === Number(overId));
-      if (overTask) {
-        target = classifyTask(overTask.due_date);
-      }
-    }
+      const taskId = Number(activeId);
+      let target: TimePeriod | 'none' | null = null;
 
-    if (target !== null) {
-      const newDue = computeDueDate(target);
-      await tasksApi.update(taskId, { due_date: newDue });
-      await fetchTasks();
+      if (overId.startsWith('timeline-')) {
+        target = overId.replace('timeline-', '') as TimePeriod | 'none';
+      } else {
+        const overTask = tasks.find((t) => t.id === Number(overId));
+        if (overTask) {
+          target = classifyTask(overTask.due_date);
+        }
+      }
+
+      if (target !== null) {
+        const newDue = computeDueDate(target);
+        await tasksApi.update(taskId, { due_date: newDue });
+        await fetchTasks();
+      }
     }
   };
 
@@ -83,7 +80,14 @@ export function TimelinePage() {
       </div>
       <div className="flex-1 overflow-auto">
         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <TimelineView tasks={tasks} projects={projects} people={people} onTaskClick={setSelected} onMoveProject={handleMoveProject} onRefresh={() => fetchTasks()} />
+          <TimelineView
+            tasks={tasks}
+            projects={projects}
+            people={people}
+            onTaskClick={setSelected}
+            onReorderProjects={reorderProjects}
+            onRefresh={() => fetchTasks()}
+          />
         </DndContext>
       </div>
       <TaskDetailPanel task={selected} project={selected?.project_id ? pMap.get(selected.project_id) : undefined} onClose={() => setSelected(null)} />
