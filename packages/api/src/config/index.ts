@@ -11,4 +11,6 @@ export const config = {
   databasePath: process.env['DATABASE_PATH'] ?? path.resolve(process.cwd(), '../../data/pis.db'),
   openaiApiKey: process.env['OPENAI_API_KEY'] ?? '',
   maxFileSizeMb: parseInt(process.env['MAX_FILE_SIZE_MB'] ?? '50', 10),
+  telegramBotToken: process.env['TELEGRAM_BOT_TOKEN'] ?? '',
+  telegramUserId: process.env['TELEGRAM_USER_ID'] ?? '',
 } as const;

@@ -5,6 +5,8 @@ import { router } from './routes';
 import { initDb } from './db/db';
 import { seedDb } from './db/seed';
 import { searchService } from './services/search.service';
+import { telegramService } from './services/telegram.service';
+import { startNotificationScheduler } from './services/notification.service';
 
 const app = express();
 
@@ -23,6 +25,8 @@ async function start(): Promise<void> {
   seedDb();
   searchService.reindexAll();
   searchService.startVaultWatcher();
+  telegramService.start();
+  startNotificationScheduler();
   app.listen(config.port, () => {
     console.log(`[PIS API] running on port ${config.port}`);
   });
