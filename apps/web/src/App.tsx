@@ -7,6 +7,8 @@ import { PeoplePage } from './pages/PeoplePage';
 import { InboxPage } from './pages/InboxPage';
 import { IdeasPage } from './pages/IdeasPage';
 import { DocumentsPage } from './pages/DocumentsPage';
+import { DailyBriefPage } from './pages/DailyBriefPage';
+import { CalendarPage } from './pages/CalendarPage';
 import { SearchBar } from './components/search/SearchBar';
 
 const nav = [
@@ -15,6 +17,8 @@ const nav = [
   { to: '/projects', label: 'Projects' },
   { to: '/meetings', label: 'Meetings' },
   { to: '/people', label: 'People' },
+  { to: '/brief', label: 'Daily Brief' },
+  { to: '/calendar', label: 'Calendar' },
   { to: '/inbox', label: 'Inbox' },
   { to: '/ideas', label: 'Ideas' },
   { to: '/documents', label: 'Documents' },
@@ -43,6 +47,8 @@ export default function App() {
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/meetings" element={<MeetingsPage />} />
               <Route path="/people" element={<PeoplePage />} />
+              <Route path="/brief" element={<DailyBriefPage />} />
+              <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/inbox" element={<InboxPage />} />
               <Route path="/ideas" element={<IdeasPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
