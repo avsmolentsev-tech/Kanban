@@ -68,7 +68,9 @@ export function TimelinePage() {
       let target: TimePeriod | 'none' | 'done' | null = null;
 
       if (overId.startsWith('timeline-')) {
-        target = overId.replace('timeline-', '') as TimePeriod | 'none' | 'done';
+        // Format: timeline-{projectId}-{period}
+        const parts = overId.split('-');
+        target = parts[parts.length - 1] as TimePeriod | 'none' | 'done';
       } else {
         const overTask = tasks.find((t) => t.id === Number(overId));
         if (overTask) {

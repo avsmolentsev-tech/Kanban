@@ -62,7 +62,9 @@ function TimelineColumn({ period, tasks, projects, onTaskClick, onToggleDone, pr
   onToggleDone: (id: number, newStatus: import('@pis/shared').TaskStatus) => void;
   projectId: number | null; people: Person[]; onRefresh: () => void; dueDate?: string | null;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `timeline-${period}` });
+  // Unique droppable ID per project+period combination
+  const droppableId = `timeline-${projectId ?? 'none'}-${period}`;
+  const { setNodeRef, isOver } = useDroppable({ id: droppableId });
   const pMap = new Map(projects.map((p) => [p.id, p]));
   const [adding, setAdding] = useState(false);
 
