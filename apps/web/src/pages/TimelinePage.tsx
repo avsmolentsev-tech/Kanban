@@ -54,20 +54,26 @@ export function TimelinePage() {
       reorderProjects(items);
     } else {
       const taskId = Number(activeId);
-      let target: TimePeriod | 'none' | null = null;
+      let target: TimePeriod | 'none' | 'done' | null = null;
 
       if (overId.startsWith('timeline-')) {
-        target = overId.replace('timeline-', '') as TimePeriod | 'none';
+        target = overId.replace('timeline-', '') as TimePeriod | 'none' | 'done';
       } else {
         const overTask = tasks.find((t) => t.id === Number(overId));
         if (overTask) {
-          target = classifyTask(overTask.due_date);
+          target = overTask.status === 'done' ? 'done' : classifyTask(overTask.due_date);
         }
       }
 
-      if (target !== null) {
-        const newDue = computeDueDate(target);
-        await tasksApi.update(taskId, { due_date: newDue });
+      if (target === 'done') {
+        await tasksApi.update(taskId, { status: 'done' });
+        await fetchTasks();
+      } else if (target !== null) {
+        // If moving out of done, set back to todo
+        const task = tasks.find((t) => t.id === taskId);
+        const updates: Record<string, unknown> = { due_date: computeDueDate(target) };
+        if (task?.status === 'done') updates.status = 'todo';
+        await tasksApi.update(taskId, updates);
         await fetchTasks();
       }
     }

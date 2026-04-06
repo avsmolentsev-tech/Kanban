@@ -21,7 +21,7 @@ export function TaskCard({ task, project, onClick, onToggleDone }: TaskCardProps
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={onClick}
-      className="bg-white rounded-lg border border-gray-200 p-3 cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all">
+      className={`rounded-lg border p-3 cursor-pointer hover:shadow-sm transition-all ${task.status === 'done' ? 'bg-green-50 border-green-300 hover:border-green-400' : 'bg-white border-gray-200 hover:border-indigo-300'}`}>
       <div className="flex items-start gap-2 mb-2">
         <input
           type="checkbox"
