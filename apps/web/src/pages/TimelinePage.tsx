@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DndContext, pointerWithin, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, rectIntersection, type DragEndEvent, type DragStartEvent, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { useTasksStore, useProjectsStore } from '../store';
 import { tasksApi } from '../api/tasks.api';
@@ -36,14 +36,20 @@ export function TimelinePage() {
   const [people, setPeople] = useState<Person[]>([]);
   const pMap = new Map(projects.map((p) => [p.id, p]));
 
-  // Require 8px movement before drag starts — so checkbox clicks work
-  const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 8 } });
-  const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } });
+  const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 3 } });
+  const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } });
   const sensors = useSensors(mouseSensor, touchSensor);
+  const [draggingTask, setDraggingTask] = useState<Task | null>(null);
 
   useEffect(() => { fetchTasks(); fetchProjects(); peopleApi.list().then(setPeople); }, [fetchTasks, fetchProjects]);
 
+  const handleDragStart = (e: DragStartEvent) => {
+    const id = Number(e.active.id);
+    setDraggingTask(tasks.find((t) => t.id === id) ?? null);
+  };
+
   const handleDragEnd = async (e: DragEndEvent) => {
+    setDraggingTask(null);
     const { active, over } = e;
     if (!over) return;
     const activeId = String(active.id);
@@ -90,7 +96,7 @@ export function TimelinePage() {
         <h1 className="text-xl font-bold text-gray-800">Timeline</h1>
       </div>
       <div className="flex-1 overflow-auto">
-        <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <TimelineView
             tasks={tasks}
             projects={projects}
@@ -100,6 +106,13 @@ export function TimelinePage() {
             onReorderProjects={reorderProjects}
             onRefresh={() => fetchTasks()}
           />
+          <DragOverlay>
+            {draggingTask && (
+              <div className="bg-white rounded-lg border-2 border-indigo-400 shadow-xl p-3 w-56 opacity-90">
+                <div className="text-sm font-medium text-gray-800">{draggingTask.title}</div>
+              </div>
+            )}
+          </DragOverlay>
         </DndContext>
       </div>
       <TaskDetailPanel task={selected} projects={projects} people={people} onClose={() => setSelected(null)} onUpdated={() => fetchTasks()} />
