@@ -107,3 +107,15 @@ CREATE TABLE IF NOT EXISTS meeting_people (
   person_id  INTEGER NOT NULL REFERENCES people(id),
   PRIMARY KEY (meeting_id, person_id)
 );
+
+CREATE TABLE IF NOT EXISTS documents (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  title       TEXT    NOT NULL,
+  body        TEXT    NOT NULL DEFAULT '',
+  project_id  INTEGER REFERENCES projects(id),
+  category    TEXT    NOT NULL DEFAULT 'note'
+                CHECK(category IN ('note','reference','template','archive')),
+  vault_path  TEXT,
+  created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);

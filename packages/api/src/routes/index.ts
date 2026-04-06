@@ -6,6 +6,7 @@ import { peopleRouter } from './people';
 import { ingestRouter } from './ingest';
 import { aiRouter } from './ai';
 import { ideasRouter } from './ideas';
+import { documentsRouter } from './documents';
 
 export const router = Router();
 
@@ -16,3 +17,4 @@ router.use('/people', peopleRouter);
 router.use('/ingest', ingestRouter);
 router.use('/ai', aiRouter);
 router.use('/ideas', ideasRouter);
+router.use('/documents', documentsRouter);
