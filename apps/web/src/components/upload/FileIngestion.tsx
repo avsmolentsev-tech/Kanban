@@ -1,8 +1,15 @@
 import { useState, useRef } from 'react';
 import { ingestApi } from '../../api/ingest.api';
-import type { IngestResult } from '@pis/shared';
+import type { IngestResult, Project } from '@pis/shared';
 
-export function FileIngestion({ onComplete }: { onComplete?: (r: IngestResult) => void }) {
+interface Props {
+  onComplete?: (r: IngestResult) => void;
+  projects?: Project[];
+  selectedProjectId?: number | null;
+  onProjectChange?: (id: number | null) => void;
+}
+
+export function FileIngestion({ onComplete, projects, selectedProjectId, onProjectChange }: Props) {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<IngestResult | null>(null);
@@ -12,21 +19,40 @@ export function FileIngestion({ onComplete }: { onComplete?: (r: IngestResult) =
 
   const processFile = async (file: File) => {
     setLoading(true); setError(null); setResult(null);
-    try { const r = await ingestApi.uploadFile(file); setResult(r); onComplete?.(r); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Upload failed'); }
+    try {
+      const r = await ingestApi.uploadFile(file, selectedProjectId ?? undefined);
+      setResult(r); onComplete?.(r);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Upload failed'); }
     finally { setLoading(false); }
   };
 
   const processText = async () => {
     if (!text.trim()) return;
     setLoading(true); setError(null); setResult(null);
-    try { const r = await ingestApi.pasteText(text); setResult(r); setText(''); onComplete?.(r); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Ingest failed'); }
+    try {
+      const r = await ingestApi.pasteText(text, selectedProjectId ?? undefined);
+      setResult(r); setText(''); onComplete?.(r);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ingest failed'); }
     finally { setLoading(false); }
   };
 
   return (
     <div className="space-y-4">
+      {projects && projects.length > 0 && (
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Project (optional)</label>
+          <select
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-indigo-300"
+            value={selectedProjectId ?? ''}
+            onChange={(e) => onProjectChange?.(e.target.value ? Number(e.target.value) : null)}
+          >
+            <option value="">No project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
       <div onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
         onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) processFile(f); }}
         onClick={() => fileRef.current?.click()}
