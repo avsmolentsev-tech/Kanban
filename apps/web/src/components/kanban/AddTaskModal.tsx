@@ -6,11 +6,12 @@ interface Props {
   status: TaskStatus;
   projectId: number | null;
   people: Person[];
+  dueDate?: string | null;
   onCreated: () => void;
   onCancel: () => void;
 }
 
-export function AddTaskModal({ status, projectId, people, onCreated, onCancel }: Props) {
+export function AddTaskModal({ status, projectId, people, dueDate, onCreated, onCancel }: Props) {
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState(3);
   const [personId, setPersonId] = useState<number | null>(people.length > 0 ? people[0].id : null);
@@ -26,6 +27,7 @@ export function AddTaskModal({ status, projectId, people, onCreated, onCancel }:
         priority,
         project_id: projectId ?? undefined,
         person_ids: personId !== null ? [personId] : [],
+        due_date: dueDate ?? undefined,
       });
       onCreated();
     } finally {

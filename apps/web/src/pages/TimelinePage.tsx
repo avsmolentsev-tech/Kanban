@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
 import { useTasksStore, useProjectsStore } from '../store';
 import { tasksApi } from '../api/tasks.api';
+import { peopleApi } from '../api/people.api';
 import { TimelineView, type TimePeriod, classifyTask } from '../components/timeline/TimelineView';
 import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
-import type { Task } from '@pis/shared';
+import type { Task, Person } from '@pis/shared';
 
 function computeDueDate(period: TimePeriod | 'none'): string | null {
   if (period === 'none') return null;
@@ -31,9 +32,10 @@ export function TimelinePage() {
   const { tasks, fetchTasks } = useTasksStore();
   const { projects, fetchProjects, reorderProjects } = useProjectsStore();
   const [selected, setSelected] = useState<Task | null>(null);
+  const [people, setPeople] = useState<Person[]>([]);
   const pMap = new Map(projects.map((p) => [p.id, p]));
 
-  useEffect(() => { fetchTasks(); fetchProjects(); }, [fetchTasks, fetchProjects]);
+  useEffect(() => { fetchTasks(); fetchProjects(); peopleApi.list().then(setPeople); }, [fetchTasks, fetchProjects]);
 
   const handleMoveProject = (projectId: number | null, direction: 'up' | 'down') => {
     if (projectId === null) return;
@@ -81,7 +83,7 @@ export function TimelinePage() {
       </div>
       <div className="flex-1 overflow-auto">
         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <TimelineView tasks={tasks} projects={projects} onTaskClick={setSelected} onMoveProject={handleMoveProject} />
+          <TimelineView tasks={tasks} projects={projects} people={people} onTaskClick={setSelected} onMoveProject={handleMoveProject} onRefresh={() => fetchTasks()} />
         </DndContext>
       </div>
       <TaskDetailPanel task={selected} project={selected?.project_id ? pMap.get(selected.project_id) : undefined} onClose={() => setSelected(null)} />

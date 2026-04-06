@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import type { Task, Project } from '@pis/shared';
+import type { Task, Project, Person } from '@pis/shared';
 import { TaskCard } from '../kanban/TaskCard';
+import { AddTaskModal } from '../kanban/AddTaskModal';
 
 export type TimePeriod = 'today' | 'week' | 'month' | 'year';
 
@@ -43,30 +45,43 @@ function classifyTask(dueDate: string | null): TimePeriod | 'none' {
   return 'year';
 }
 
-function TimelineColumn({ period, tasks, projects, onTaskClick }: {
+function computePeriodDueDate(period: TimePeriod): string {
+  const now = new Date();
+  switch (period) {
+    case 'today': return now.toISOString().split('T')[0]!;
+    case 'week': { const fri = new Date(now); fri.setDate(now.getDate() + (5 - now.getDay())); return fri.toISOString().split('T')[0]!; }
+    case 'month': { const end = new Date(now.getFullYear(), now.getMonth() + 1, 0); return end.toISOString().split('T')[0]!; }
+    case 'year': return `${now.getFullYear()}-12-31`;
+  }
+}
+
+function TimelineColumn({ period, tasks, projects, onTaskClick, projectId, people, onRefresh, dueDate }: {
   period: TimePeriod | 'none'; tasks: Task[]; projects: Project[]; onTaskClick: (t: Task) => void;
+  projectId: number | null; people: Person[]; onRefresh: () => void; dueDate?: string | null;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `timeline-${period}` });
   const pMap = new Map(projects.map((p) => [p.id, p]));
-  const label = period === 'none' ? 'No due date' : PERIOD_LABELS[period];
+  const [adding, setAdding] = useState(false);
 
   return (
     <div ref={setNodeRef}
       className={`flex flex-col w-64 min-w-[256px] bg-gray-100 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50' : ''}`}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-700">
-          {label}
-          <span className="ml-2 text-xs text-gray-400 font-normal">{tasks.length}</span>
-        </h3>
-      </div>
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div className="flex flex-col gap-2 flex-1 min-h-[100px]">
+        <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
           {tasks.map((t) => (
             <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} />
           ))}
-          {tasks.length === 0 && <div className="text-gray-300 text-xs text-center py-4">Drop here</div>}
+          {tasks.length === 0 && !adding && <div className="text-gray-300 text-xs text-center py-4">Drop here</div>}
         </div>
       </SortableContext>
+      {adding ? (
+        <div className="mt-2">
+          <AddTaskModal status="todo" projectId={projectId} people={people} dueDate={dueDate}
+            onCreated={() => { setAdding(false); onRefresh(); }} onCancel={() => setAdding(false)} />
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} className="mt-2 text-xs text-gray-400 hover:text-indigo-600 transition-colors self-center">+ Add</button>
+      )}
     </div>
   );
 }
@@ -74,11 +89,13 @@ function TimelineColumn({ period, tasks, projects, onTaskClick }: {
 interface Props {
   tasks: Task[];
   projects: Project[];
+  people: Person[];
   onTaskClick: (t: Task) => void;
   onMoveProject: (projectId: number | null, direction: 'up' | 'down') => void;
+  onRefresh: () => void;
 }
 
-export function TimelineView({ tasks, projects, onTaskClick, onMoveProject }: Props) {
+export function TimelineView({ tasks, projects, people, onTaskClick, onMoveProject, onRefresh }: Props) {
   const activeTasks = tasks.filter((t) => !t.archived);
 
   // Group by project, then by period
@@ -138,9 +155,12 @@ export function TimelineView({ tasks, projects, onTaskClick, onMoveProject }: Pr
             {/* Period columns */}
             <div className="flex gap-4">
               {PERIODS.map((period) => (
-                <TimelineColumn key={`${project?.id ?? 'none'}-${period}`} period={period} tasks={grouped[period]} projects={projects} onTaskClick={onTaskClick} />
+                <TimelineColumn key={`${project?.id ?? 'none'}-${period}`} period={period} tasks={grouped[period]} projects={projects}
+                  onTaskClick={onTaskClick} projectId={project?.id ?? null} people={people} onRefresh={onRefresh}
+                  dueDate={computePeriodDueDate(period)} />
               ))}
-              <TimelineColumn period="none" tasks={grouped.none} projects={projects} onTaskClick={onTaskClick} />
+              <TimelineColumn period="none" tasks={grouped.none} projects={projects} onTaskClick={onTaskClick}
+                projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
             </div>
           </div>
         );
