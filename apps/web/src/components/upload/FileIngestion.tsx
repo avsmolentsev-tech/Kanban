@@ -57,9 +57,9 @@ export function FileIngestion({ onComplete, projects, selectedProjectId, onProje
         onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) processFile(f); }}
         onClick={() => fileRef.current?.click()}
         className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${dragging ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300 hover:border-gray-400'}`}>
-        <input ref={fileRef} type="file" className="hidden" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg" onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }} />
+        <input ref={fileRef} type="file" className="hidden" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.mp3,.wav,.m4a,.ogg" onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }} />
         <div className="text-gray-500 text-sm">{loading ? 'Processing...' : 'Drop a file here or click to upload'}</div>
-        <div className="text-gray-400 text-xs mt-1">Supported: .txt, .md, .pdf, .docx, .png, .jpg, .jpeg</div>
+        <div className="text-gray-400 text-xs mt-1">Supported: .txt, .md, .pdf, .docx, .png, .jpg, .jpeg, .mp3, .wav, .m4a, .ogg</div>
       </div>
       <div>
         <textarea className="w-full border border-gray-200 rounded-lg p-3 text-sm resize-none focus:outline-none focus:border-indigo-300" rows={4} placeholder="Or paste text here..." value={text} onChange={(e) => setText(e.target.value)} />

@@ -2,6 +2,7 @@ import { parseTxt } from './txt.parser';
 import { parsePdf } from './pdf.parser';
 import { parseDocx } from './docx.parser';
 import { parseImage } from './image.parser';
+import { parseAudio } from './audio.parser';
 import type { IngestFileType } from '@pis/shared';
 
 export async function parseFile(buffer: Buffer, fileType: IngestFileType): Promise<string> {
@@ -17,6 +18,11 @@ export async function parseFile(buffer: Buffer, fileType: IngestFileType): Promi
     case 'jpg':
     case 'jpeg':
       return parseImage(buffer, fileType);
+    case 'mp3':
+    case 'wav':
+    case 'm4a':
+    case 'ogg':
+      return parseAudio(buffer, fileType);
     default:
       throw new Error(`Unsupported file type in Phase 1: ${fileType}`);
   }
