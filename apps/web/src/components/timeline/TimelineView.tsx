@@ -80,18 +80,66 @@ interface Props {
 export function TimelineView({ tasks, projects, onTaskClick }: Props) {
   const activeTasks = tasks.filter((t) => !t.archived);
 
-  const grouped: Record<TimePeriod | 'none', Task[]> = { today: [], week: [], month: [], year: [], none: [] };
+  // Group by project, then by period
+  const tasksByProject = new Map<number | null, Task[]>();
   for (const t of activeTasks) {
-    const bucket = classifyTask(t.due_date);
-    grouped[bucket].push(t);
+    const key = t.project_id;
+    if (!tasksByProject.has(key)) tasksByProject.set(key, []);
+    tasksByProject.get(key)!.push(t);
+  }
+
+  const projectOrder: Array<{ project: Project | null; tasks: Task[] }> = [];
+  for (const p of projects) {
+    const pts = tasksByProject.get(p.id);
+    projectOrder.push({ project: p, tasks: pts ?? [] });
+  }
+  const unassigned = tasksByProject.get(null);
+  if (unassigned && unassigned.length > 0) {
+    projectOrder.push({ project: null, tasks: unassigned });
   }
 
   return (
-    <div className="flex gap-4 p-4 overflow-x-auto">
-      {PERIODS.map((p) => (
-        <TimelineColumn key={p} period={p} tasks={grouped[p]} projects={projects} onTaskClick={onTaskClick} />
-      ))}
-      <TimelineColumn period="none" tasks={grouped.none} projects={projects} onTaskClick={onTaskClick} />
+    <div className="p-4 overflow-auto">
+      {/* Column headers */}
+      <div className="flex mb-2 ml-44">
+        {PERIODS.map((p) => (
+          <div key={p} className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-500 text-center">
+            {PERIOD_LABELS[p]}
+          </div>
+        ))}
+        <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-400 text-center">No due date</div>
+      </div>
+
+      {/* Project swimlanes */}
+      {projectOrder.map(({ project, tasks: pTasks }) => {
+        const grouped: Record<TimePeriod | 'none', Task[]> = { today: [], week: [], month: [], year: [], none: [] };
+        for (const t of pTasks) {
+          grouped[classifyTask(t.due_date)].push(t);
+        }
+
+        return (
+          <div key={project?.id ?? 'none'} className="flex mb-4">
+            {/* Project label */}
+            <div className="w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'No project'}</span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} task{pTasks.length !== 1 ? 's' : ''}</div>
+            </div>
+
+            {/* Period columns */}
+            <div className="flex gap-4">
+              {PERIODS.map((period) => (
+                <TimelineColumn key={`${project?.id ?? 'none'}-${period}`} period={period} tasks={grouped[period]} projects={projects} onTaskClick={onTaskClick} />
+              ))}
+              <TimelineColumn period="none" tasks={grouped.none} projects={projects} onTaskClick={onTaskClick} />
+            </div>
+          </div>
+        );
+      })}
+
+      {projectOrder.length === 0 && <div className="text-gray-400 text-sm text-center py-8">No tasks yet</div>}
     </div>
   );
 }
