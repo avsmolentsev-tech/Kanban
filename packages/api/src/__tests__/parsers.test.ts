@@ -19,6 +19,6 @@ describe('parsers', () => {
   });
 
   it('throws on unsupported type', async () => {
-    await expect(parseFile(Buffer.from('data'), 'docx')).rejects.toThrow('Unsupported file type');
+    await expect(parseFile(Buffer.from('data'), 'png')).rejects.toThrow('Unsupported file type');
   });
 });

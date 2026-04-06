@@ -1,5 +1,6 @@
 import { parseTxt } from './txt.parser';
 import { parsePdf } from './pdf.parser';
+import { parseDocx } from './docx.parser';
 import type { IngestFileType } from '@pis/shared';
 
 export async function parseFile(buffer: Buffer, fileType: IngestFileType): Promise<string> {
@@ -9,6 +10,8 @@ export async function parseFile(buffer: Buffer, fileType: IngestFileType): Promi
       return parseTxt(buffer);
     case 'pdf':
       return parsePdf(buffer);
+    case 'docx':
+      return parseDocx(buffer);
     default:
       throw new Error(`Unsupported file type in Phase 1: ${fileType}`);
   }
