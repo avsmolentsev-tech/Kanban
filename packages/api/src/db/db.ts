@@ -61,6 +61,18 @@ export function initDb(): void {
       `);
     }
   } catch {}
+  // Create FTS5 search index
+  try {
+    _db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
+        type,
+        ref_id UNINDEXED,
+        title,
+        body,
+        tokenize='unicode61'
+      )
+    `);
+  } catch {}
 }
 
 export function initTestDb(): void {
@@ -80,6 +92,18 @@ export function initTestDb(): void {
   try { _db.exec('CREATE TABLE IF NOT EXISTS people_projects (person_id INTEGER NOT NULL REFERENCES people(id), project_id INTEGER NOT NULL REFERENCES projects(id), PRIMARY KEY (person_id, project_id))'); } catch {}
   // Migrate existing project_id data to junction table
   try { _db.exec("INSERT OR IGNORE INTO people_projects (person_id, project_id) SELECT id, project_id FROM people WHERE project_id IS NOT NULL"); } catch {}
+  // Create FTS5 search index
+  try {
+    _db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
+        type,
+        ref_id UNINDEXED,
+        title,
+        body,
+        tokenize='unicode61'
+      )
+    `);
+  } catch {}
 }
 
 export function closeDb(): void {
