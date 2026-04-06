@@ -5,6 +5,7 @@ import { meetingsRouter } from './meetings';
 import { peopleRouter } from './people';
 import { ingestRouter } from './ingest';
 import { aiRouter } from './ai';
+import { ideasRouter } from './ideas';
 
 export const router = Router();
 
@@ -14,3 +15,4 @@ router.use('/meetings', meetingsRouter);
 router.use('/people', peopleRouter);
 router.use('/ingest', ingestRouter);
 router.use('/ai', aiRouter);
+router.use('/ideas', ideasRouter);

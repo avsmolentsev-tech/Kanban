@@ -5,6 +5,7 @@ import { ProjectsPage } from './pages/ProjectsPage';
 import { MeetingsPage } from './pages/MeetingsPage';
 import { PeoplePage } from './pages/PeoplePage';
 import { InboxPage } from './pages/InboxPage';
+import { IdeasPage } from './pages/IdeasPage';
 
 const nav = [
   { to: '/', label: 'Kanban' },
@@ -13,6 +14,7 @@ const nav = [
   { to: '/meetings', label: 'Meetings' },
   { to: '/people', label: 'People' },
   { to: '/inbox', label: 'Inbox' },
+  { to: '/ideas', label: 'Ideas' },
 ];
 
 export default function App() {
@@ -35,6 +37,7 @@ export default function App() {
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/people" element={<PeoplePage />} />
             <Route path="/inbox" element={<InboxPage />} />
+            <Route path="/ideas" element={<IdeasPage />} />
           </Routes>
         </main>
       </div>
