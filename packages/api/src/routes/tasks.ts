@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
+import { searchService } from '../services/search.service';
 
 export const tasksRouter = Router();
 
@@ -78,6 +79,7 @@ tasksRouter.post('/', (req: Request, res: Response) => {
     setTaskPeople(taskId, person_ids);
   }
   const task = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Record<string, unknown>;
+  searchService.indexRecord('task', taskId, parsed.data.title, parsed.data.description ?? '');
   res.status(201).json(ok(enrichTasksWithPeople([task])[0]));
 });
 
@@ -97,6 +99,7 @@ tasksRouter.patch('/:id', (req: Request, res: Response) => {
     setTaskPeople(taskId, person_ids);
   }
   const task = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Record<string, unknown>;
+  if (task) searchService.indexRecord('task', task['id'] as number, task['title'] as string, (task['description'] as string) ?? '');
   res.json(ok(enrichTasksWithPeople([task])[0]));
 });
 

@@ -4,6 +4,7 @@ import { config } from './config';
 import { router } from './routes';
 import { initDb } from './db/db';
 import { seedDb } from './db/seed';
+import { searchService } from './services/search.service';
 
 const app = express();
 
@@ -20,6 +21,8 @@ app.get('/health', (_req, res) => {
 async function start(): Promise<void> {
   initDb();
   seedDb();
+  searchService.reindexAll();
+  searchService.startVaultWatcher();
   app.listen(config.port, () => {
     console.log(`[PIS API] running on port ${config.port}`);
   });

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
+import { searchService } from '../services/search.service';
 
 export const peopleRouter = Router();
 
@@ -57,6 +58,7 @@ peopleRouter.post('/', (req: Request, res: Response) => {
   }
 
   const person = getDb().prepare('SELECT * FROM people WHERE id = ?').get(newId) as Record<string, unknown>;
+  searchService.indexRecord('person', newId, name, notes ?? '');
   const [withProjects] = attachProjects([person]);
   res.status(201).json(ok(withProjects));
 });
@@ -98,6 +100,7 @@ peopleRouter.patch('/:id', (req: Request, res: Response) => {
   }
 
   const person = getDb().prepare('SELECT * FROM people WHERE id = ?').get(id) as Record<string, unknown>;
+  if (person) searchService.indexRecord('person', person['id'] as number, person['name'] as string, (person['notes'] as string) ?? '');
   const [withProjects] = attachProjects([person]);
   res.json(ok(withProjects));
 });

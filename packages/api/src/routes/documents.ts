@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
+import { searchService } from '../services/search.service';
 
 export const documentsRouter = Router();
 
@@ -37,6 +38,7 @@ documentsRouter.post('/', (req: Request, res: Response) => {
   const result = getDb()
     .prepare('INSERT INTO documents (title, body, project_id, category, vault_path) VALUES (?, ?, ?, ?, ?)')
     .run(title, body, project_id ?? null, category, vault_path ?? null);
+  searchService.indexRecord('document', Number(result.lastInsertRowid), title, body ?? '');
   res.status(201).json(ok(getDb().prepare('SELECT * FROM documents WHERE id = ?').get(result.lastInsertRowid)));
 });
 
@@ -59,7 +61,9 @@ documentsRouter.patch('/:id', (req: Request, res: Response) => {
   getDb()
     .prepare(`UPDATE documents SET ${fields.join(', ')} WHERE id = ?`)
     .run(...values, Number(req.params['id']));
-  res.json(ok(getDb().prepare('SELECT * FROM documents WHERE id = ?').get(Number(req.params['id']))));
+  const updatedDoc = getDb().prepare('SELECT * FROM documents WHERE id = ?').get(Number(req.params['id'])) as any;
+  if (updatedDoc) searchService.indexRecord('document', updatedDoc.id, updatedDoc.title, updatedDoc.body ?? '');
+  res.json(ok(updatedDoc));
 });
 
 documentsRouter.delete('/:id', (req: Request, res: Response) => {

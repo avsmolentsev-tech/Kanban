@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
+import { searchService } from '../services/search.service';
 
 export const meetingsRouter = Router();
 
@@ -23,6 +24,7 @@ meetingsRouter.post('/', (req: Request, res: Response) => {
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { title, date, project_id, summary_raw } = parsed.data;
   const result = getDb().prepare('INSERT INTO meetings (title, date, project_id, summary_raw) VALUES (?, ?, ?, ?)').run(title, date, project_id ?? null, summary_raw);
+  searchService.indexRecord('meeting', Number(result.lastInsertRowid), title, summary_raw);
   res.status(201).json(ok(getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(result.lastInsertRowid)));
 });
 
@@ -38,7 +40,9 @@ meetingsRouter.patch('/:id', (req: Request, res: Response) => {
   const setClauses = keys.map((k) => `${k} = ?`).join(', ');
   const values = keys.map((k) => fields[k] ?? null);
   getDb().prepare(`UPDATE meetings SET ${setClauses} WHERE id = ?`).run(...values, id);
-  res.json(ok(getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id)));
+  const updated = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id) as any;
+  if (updated) searchService.indexRecord('meeting', updated.id, updated.title, updated.summary_raw ?? '');
+  res.json(ok(updated));
 });
 
 meetingsRouter.get('/:id', (req: Request, res: Response) => {

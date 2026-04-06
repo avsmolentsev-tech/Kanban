@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
+import { searchService } from '../services/search.service';
 
 export const ideasRouter = Router();
 
@@ -26,6 +27,7 @@ ideasRouter.post('/', (req: Request, res: Response) => {
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { title, body, category, project_id } = parsed.data;
   const result = getDb().prepare('INSERT INTO ideas (title, body, category, project_id) VALUES (?, ?, ?, ?)').run(title, body, category, project_id ?? null);
+  searchService.indexRecord('idea', Number(result.lastInsertRowid), title, body ?? '');
   res.status(201).json(ok(getDb().prepare('SELECT * FROM ideas WHERE id = ?').get(result.lastInsertRowid)));
 });
 
