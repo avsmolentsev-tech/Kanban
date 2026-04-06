@@ -7,6 +7,7 @@ import { PeoplePage } from './pages/PeoplePage';
 import { InboxPage } from './pages/InboxPage';
 import { IdeasPage } from './pages/IdeasPage';
 import { DocumentsPage } from './pages/DocumentsPage';
+import { SearchBar } from './components/search/SearchBar';
 
 const nav = [
   { to: '/', label: 'Kanban' },
@@ -31,18 +32,23 @@ export default function App() {
             }>{label}</NavLink>
           ))}
         </nav>
-        <main className="flex-1 overflow-auto">
-          <Routes>
-            <Route path="/" element={<KanbanPage />} />
-            <Route path="/timeline" element={<TimelinePage />} />
-            <Route path="/projects" element={<ProjectsPage />} />
-            <Route path="/meetings" element={<MeetingsPage />} />
-            <Route path="/people" element={<PeoplePage />} />
-            <Route path="/inbox" element={<InboxPage />} />
-            <Route path="/ideas" element={<IdeasPage />} />
-            <Route path="/documents" element={<DocumentsPage />} />
-          </Routes>
-        </main>
+        <div className="flex-1 flex flex-col">
+          <div className="flex items-center justify-end px-4 py-2 bg-white border-b">
+            <SearchBar />
+          </div>
+          <main className="flex-1 overflow-auto">
+            <Routes>
+              <Route path="/" element={<KanbanPage />} />
+              <Route path="/timeline" element={<TimelinePage />} />
+              <Route path="/projects" element={<ProjectsPage />} />
+              <Route path="/meetings" element={<MeetingsPage />} />
+              <Route path="/people" element={<PeoplePage />} />
+              <Route path="/inbox" element={<InboxPage />} />
+              <Route path="/ideas" element={<IdeasPage />} />
+              <Route path="/documents" element={<DocumentsPage />} />
+            </Routes>
+          </main>
+        </div>
       </div>
     </BrowserRouter>
   );
