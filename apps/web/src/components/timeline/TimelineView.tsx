@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+// Timeline uses dragMode="draggable" on TaskCards (not sortable) so cards can move between columns
 import { CSS } from '@dnd-kit/utilities';
 import type { Task, Project, Person } from '@pis/shared';
 import { TaskCard } from '../kanban/TaskCard';
@@ -70,7 +71,7 @@ function TimelineColumn({ period, tasks, projects, onTaskClick, onToggleDone, pr
       className={`flex flex-col w-64 min-w-[256px] bg-gray-100 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50' : ''}`}>
       <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
         {tasks.map((t) => (
-          <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} onToggleDone={onToggleDone} />
+          <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} onToggleDone={onToggleDone} dragMode="draggable" />
         ))}
         {tasks.length === 0 && !adding && <div className="text-gray-300 text-xs text-center py-4">Drop here</div>}
       </div>
@@ -127,11 +128,8 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
     projectOrder.push({ project: null, tasks: unassigned });
   }
 
-  const allTaskIds = activeTasks.map((t) => t.id);
-
   return (
     <div className="p-4 overflow-auto">
-      <SortableContext items={allTaskIds} strategy={verticalListSortingStrategy}>
       {/* Column headers */}
       <div className="flex mb-2 ml-44">
         {PERIODS.map((p) => (
@@ -196,7 +194,6 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
       </SortableContext>
 
       {projectOrder.length === 0 && <div className="text-gray-400 text-sm text-center py-8">No tasks yet</div>}
-      </SortableContext>
     </div>
   );
 }

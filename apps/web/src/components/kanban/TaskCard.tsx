@@ -1,4 +1,5 @@
 import { useSortable } from '@dnd-kit/sortable';
+import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import type { Task, Project, TaskStatus } from '@pis/shared';
 import { Badge } from '../ui/Badge';
@@ -8,15 +9,44 @@ interface TaskCardProps {
   project?: Project;
   onClick: () => void;
   onToggleDone: (id: number, newStatus: TaskStatus) => void;
+  dragMode?: 'sortable' | 'draggable';
 }
 
 function initials(name: string): string {
   return name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
-export function TaskCard({ task, project, onClick, onToggleDone }: TaskCardProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+function useDragProps(id: number, mode: 'sortable' | 'draggable') {
+  const sortable = useSortable({ id, disabled: mode !== 'sortable' });
+  const draggable = useDraggable({ id, disabled: mode !== 'draggable' });
+
+  if (mode === 'draggable') {
+    return {
+      setNodeRef: draggable.setNodeRef,
+      attributes: draggable.attributes,
+      listeners: draggable.listeners,
+      transform: draggable.transform,
+      transition: undefined,
+      isDragging: draggable.isDragging,
+    };
+  }
+  return {
+    setNodeRef: sortable.setNodeRef,
+    attributes: sortable.attributes,
+    listeners: sortable.listeners,
+    transform: sortable.transform,
+    transition: sortable.transition,
+    isDragging: sortable.isDragging,
+  };
+}
+
+export function TaskCard({ task, project, onClick, onToggleDone, dragMode = 'sortable' }: TaskCardProps) {
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useDragProps(task.id, dragMode);
+  const style = {
+    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
   const overdue = task.due_date ? new Date(task.due_date) < new Date() : false;
 
   return (
