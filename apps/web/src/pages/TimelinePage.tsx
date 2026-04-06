@@ -91,7 +91,7 @@ export function TimelinePage() {
           />
         </DndContext>
       </div>
-      <TaskDetailPanel task={selected} project={selected?.project_id ? pMap.get(selected.project_id) : undefined} onClose={() => setSelected(null)} />
+      <TaskDetailPanel task={selected} projects={projects} people={people} onClose={() => setSelected(null)} onUpdated={() => fetchTasks()} />
     </div>
   );
 }

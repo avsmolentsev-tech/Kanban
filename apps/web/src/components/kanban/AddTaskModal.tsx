@@ -14,7 +14,7 @@ interface Props {
 export function AddTaskModal({ status, projectId, people, dueDate, onCreated, onCancel }: Props) {
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState(3);
-  const [personId, setPersonId] = useState<number | null>(people.length > 0 ? people[0].id : null);
+  const [personId, setPersonId] = useState<number | null>(people.length > 0 ? people[0]!.id : null);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {

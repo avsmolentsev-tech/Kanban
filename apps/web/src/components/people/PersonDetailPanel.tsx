@@ -34,8 +34,8 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated }: Prop
 
   const handleBlur = (field: string) => {
     if (!person) return;
-    const newVal = (form as Record<string, unknown>)[field];
-    const oldVal = (person as Record<string, unknown>)[field];
+    const newVal = (form as unknown as Record<string, unknown>)[field];
+    const oldVal = (person as unknown as Record<string, unknown>)[field];
     if (newVal !== oldVal) save(field, newVal as string);
   };
 

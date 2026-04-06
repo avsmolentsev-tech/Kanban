@@ -75,7 +75,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated }: 
   const handleBlur = (field: keyof FormState) => {
     if (!task) return;
     const newVal = form[field];
-    const oldVal: unknown = field === 'due_date' ? (task.due_date ?? '') : (task as Record<string, unknown>)[field];
+    const oldVal: unknown = field === 'due_date' ? (task.due_date ?? '') : (task as unknown as Record<string, unknown>)[field];
     if (newVal !== oldVal) save({ [field]: newVal });
   };
 
