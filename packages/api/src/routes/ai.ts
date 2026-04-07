@@ -61,65 +61,53 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
     const db = getDb();
     const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
     const tasks = db.prepare("SELECT id, title, status, project_id FROM tasks WHERE archived = 0").all() as Array<{ id: number; title: string; status: string; project_id: number | null }>;
+    const meetings = db.prepare("SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null }>;
+    const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
 
-    const systemPrompt = `Ты — голосовой ассистент таск-трекера. Пользователь диктует команды голосом.
+    const systemPrompt = `Ты — умный ассистент таск-трекера. Пользователь даёт команды голосом или текстом.
 
-Доступные проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
-Доступные задачи: ${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
+ДАННЫЕ СИСТЕМЫ:
+Проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
+Задачи: ${JSON.stringify(tasks.slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
+Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
+Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 
 Статусы задач: backlog, todo, in_progress, done, someday
+Сегодня: ${new Date().toISOString().split('T')[0]}
 
-Верни ТОЛЬКО JSON (без markdown) с массивом действий:
+ПРАВИЛА:
+1. Если пользователь даёт команду — выполни через actions
+2. Если пользователь СПРАШИВАЕТ — ответь в response, actions пусты
+3. Если пользователь уточняет предыдущее — обнови через actions
+4. НЕ создавай объекты если пользователь просто общается!
+5. Используй контекст предыдущих сообщений для "её", "эту", "ту"
+6. Сопоставляй нечётко (голосовой ввод)
+
+Верни ТОЛЬКО JSON (без markdown, без \`\`\`):
 {
   "actions": [
-    {
-      "type": "create_task",
-      "title": "string",
-      "project_id": number | null,
-      "status": "todo",
-      "priority": 1-5,
-      "description": ""
-    },
-    {
-      "type": "move_task",
-      "task_id": number,
-      "status": "новый статус"
-    },
-    {
-      "type": "delete_task",
-      "task_id": number
-    },
-    {
-      "type": "update_task",
-      "task_id": number,
-      "title": "string (опционально)",
-      "priority": "number (опционально)",
-      "due_date": "YYYY-MM-DD (опционально)",
-      "project_id": "number (опционально)"
-    },
-    {
-      "type": "create_project",
-      "name": "string",
-      "color": "#hex"
-    }
+    {"type": "create_task", "title": "string", "project_id": number|null, "status": "todo", "priority": 1-5, "due_date": "YYYY-MM-DD"|null, "person_ids": [number]},
+    {"type": "move_task", "task_id": number, "status": "string"},
+    {"type": "delete_task", "task_id": number},
+    {"type": "update_task", "task_id": number, ...fields},
+    {"type": "create_project", "name": "string", "color": "#hex"},
+    {"type": "update_project", "project_id": number, "name": "string?", "color": "#hex?", "status": "string?"},
+    {"type": "delete_project", "project_id": number},
+    {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number]},
+    {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?},
+    {"type": "delete_meeting", "meeting_id": number},
+    {"type": "create_person", "name": "string", "company": "string?", "role": "string?"},
+    {"type": "delete_person", "person_id": number}
   ],
-  "response": "Краткий ответ пользователю о том, что сделано"
-}
-
-Если команда непонятна, верни пустой массив actions и в response напиши что не понял.
-Сопоставляй названия задач/проектов нечётко (пользователь говорит голосом, могут быть неточности).
-Если пользователь ссылается на предыдущие действия (её, эту, ту задачу), используй контекст предыдущих сообщений.`;
+  "response": "Ответ пользователю — кратко и дружелюбно"
+}`;
 
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
       ...parsed.data.history,
       { role: 'user', content: parsed.data.text },
     ];
 
-    const result = await claude.chat(
-      messages,
-      systemPrompt,
-      'gpt-4.1'
-    );
+    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1');
 
     const jsonMatch = result.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
@@ -127,60 +115,96 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
       return;
     }
 
-    const command = JSON.parse(jsonMatch[0]) as {
-      actions: Array<Record<string, unknown>>;
-      response: string;
-    };
-
+    const command = JSON.parse(jsonMatch[0]) as { actions: Array<Record<string, unknown>>; response: string };
     const results: Array<{ type: string; success: boolean; detail: string }> = [];
 
     for (const action of command.actions) {
       try {
         switch (action['type']) {
           case 'create_task': {
-            const r = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority) VALUES (?, ?, ?, ?, ?)').run(
-              action['project_id'] ?? null,
-              action['title'] as string,
-              (action['description'] as string) ?? '',
-              (action['status'] as string) ?? 'todo',
-              (action['priority'] as number) ?? 3
+            const r = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, due_date) VALUES (?, ?, ?, ?, ?, ?)').run(
+              action['project_id'] ?? null, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null
             );
-            results.push({ type: 'create_task', success: true, detail: `Задача "${action['title']}" создана (id: ${r.lastInsertRowid})` });
+            const taskId = Number(r.lastInsertRowid);
+            if (Array.isArray(action['person_ids'])) {
+              for (const pid of action['person_ids'] as number[]) db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(taskId, pid);
+            }
+            results.push({ type: 'create_task', success: true, detail: `Задача "${action['title']}" создана` });
             break;
           }
           case 'move_task': {
-            db.prepare("UPDATE tasks SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(
-              action['status'] as string,
-              action['task_id'] as number
-            );
-            results.push({ type: 'move_task', success: true, detail: `Задача #${action['task_id']} перемещена в ${action['status']}` });
+            db.prepare("UPDATE tasks SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(action['status'], action['task_id']);
+            results.push({ type: 'move_task', success: true, detail: `Задача #${action['task_id']} → ${action['status']}` });
             break;
           }
           case 'delete_task': {
-            db.prepare("UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(
-              action['task_id'] as number
-            );
+            db.prepare("UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(action['task_id']);
             results.push({ type: 'delete_task', success: true, detail: `Задача #${action['task_id']} удалена` });
             break;
           }
           case 'update_task': {
-            const fields: string[] = [];
-            const values: unknown[] = [];
-            for (const key of ['title', 'priority', 'urgency', 'due_date', 'start_date', 'project_id', 'description']) {
+            const fields: string[] = []; const values: unknown[] = [];
+            for (const key of ['title', 'priority', 'urgency', 'due_date', 'start_date', 'project_id', 'description', 'status']) {
               if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
             }
-            if (fields.length > 0) {
-              db.prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, action['task_id'] as number);
-            }
+            if (fields.length > 0) db.prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, action['task_id']);
             results.push({ type: 'update_task', success: true, detail: `Задача #${action['task_id']} обновлена` });
             break;
           }
           case 'create_project': {
-            const r = db.prepare('INSERT INTO projects (name, color) VALUES (?, ?)').run(
-              action['name'] as string,
-              (action['color'] as string) ?? '#6366f1'
-            );
-            results.push({ type: 'create_project', success: true, detail: `Проект "${action['name']}" создан (id: ${r.lastInsertRowid})` });
+            const r = db.prepare('INSERT INTO projects (name, color) VALUES (?, ?)').run(action['name'], action['color'] ?? '#6366f1');
+            results.push({ type: 'create_project', success: true, detail: `Проект "${action['name']}" создан` });
+            break;
+          }
+          case 'update_project': {
+            const fields: string[] = []; const values: unknown[] = [];
+            for (const key of ['name', 'color', 'status']) {
+              if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
+            }
+            if (fields.length > 0) db.prepare(`UPDATE projects SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, action['project_id']);
+            results.push({ type: 'update_project', success: true, detail: `Проект #${action['project_id']} обновлён` });
+            break;
+          }
+          case 'delete_project': {
+            db.prepare("UPDATE projects SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(action['project_id']);
+            results.push({ type: 'delete_project', success: true, detail: `Проект #${action['project_id']} удалён` });
+            break;
+          }
+          case 'create_meeting': {
+            const r = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw) VALUES (?, ?, ?, ?)').run(action['title'], action['date'], action['project_id'] ?? null, '');
+            const meetingId = Number(r.lastInsertRowid);
+            if (Array.isArray(action['person_ids'])) {
+              for (const pid of action['person_ids'] as number[]) db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, pid);
+            }
+            results.push({ type: 'create_meeting', success: true, detail: `Встреча "${action['title']}" на ${action['date']}` });
+            break;
+          }
+          case 'update_meeting': {
+            const fields: string[] = []; const values: unknown[] = [];
+            for (const key of ['title', 'date', 'project_id', 'summary_raw']) {
+              if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
+            }
+            if (fields.length > 0) db.prepare(`UPDATE meetings SET ${fields.join(', ')} WHERE id = ?`).run(...values, action['meeting_id']);
+            results.push({ type: 'update_meeting', success: true, detail: `Встреча #${action['meeting_id']} обновлена` });
+            break;
+          }
+          case 'delete_meeting': {
+            db.prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(action['meeting_id']);
+            db.prepare('DELETE FROM meetings WHERE id = ?').run(action['meeting_id']);
+            results.push({ type: 'delete_meeting', success: true, detail: `Встреча #${action['meeting_id']} удалена` });
+            break;
+          }
+          case 'create_person': {
+            const r = db.prepare('INSERT INTO people (name, company, role) VALUES (?, ?, ?)').run(action['name'], action['company'] ?? '', action['role'] ?? '');
+            results.push({ type: 'create_person', success: true, detail: `Контакт "${action['name']}" создан` });
+            break;
+          }
+          case 'delete_person': {
+            db.prepare('DELETE FROM task_people WHERE person_id = ?').run(action['person_id']);
+            db.prepare('DELETE FROM meeting_people WHERE person_id = ?').run(action['person_id']);
+            db.prepare('DELETE FROM people_projects WHERE person_id = ?').run(action['person_id']);
+            db.prepare('DELETE FROM people WHERE id = ?').run(action['person_id']);
+            results.push({ type: 'delete_person', success: true, detail: `Контакт #${action['person_id']} удалён` });
             break;
           }
           default:
