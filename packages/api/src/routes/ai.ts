@@ -36,7 +36,10 @@ aiRouter.post('/daily-brief', async (_req: Request, res: Response) => {
 });
 
 // Voice command — parse natural language into action and execute
-const VoiceCommandSchema = z.object({ text: z.string().min(1) });
+const VoiceCommandSchema = z.object({
+  text: z.string().min(1),
+  history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).optional().default([]),
+});
 
 aiRouter.post('/voice-command', async (req: Request, res: Response) => {
   const parsed = VoiceCommandSchema.safeParse(req.body);
@@ -92,10 +95,16 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
 }
 
 Если команда непонятна, верни пустой массив actions и в response напиши что не понял.
-Сопоставляй названия задач/проектов нечётко (пользователь говорит голосом, могут быть неточности).`;
+Сопоставляй названия задач/проектов нечётко (пользователь говорит голосом, могут быть неточности).
+Если пользователь ссылается на предыдущие действия (её, эту, ту задачу), используй контекст предыдущих сообщений.`;
+
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+      ...parsed.data.history,
+      { role: 'user', content: parsed.data.text },
+    ];
 
     const result = await claude.chat(
-      [{ role: 'user', content: parsed.data.text }],
+      messages,
       systemPrompt,
       'gpt-4.1'
     );

@@ -37,6 +37,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
   const [processing, setProcessing] = useState(false);
   const [response, setResponse] = useState('');
   const [results, setResults] = useState<VoiceResult[]>([]);
+  const [history, setHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -99,23 +100,38 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
 
   const executeCommand = async () => {
     if (!transcript.trim()) return;
+    const userText = transcript.trim();
     setProcessing(true);
     setResponse('');
     setResults([]);
 
     try {
       const data = await apiPost<{ response: string; results: VoiceResult[] }>('/ai/voice-command', {
-        text: transcript.trim(),
+        text: userText,
+        history,
       });
       setResponse(data.response);
       setResults(data.results);
       setTranscript('');
+      // Save to history for context
+      setHistory(prev => [
+        ...prev,
+        { role: 'user' as const, content: userText },
+        { role: 'assistant' as const, content: data.response },
+      ]);
       onActionDone?.();
     } catch (err) {
       setResponse(`Ошибка: ${err instanceof Error ? err.message : 'неизвестная'}`);
     } finally {
       setProcessing(false);
     }
+  };
+
+  const clearHistory = () => {
+    setHistory([]);
+    setResponse('');
+    setResults([]);
+    setTranscript('');
   };
 
   if (!supported) return null;
@@ -151,9 +167,21 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
           className="fixed bottom-36 right-4 z-50 w-80 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden"
         >
           {/* Header */}
-          <div className="px-4 py-3 bg-indigo-600 text-white">
-            <div className="font-semibold text-sm">Голосовое управление</div>
-            <div className="text-xs text-indigo-200">Скажи что сделать с задачами</div>
+          <div className="px-4 py-3 bg-indigo-600 text-white flex items-center justify-between">
+            <div>
+              <div className="font-semibold text-sm">Голосовое управление</div>
+              <div className="text-xs text-indigo-200">
+                {history.length > 0 ? `Контекст: ${history.length / 2} сообщ.` : 'Скажи что сделать с задачами'}
+              </div>
+            </div>
+            {history.length > 0 && (
+              <button
+                onClick={clearHistory}
+                className="text-xs text-indigo-200 hover:text-white px-2 py-1 rounded border border-indigo-400 hover:border-white transition-colors"
+              >
+                Сброс
+              </button>
+            )}
           </div>
 
           {/* Content */}
@@ -224,14 +252,28 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
               </div>
             )}
 
+            {/* Chat history */}
+            {history.length > 0 && !recording && (
+              <div className="max-h-32 overflow-auto space-y-1.5 border-t border-gray-100 pt-2">
+                {history.map((msg, i) => (
+                  <div key={i} className={`text-xs px-2 py-1 rounded ${
+                    msg.role === 'user' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-50 text-gray-600'
+                  }`}>
+                    <span className="font-medium">{msg.role === 'user' ? 'Вы: ' : 'Бот: '}</span>
+                    {msg.content}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Hints */}
-            {!transcript && !response && !recording && (
+            {!transcript && !response && !recording && history.length === 0 && (
               <div className="text-xs text-gray-400 space-y-1">
                 <div>Примеры:</div>
                 <div>• «Создай задачу купить молоко в проект Личные»</div>
                 <div>• «Перенеси ревью кода в работу»</div>
                 <div>• «Удали задачу написать документацию»</div>
-                <div>• «Создай проект Маркетинг»</div>
+                <div>• «А теперь перенеси её в работу»</div>
               </div>
             )}
           </div>
