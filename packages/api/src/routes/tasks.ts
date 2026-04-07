@@ -73,7 +73,7 @@ tasksRouter.get('/', (req: Request, res: Response) => {
   res.json(ok(enrichTasksWithPeople(tasks)));
 });
 
-tasksRouter.post('/', (req: Request, res: Response) => {
+tasksRouter.post('/', async (req: Request, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { project_id, title, description, status, priority, urgency, due_date, start_date, person_ids } = parsed.data;
