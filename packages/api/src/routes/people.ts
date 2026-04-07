@@ -111,7 +111,9 @@ peopleRouter.delete('/:id', (req: Request, res: Response) => {
   if (!person) { res.status(404).json(fail('Person not found')); return; }
   getDb().prepare('DELETE FROM task_people WHERE person_id = ?').run(id);
   getDb().prepare('DELETE FROM meeting_people WHERE person_id = ?').run(id);
+  getDb().prepare('DELETE FROM people_projects WHERE person_id = ?').run(id);
   getDb().prepare('DELETE FROM people WHERE id = ?').run(id);
+  searchService.removeRecord('person', id);
   res.json(ok({ deleted: true }));
 });
 
