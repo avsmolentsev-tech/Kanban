@@ -141,12 +141,17 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
       {/* FAB button */}
       <button
         onClick={() => {
-          setOpen(!open);
-          if (open) recognitionRef.current?.stop();
+          if (open) {
+            recognitionRef.current?.stop();
+            setOpen(false);
+          } else {
+            setOpen(true);
+            startRecording();
+          }
         }}
         className={`fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${
-          open ? 'bg-gray-700' : 'bg-indigo-600 hover:bg-indigo-700'
-        } ${recording ? 'animate-pulse bg-red-500' : ''}`}
+          recording ? 'animate-pulse bg-red-500' : open ? 'bg-gray-700' : 'bg-indigo-600 hover:bg-indigo-700'
+        }`}
       >
         {open ? (
           <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -213,27 +218,32 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
               </div>
             </div>
 
-            {/* Transcript */}
-            {(transcript || recording) && (
-              <textarea
-                className="w-full border border-gray-200 rounded-lg p-2.5 text-sm resize-none focus:outline-none focus:border-indigo-300 bg-gray-50"
-                rows={3}
-                value={transcript}
-                onChange={(e) => setTranscript(e.target.value)}
-                placeholder="Текст появится здесь..."
-              />
-            )}
+            {/* Transcript / text input — always visible */}
+            <textarea
+              className="w-full border border-gray-200 rounded-lg p-2.5 text-sm resize-none focus:outline-none focus:border-indigo-300 bg-gray-50"
+              rows={3}
+              value={transcript}
+              onChange={(e) => setTranscript(e.target.value)}
+              placeholder={recording ? 'Говори, текст появится...' : 'Или напиши команду текстом...'}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (transcript.trim() && !processing) {
+                    if (recording) stopRecording();
+                    executeCommand();
+                  }
+                }
+              }}
+            />
 
             {/* Execute button */}
-            {transcript.trim() && !recording && (
-              <button
-                onClick={executeCommand}
-                disabled={processing}
-                className="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-              >
-                {processing ? 'Выполняю...' : 'Выполнить'}
-              </button>
-            )}
+            <button
+              onClick={() => { if (recording) stopRecording(); executeCommand(); }}
+              disabled={processing || !transcript.trim()}
+              className="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {processing ? 'Выполняю...' : recording ? 'Стоп и выполнить' : 'Выполнить'}
+            </button>
 
             {/* Response */}
             {response && (
