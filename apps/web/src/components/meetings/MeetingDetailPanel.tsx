@@ -89,7 +89,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
   };
 
   return (
-    <SlidePanel open={!!meeting} onClose={onClose} title={meeting?.title ?? ''}>
+    <SlidePanel open={!!meeting} onClose={onClose} title={meeting?.title ?? ''} expandable>
       {meeting && (
         <div className="flex flex-col h-full">
           {/* Tabs */}
