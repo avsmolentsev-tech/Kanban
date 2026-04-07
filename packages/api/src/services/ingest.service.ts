@@ -38,9 +38,11 @@ export class IngestService {
       if (analysis.detected_type === 'meeting') {
         const date = analysis.date ?? new Date().toISOString().split('T')[0]!;
         const projectName = matchedProjectId ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(matchedProjectId) as { name: string } | undefined)?.name : undefined;
+        // Full text for Obsidian: AI summary + full transcription
+        const fullContent = `## Резюме\n${analysis.summary}\n\n## Полный текст\n${extractedText}`;
         const vaultPath = await this.obsidian.writeMeeting({
           title: analysis.title, date, people: analysis.people,
-          summary: analysis.summary, agreements: analysis.agreements.length,
+          summary: fullContent, agreements: analysis.agreements.length,
           source: originalFilename, project: projectName,
         });
         const result = db.prepare(
