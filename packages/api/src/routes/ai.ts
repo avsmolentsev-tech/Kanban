@@ -96,7 +96,8 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
 
     const result = await claude.chat(
       [{ role: 'user', content: parsed.data.text }],
-      systemPrompt
+      systemPrompt,
+      'gpt-4.1'
     );
 
     const jsonMatch = result.match(/\{[\s\S]*\}/);
