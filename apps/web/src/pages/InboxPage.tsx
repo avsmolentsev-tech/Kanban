@@ -6,6 +6,51 @@ import { ingestApi } from '../api/ingest.api';
 import { projectsApi } from '../api/projects.api';
 import type { InboxItem, IngestResult, Project } from '@pis/shared';
 
+function InboxItemRow({ item, onDelete }: { item: InboxItem; onDelete: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <li className="py-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+          <div className="text-sm text-gray-700 flex items-center gap-2">
+            <span className="truncate">{item.original_filename}</span>
+            {item.extracted_text && (
+              <span className="text-xs text-gray-400">{expanded ? '▼' : '▶'}</span>
+            )}
+          </div>
+          {!expanded && item.extracted_text && (
+            <div className="text-xs text-gray-400 truncate max-w-md">{item.extracted_text.slice(0, 100)}</div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {item.target_type && (
+            <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full capitalize">{item.target_type}</span>
+          )}
+          {item.processed ? (
+            <span className="text-xs text-green-500">OK</span>
+          ) : item.error ? (
+            <span className="text-xs text-red-400">Err</span>
+          ) : (
+            <span className="text-xs text-yellow-400">...</span>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); if (confirm('Удалить?')) onDelete(); }}
+            className="text-xs text-red-400 hover:text-red-600 px-1"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+      {expanded && item.extracted_text && (
+        <div className="mt-2 p-3 bg-gray-50 rounded-lg text-xs text-gray-600 whitespace-pre-wrap max-h-60 overflow-auto">
+          {item.extracted_text}
+        </div>
+      )}
+    </li>
+  );
+}
+
 export function InboxPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
@@ -85,26 +130,10 @@ export function InboxPage() {
           ) : (
             <ul className="divide-y divide-gray-100">
               {recentItems.map((item) => (
-                <li key={item.id} className="py-2 flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm text-gray-700 truncate">{item.original_filename}</div>
-                    {item.extracted_text && (
-                      <div className="text-xs text-gray-400 truncate max-w-xs">{item.extracted_text.slice(0, 80)}</div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {item.target_type && (
-                      <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full capitalize">{item.target_type}</span>
-                    )}
-                    {item.processed ? (
-                      <span className="text-xs text-green-500">Done</span>
-                    ) : item.error ? (
-                      <span className="text-xs text-red-400">Error</span>
-                    ) : (
-                      <span className="text-xs text-yellow-400">Pending</span>
-                    )}
-                  </div>
-                </li>
+                <InboxItemRow key={item.id} item={item} onDelete={async () => {
+                  await ingestApi.delete(item.id);
+                  fetchRecent();
+                }} />
               ))}
             </ul>
           )}

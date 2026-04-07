@@ -17,6 +17,7 @@ interface Props {
   people: Person[];
   onClose: () => void;
   onUpdated: () => void;
+  onDeleted?: () => void;
 }
 
 type FormState = {
@@ -29,7 +30,7 @@ type FormState = {
   project_id: number | null;
 };
 
-export function TaskDetailPanel({ task, projects, people, onClose, onUpdated }: Props) {
+export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, onDeleted }: Props) {
   const [form, setForm] = useState<FormState>({
     title: '',
     description: '',
@@ -212,7 +213,22 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated }: 
             </div>
           )}
 
-          <div className="text-xs text-gray-400 pt-2">Created: {task.created_at}</div>
+          <div className="text-xs text-gray-400 pt-2">Создано: {task.created_at}</div>
+
+          {onDeleted && (
+            <button
+              onClick={async () => {
+                if (confirm('Удалить задачу?')) {
+                  await tasksApi.delete(task.id);
+                  onDeleted();
+                  onClose();
+                }
+              }}
+              className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors"
+            >
+              Удалить задачу
+            </button>
+          )}
         </div>
       )}
     </SlidePanel>

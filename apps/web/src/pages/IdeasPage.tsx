@@ -194,6 +194,7 @@ export function IdeasPage() {
         projects={projects}
         onClose={() => setSelectedIdea(null)}
         onUpdated={() => { load(); setSelectedIdea(null); }}
+        onDeleted={() => { setSelectedIdea(null); load(); }}
       />
     </div>
   );

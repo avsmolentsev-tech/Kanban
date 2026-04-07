@@ -10,9 +10,10 @@ interface Props {
   project: Project | null;
   onClose: () => void;
   onUpdated: () => void;
+  onDeleted?: () => void;
 }
 
-export function ProjectDetailPanel({ project, onClose, onUpdated }: Props) {
+export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: Props) {
   const [form, setForm] = useState<Partial<Project>>({});
 
   useEffect(() => {
@@ -106,7 +107,22 @@ export function ProjectDetailPanel({ project, onClose, onUpdated }: Props) {
             </div>
           </div>
 
-          <div className="text-xs text-gray-400 pt-2">Created: {project.created_at}</div>
+          <div className="text-xs text-gray-400 pt-2">Создано: {project.created_at}</div>
+
+          {onDeleted && (
+            <button
+              onClick={async () => {
+                if (confirm(`Удалить проект "${project.name}"?`)) {
+                  await projectsApi.delete(project.id);
+                  onDeleted();
+                  onClose();
+                }
+              }}
+              className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors"
+            >
+              Удалить проект
+            </button>
+          )}
         </div>
       )}
     </SlidePanel>

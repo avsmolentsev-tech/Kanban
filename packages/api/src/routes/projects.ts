@@ -64,3 +64,9 @@ projectsRouter.patch('/:id', (req: Request, res: Response) => {
   const updated = getDb().prepare('SELECT * FROM projects WHERE id = ?').get(Number(req.params['id']));
   res.json(ok(updated));
 });
+
+projectsRouter.delete('/:id', (req: Request, res: Response) => {
+  const id = Number(req.params['id']);
+  getDb().prepare("UPDATE projects SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(id);
+  res.json(ok({ deleted: true }));
+});

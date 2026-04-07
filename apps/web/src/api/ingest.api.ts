@@ -26,4 +26,7 @@ export const ingestApi = {
     return res.data.data;
   },
   status: (id: number) => apiClient.get<ApiResponse<InboxItem>>(`/ingest/status/${id}`).then(r => r.data.data),
+  delete: async (id: number): Promise<void> => {
+    await apiClient.delete(`/ingest/${id}`);
+  },
 };

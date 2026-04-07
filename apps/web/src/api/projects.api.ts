@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPatch } from './client';
+import { apiGet, apiPost, apiPatch, apiDelete } from './client';
 import type { Project, CreateProjectDto, UpdateProjectDto } from '@pis/shared';
 
 export const projectsApi = {
@@ -7,4 +7,5 @@ export const projectsApi = {
   get: (id: number) => apiGet<Project & { tasks: unknown[]; meetings: unknown[] }>(`/projects/${id}`),
   update: (id: number, dto: UpdateProjectDto) => apiPatch<Project>(`/projects/${id}`, dto),
   reorder: (items: Array<{ id: number; order_index: number }>) => apiPatch<Project[]>('/projects/reorder', items),
+  delete: (id: number) => apiDelete<{ deleted: boolean }>(`/projects/${id}`),
 };

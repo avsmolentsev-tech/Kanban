@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { SlidePanel } from '../ui/SlidePanel';
-import { apiPatch } from '../../api/client';
+import { apiPatch, apiDelete } from '../../api/client';
 import type { Project } from '@pis/shared';
 
 interface Idea {
@@ -26,9 +26,10 @@ interface Props {
   projects: Project[];
   onClose: () => void;
   onUpdated: () => void;
+  onDeleted?: () => void;
 }
 
-export function IdeaDetailPanel({ idea, projects, onClose, onUpdated }: Props) {
+export function IdeaDetailPanel({ idea, projects, onClose, onUpdated, onDeleted }: Props) {
   const [form, setForm] = useState<Partial<Idea>>({});
 
   useEffect(() => {
@@ -120,7 +121,22 @@ export function IdeaDetailPanel({ idea, projects, onClose, onUpdated }: Props) {
             </select>
           </div>
 
-          <div className="text-xs text-gray-400 pt-2">Created: {idea.created_at.split('T')[0]}</div>
+          <div className="text-xs text-gray-400 pt-2">Создано: {idea.created_at.split('T')[0]}</div>
+
+          {onDeleted && (
+            <button
+              onClick={async () => {
+                if (confirm('Удалить идею?')) {
+                  await apiDelete(`/ideas/${idea.id}`);
+                  onDeleted();
+                  onClose();
+                }
+              }}
+              className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors"
+            >
+              Удалить идею
+            </button>
+          )}
         </div>
       )}
     </SlidePanel>

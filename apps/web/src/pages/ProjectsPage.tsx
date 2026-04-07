@@ -78,6 +78,7 @@ export function ProjectsPage() {
         project={selected}
         onClose={() => setSelected(null)}
         onUpdated={() => { fetchProjects(); setSelected((prev) => prev ? (projects.find((p) => p.id === prev.id) ?? prev) : null); }}
+        onDeleted={() => { setSelected(null); fetchProjects(); }}
       />
     </div>
   );
