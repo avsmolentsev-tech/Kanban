@@ -147,8 +147,11 @@ export class SearchService {
               const refId = -(Math.abs(this.hashCode(filename)) % 1000000);
               this.indexRecord('vault', refId, title, content);
 
-              // Sync back to DB if it's a task file with frontmatter
+              // Sync back to DB if it's a task/meeting file with frontmatter
               this.syncVaultFileToDb(filename, content);
+            } else {
+              // File deleted in Obsidian → archive in DB
+              this.archiveDeletedVaultFile(filename);
             }
           } catch {}
         }, 500));
@@ -187,6 +190,31 @@ export class SearchService {
           db.prepare(`UPDATE tasks SET ${updates.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, task.id);
           console.log(`[vault-sync] updated task #${task.id} from ${vaultRelPath}`);
         }
+      }
+    } catch {}
+  }
+
+  /** Archive DB records when vault file is deleted */
+  private archiveDeletedVaultFile(filename: string): void {
+    try {
+      const db = getDb();
+      const vaultRelPath = filename.replace(/\\/g, '/');
+
+      // Check tasks
+      const task = db.prepare('SELECT id FROM tasks WHERE vault_path = ?').get(vaultRelPath) as { id: number } | undefined;
+      if (task) {
+        db.prepare("UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(task.id);
+        console.log(`[vault-sync] archived task #${task.id} (file deleted: ${vaultRelPath})`);
+        return;
+      }
+
+      // Check meetings
+      const meeting = db.prepare('SELECT id FROM meetings WHERE vault_path = ?').get(vaultRelPath) as { id: number } | undefined;
+      if (meeting) {
+        db.prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(meeting.id);
+        db.prepare('DELETE FROM meetings WHERE id = ?').run(meeting.id);
+        console.log(`[vault-sync] deleted meeting #${meeting.id} (file deleted: ${vaultRelPath})`);
+        return;
       }
     } catch {}
   }
