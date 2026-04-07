@@ -1,8 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
+import { ObsidianService } from '../services/obsidian.service';
+import { config } from '../config';
+import OpenAI from 'openai';
+
+const obsidian = new ObsidianService(config.vaultPath);
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const openai = new OpenAI({ apiKey: config.openaiApiKey });
 
 export const meetingsRouter = Router();
 
@@ -19,13 +27,20 @@ meetingsRouter.get('/', (req: Request, res: Response) => {
   res.json(ok(getDb().prepare(query).all(...params)));
 });
 
-meetingsRouter.post('/', (req: Request, res: Response) => {
+meetingsRouter.post('/', async (req: Request, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { title, date, project_id, summary_raw } = parsed.data;
   const result = getDb().prepare('INSERT INTO meetings (title, date, project_id, summary_raw) VALUES (?, ?, ?, ?)').run(title, date, project_id ?? null, summary_raw);
-  searchService.indexRecord('meeting', Number(result.lastInsertRowid), title, summary_raw);
-  res.status(201).json(ok(getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(result.lastInsertRowid)));
+  const meetingId = Number(result.lastInsertRowid);
+  searchService.indexRecord('meeting', meetingId, title, summary_raw);
+  // Sync to vault
+  try {
+    const projectName = project_id ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(project_id) as { name: string } | undefined)?.name : undefined;
+    const vaultPath = await obsidian.writeMeeting({ title, date, project: projectName, summary: summary_raw, people: [] });
+    getDb().prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultPath, meetingId);
+  } catch {}
+  res.status(201).json(ok(getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId)));
 });
 
 meetingsRouter.patch('/:id', (req: Request, res: Response) => {
@@ -51,4 +66,60 @@ meetingsRouter.get('/:id', (req: Request, res: Response) => {
   const agreements = getDb().prepare('SELECT * FROM agreements WHERE meeting_id = ?').all(Number(req.params['id']));
   const people = getDb().prepare('SELECT p.* FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(Number(req.params['id']));
   res.json(ok({ ...meeting as object, agreements, people }));
+});
+
+// Transcribe audio file and attach to meeting
+meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: Request, res: Response) => {
+  const id = Number(req.params['id']);
+  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
+
+  try {
+    let transcript = '';
+
+    if (req.file) {
+      // Transcribe audio via Whisper
+      const file = new File([req.file.buffer], req.file.originalname || 'audio.ogg', { type: req.file.mimetype });
+      const result = await openai.audio.transcriptions.create({
+        model: 'whisper-1',
+        file,
+        language: 'ru',
+      });
+      transcript = result.text;
+    } else if (req.body.text) {
+      transcript = req.body.text;
+    } else {
+      res.status(400).json(fail('No audio file or text provided'));
+      return;
+    }
+
+    // Append transcript to summary
+    const existingSummary = (meeting['summary_raw'] as string) || '';
+    const newSummary = existingSummary
+      ? `${existingSummary}\n\n---\nТранскрипция (${new Date().toLocaleString('ru')}):\n${transcript}`
+      : transcript;
+
+    getDb().prepare("UPDATE meetings SET summary_raw = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(newSummary, id);
+    searchService.indexRecord('meeting', id, meeting['title'] as string, newSummary);
+
+    // Update vault file
+    try {
+      const vp = meeting['vault_path'] as string | null;
+      if (vp) {
+        const projectName = meeting['project_id'] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(meeting['project_id'] as number) as { name: string } | undefined)?.name : undefined;
+        await obsidian.writeMeeting({
+          title: meeting['title'] as string,
+          date: meeting['date'] as string,
+          project: projectName,
+          summary: newSummary,
+          people: [],
+        });
+      }
+    } catch {}
+
+    const updated = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id);
+    res.json(ok({ ...updated as object, transcript }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Transcription error'));
+  }
 });
