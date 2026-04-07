@@ -141,14 +141,6 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                 </div>
               </div>
 
-              {/* Delete — visible at top */}
-              {onDeleted && (
-                <button onClick={async () => { if (confirm('Удалить встречу?')) { await meetingsApi.delete(meeting.id); onDeleted(); onClose(); } }}
-                  className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors">
-                  Удалить встречу
-                </button>
-              )}
-
               {onTranscribe && (
                 <button onClick={onTranscribe} disabled={transcribing}
                   className="w-full py-2.5 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2">
@@ -178,6 +170,13 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
               )}
 
               <div className="text-xs text-gray-400">Создано: {meeting.created_at}</div>
+
+              {onDeleted && (
+                <button onClick={async () => { if (confirm('Удалить встречу?')) { await meetingsApi.delete(meeting.id); onDeleted(); onClose(); } }}
+                  className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors">
+                  Удалить встречу
+                </button>
+              )}
             </div>
           )}
 
