@@ -244,6 +244,7 @@ export function MeetingsPage() {
           projects={projects}
           onClose={() => setSelected(null)}
           onUpdated={() => { load(); }}
+          onDeleted={() => { setSelected(null); load(); }}
           onTranscribe={() => fileRef.current?.click()}
           transcribing={transcribing}
         />

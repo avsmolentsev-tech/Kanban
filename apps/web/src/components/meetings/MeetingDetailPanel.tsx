@@ -8,11 +8,12 @@ interface Props {
   projects: Project[];
   onClose: () => void;
   onUpdated: () => void;
+  onDeleted?: () => void;
   onTranscribe?: () => void;
   transcribing?: boolean;
 }
 
-export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onTranscribe, transcribing }: Props) {
+export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDeleted, onTranscribe, transcribing }: Props) {
   const [form, setForm] = useState<Partial<Meeting>>({});
 
   useEffect(() => {
@@ -116,6 +117,22 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onTr
           )}
 
           <div className="text-xs text-gray-400">Создано: {meeting.created_at}</div>
+
+          {/* Delete */}
+          {onDeleted && (
+            <button
+              onClick={async () => {
+                if (confirm('Удалить встречу?')) {
+                  await meetingsApi.delete(meeting.id);
+                  onDeleted();
+                  onClose();
+                }
+              }}
+              className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors"
+            >
+              Удалить встречу
+            </button>
+          )}
         </div>
       )}
     </SlidePanel>

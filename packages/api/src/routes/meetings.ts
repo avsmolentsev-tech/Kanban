@@ -68,6 +68,18 @@ meetingsRouter.get('/:id', (req: Request, res: Response) => {
   res.json(ok({ ...meeting as object, agreements, people }));
 });
 
+meetingsRouter.delete('/:id', (req: Request, res: Response) => {
+  const id = Number(req.params['id']);
+  const meeting = getDb().prepare('SELECT vault_path FROM meetings WHERE id = ?').get(id) as { vault_path: string | null } | undefined;
+  if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
+  getDb().prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(id);
+  getDb().prepare('DELETE FROM agreements WHERE meeting_id = ?').run(id);
+  getDb().prepare('DELETE FROM meetings WHERE id = ?').run(id);
+  searchService.removeRecord('meeting', id);
+  try { if (meeting.vault_path) obsidian.deleteFile(meeting.vault_path); } catch {}
+  res.json(ok({ deleted: true }));
+});
+
 // Transcribe audio file and attach to meeting
 meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: Request, res: Response) => {
   const id = Number(req.params['id']);
