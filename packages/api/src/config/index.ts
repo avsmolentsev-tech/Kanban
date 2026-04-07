@@ -13,4 +13,5 @@ export const config = {
   maxFileSizeMb: parseInt(process.env['MAX_FILE_SIZE_MB'] ?? '50', 10),
   telegramBotToken: process.env['TELEGRAM_BOT_TOKEN'] ?? '',
   telegramUserId: process.env['TELEGRAM_USER_ID'] ?? '',
+  webappUrl: process.env['WEBAPP_URL'] ?? '',
 } as const;

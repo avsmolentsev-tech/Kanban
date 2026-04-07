@@ -1,4 +1,4 @@
-import { Telegraf } from 'telegraf';
+import { Telegraf, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { config } from '../config';
 import { getDb } from '../db/db';
@@ -17,17 +17,36 @@ export class TelegramService {
 
     // /start
     this.bot.command('start', (ctx) => {
-      ctx.reply(
-        'PIS Bot ready!\n\n' +
-        'Commands:\n' +
-        '/tasks — today\'s tasks\n' +
-        '/all — all active tasks\n' +
-        '/projects — list projects\n' +
-        '/add <title> — quick add task\n' +
-        '/brief — daily brief\n' +
-        '/search <query> — search\n\n' +
-        'Send any text, voice, or file → goes to Inbox'
-      );
+      const text =
+        '🚀 Бот готов к работе!\n\n' +
+        'Команды:\n' +
+        '/tasks — активные задачи\n' +
+        '/all — все задачи по статусам\n' +
+        '/projects — список проектов\n' +
+        '/add <название> — быстро добавить задачу\n' +
+        '/brief — дневной брифинг\n' +
+        '/search <запрос> — поиск\n' +
+        '/app — открыть приложение\n\n' +
+        'Отправь текст, голосовое или файл → попадёт в Inbox';
+
+      if (config.webappUrl) {
+        ctx.reply(text, Markup.inlineKeyboard([
+          Markup.button.webApp('📱 Открыть приложение', config.webappUrl),
+        ]));
+      } else {
+        ctx.reply(text);
+      }
+    });
+
+    // /app — open Mini App
+    this.bot.command('app', (ctx) => {
+      if (!config.webappUrl) {
+        ctx.reply('⚠️ URL приложения не настроен (WEBAPP_URL)');
+        return;
+      }
+      ctx.reply('📱 Открыть приложение:', Markup.inlineKeyboard([
+        Markup.button.webApp('Открыть', config.webappUrl),
+      ]));
     });
 
     // /tasks — today's tasks
@@ -38,7 +57,7 @@ export class TelegramService {
       ).all() as Array<{ title: string; status: string; priority: number; due_date: string | null; project_id: number | null }>;
 
       if (tasks.length === 0) {
-        ctx.reply('No active tasks!');
+        ctx.reply('Нет активных задач!');
         return;
       }
 
@@ -54,7 +73,7 @@ export class TelegramService {
         return `${status} ${t.title} ${project}${due}\n   ${priority}`;
       });
 
-      ctx.reply(`📋 Active tasks:\n\n${lines.join('\n\n')}`);
+      ctx.reply(`📋 Активные задачи:\n\n${lines.join('\n\n')}`);
     });
 
     // /all — all tasks grouped by status
@@ -71,15 +90,15 @@ export class TelegramService {
       }
 
       const statusLabels: Record<string, string> = {
-        backlog: '📥 Backlog', todo: '📋 To Do', in_progress: '🔄 In Progress',
-        done: '✅ Done', someday: '🔮 Someday'
+        backlog: '📥 Бэклог', todo: '📋 К выполнению', in_progress: '🔄 В работе',
+        done: '✅ Готово', someday: '🔮 Когда-нибудь'
       };
 
       const text = Object.entries(grouped)
         .map(([status, items]) => `${statusLabels[status] ?? status}\n${items.join('\n')}`)
         .join('\n\n');
 
-      ctx.reply(text || 'No tasks');
+      ctx.reply(text || 'Нет задач');
     });
 
     // /projects
@@ -89,16 +108,16 @@ export class TelegramService {
       ).all() as Array<{ name: string; status: string }>;
 
       const lines = projects.map(p => `• ${p.name} (${p.status})`);
-      ctx.reply(`📁 Projects:\n\n${lines.join('\n')}` || 'No projects');
+      ctx.reply(`📁 Проекты:\n\n${lines.join('\n')}` || 'Нет проектов');
     });
 
     // /add <title> — quick add task
     this.bot.command('add', (ctx) => {
       const text = ctx.message.text.replace(/^\/add\s*/, '').trim();
-      if (!text) { ctx.reply('Usage: /add Task title'); return; }
+      if (!text) { ctx.reply('Формат: /add Название задачи'); return; }
 
       getDb().prepare('INSERT INTO tasks (title, status, priority) VALUES (?, ?, ?)').run(text, 'todo', 3);
-      ctx.reply(`✅ Task added: ${text}`);
+      ctx.reply(`✅ Задача добавлена: ${text}`);
     });
 
     // /brief — daily brief
@@ -112,12 +131,12 @@ export class TelegramService {
         'SELECT title, date FROM meetings WHERE date >= ? ORDER BY date ASC LIMIT 5'
       ).all(today);
 
-      let brief = '🌅 Daily Brief\n\n';
-      brief += `📋 Active tasks: ${(tasks as Array<unknown>).length}\n`;
-      brief += `📅 Upcoming meetings: ${(meetings as Array<unknown>).length}\n\n`;
+      let brief = '🌅 Дневной брифинг\n\n';
+      brief += `📋 Активных задач: ${(tasks as Array<unknown>).length}\n`;
+      brief += `📅 Предстоящих встреч: ${(meetings as Array<unknown>).length}\n\n`;
 
       if ((tasks as Array<{ title: string }>).length > 0) {
-        brief += 'Top tasks:\n';
+        brief += 'Приоритетные задачи:\n';
         for (const t of tasks as Array<{ title: string; priority: number }>) {
           brief += `  • ${t.title} ${'⭐'.repeat(t.priority)}\n`;
         }
@@ -129,15 +148,15 @@ export class TelegramService {
     // /search <query>
     this.bot.command('search', (ctx) => {
       const query = ctx.message.text.replace(/^\/search\s*/, '').trim();
-      if (!query) { ctx.reply('Usage: /search keyword'); return; }
+      if (!query) { ctx.reply('Формат: /search ключевое слово'); return; }
 
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { searchService } = require('./search.service');
       const results = searchService.search(query, 10);
-      if (results.length === 0) { ctx.reply('Nothing found'); return; }
+      if (results.length === 0) { ctx.reply('Ничего не найдено'); return; }
 
       const lines = results.map((r: { type: string; title: string }) => `[${r.type}] ${r.title}`);
-      ctx.reply(`🔍 Results:\n\n${lines.join('\n')}`);
+      ctx.reply(`🔍 Результаты:\n\n${lines.join('\n')}`);
     });
 
     // Any text message → inbox
@@ -146,7 +165,7 @@ export class TelegramService {
       try {
         const ingestService = new IngestService();
         const result = await ingestService.ingestText(ctx.message.text);
-        ctx.reply(`📥 Processed: ${result.detected_type}\n${result.summary}`);
+        ctx.reply(`📥 Обработано: ${result.detected_type}\n${result.summary}`);
       } catch (err) {
         ctx.reply(`❌ Error: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
@@ -162,7 +181,7 @@ export class TelegramService {
 
         const ingestService = new IngestService();
         const result = await ingestService.ingestBuffer(buffer, 'voice.ogg');
-        ctx.reply(`🎤 Voice processed: ${result.detected_type}\n${result.summary}`);
+        ctx.reply(`🎤 Голосовое обработано: ${result.detected_type}\n${result.summary}`);
       } catch (err) {
         ctx.reply(`❌ Error: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
@@ -178,7 +197,7 @@ export class TelegramService {
 
         const ingestService = new IngestService();
         const result = await ingestService.ingestBuffer(buffer, doc.file_name ?? 'file');
-        ctx.reply(`📄 File processed: ${result.detected_type}\n${result.summary}`);
+        ctx.reply(`📄 Файл обработан: ${result.detected_type}\n${result.summary}`);
       } catch (err) {
         ctx.reply(`❌ Error: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
@@ -193,7 +212,7 @@ export class TelegramService {
 
         const ingestService = new IngestService();
         const result = await ingestService.ingestBuffer(buffer, 'photo.jpg');
-        ctx.reply(`📷 Photo processed: ${result.detected_type}\n${result.summary}`);
+        ctx.reply(`📷 Фото обработано: ${result.detected_type}\n${result.summary}`);
       } catch (err) {
         ctx.reply(`❌ Error: ${err instanceof Error ? err.message : 'Unknown'}`);
       }

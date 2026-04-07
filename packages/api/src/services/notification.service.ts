@@ -22,8 +22,8 @@ function checkOverdueTasks(): void {
 
   if (overdue.length === 0) return;
 
-  const lines = overdue.map(t => `⚠️ <b>${t.title}</b> (due: ${t.due_date})`);
-  const message = `🔔 Overdue tasks (${overdue.length}):\n\n${lines.join('\n')}`;
+  const lines = overdue.map(t => `⚠️ <b>${t.title}</b> (срок: ${t.due_date})`);
+  const message = `🔔 Просроченные задачи (${overdue.length}):\n\n${lines.join('\n')}`;
 
   telegramService.notify(message);
 }
