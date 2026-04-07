@@ -19,34 +19,39 @@ export class TelegramService {
     const meetings = db.prepare("SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null }>;
     const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
 
-    const systemPrompt = `Ты — ассистент таск-трекера в Telegram. Пользователь даёт команды текстом или голосом.
+    const systemPrompt = `Ты — умный ассистент таск-трекера в Telegram. Ты ведёшь диалог с пользователем.
 
-Доступные проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
-Доступные задачи: ${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
-Последние встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
+ДАННЫЕ СИСТЕМЫ:
+Проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
+Задачи: ${JSON.stringify(tasks.slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
+Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 
 Статусы задач: backlog, todo, in_progress, done, someday
 Сегодня: ${new Date().toISOString().split('T')[0]}
 
-Верни ТОЛЬКО JSON (без markdown):
+ПРАВИЛА:
+1. Если пользователь даёт команду (создай, перенеси, удали, привяжи, обнови) — выполни через actions
+2. Если пользователь СПРАШИВАЕТ или ОБЩАЕТСЯ (что у меня, как дела, расскажи) — ответь в response, actions пусты
+3. Если пользователь уточняет предыдущее действие ("привяжи к проекту X", "добавь туда Васю") — обнови через actions
+4. НЕ создавай встречи/задачи если пользователь просто общается или уточняет!
+5. Используй контекст предыдущих сообщений для "её", "эту", "ту встречу/задачу"
+6. Сопоставляй названия нечётко (голосовой ввод → неточности)
+
+Верни ТОЛЬКО JSON (без markdown, без \`\`\`):
 {
   "actions": [
     {"type": "create_task", "title": "string", "project_id": number|null, "status": "todo", "priority": 1-5, "due_date": "YYYY-MM-DD"|null, "person_ids": [number]},
     {"type": "move_task", "task_id": number, "status": "string"},
     {"type": "delete_task", "task_id": number},
-    {"type": "update_task", "task_id": number, "title": "string?", "priority": number?, "due_date": "YYYY-MM-DD?", "project_id": number?},
+    {"type": "update_task", "task_id": number, "title": "string?", "priority": number?, "due_date": "YYYY-MM-DD?", "project_id": number?, "person_ids": [number]?},
     {"type": "create_project", "name": "string", "color": "#hex"},
-    {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number]},
-    {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?}
+    {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number], "summary_raw": "string?"},
+    {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?, "person_ids": [number]?, "summary_raw": "string?"},
+    {"type": "delete_meeting", "meeting_id": number}
   ],
-  "response": "Краткий ответ пользователю"
-}
-
-Если непонятно — пустой actions и вопрос в response.
-Если пользователь спрашивает (не командует) — пустой actions и ответ в response.
-Сопоставляй нечётко (голос → ошибки).
-Используй контекст предыдущих сообщений для "её", "эту", "ту задачу".`;
+  "response": "Ответ пользователю — будь кратким и дружелюбным"
+}`;
 
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
       ...this.chatHistory.slice(-10), // last 5 exchanges
@@ -108,8 +113,9 @@ export class TelegramService {
             break;
           }
           case 'create_meeting': {
+            const summary = (action['summary_raw'] as string) ?? '';
             const r = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw) VALUES (?, ?, ?, ?)').run(
-              action['title'], action['date'], action['project_id'] ?? null, ''
+              action['title'], action['date'], action['project_id'] ?? null, summary
             );
             const meetingId = Number(r.lastInsertRowid);
             if (Array.isArray(action['person_ids'])) {
@@ -117,19 +123,32 @@ export class TelegramService {
                 db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, pid);
               }
             }
-            results.push(`✅ Встреча "${action['title']}" на ${action['date']}`);
+            const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
+            results.push(`✅ Встреча "${action['title']}" на ${action['date']}${projName ? ` [${projName}]` : ''}`);
             break;
           }
           case 'update_meeting': {
             const fields: string[] = [];
             const values: unknown[] = [];
-            for (const key of ['title', 'date', 'project_id']) {
+            for (const key of ['title', 'date', 'project_id', 'summary_raw']) {
               if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
             }
             if (fields.length > 0) {
               db.prepare(`UPDATE meetings SET ${fields.join(', ')} WHERE id = ?`).run(...values, action['meeting_id']);
             }
+            if (Array.isArray(action['person_ids'])) {
+              db.prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(action['meeting_id']);
+              for (const pid of action['person_ids'] as number[]) {
+                db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(action['meeting_id'], pid);
+              }
+            }
             results.push(`✅ Встреча #${action['meeting_id']} обновлена`);
+            break;
+          }
+          case 'delete_meeting': {
+            db.prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(action['meeting_id']);
+            db.prepare('DELETE FROM meetings WHERE id = ?').run(action['meeting_id']);
+            results.push(`🗑 Встреча #${action['meeting_id']} удалена`);
             break;
           }
         }
@@ -148,12 +167,30 @@ export class TelegramService {
     return responseText;
   }
 
-  /** Detect if text is a command or content for ingest */
-  private async classifyMessage(text: string): Promise<'command' | 'ingest'> {
-    const cmdPatterns = /^(созда|добав|перенес|перемест|удал|сделай|поставь|измени|обнови|покажи|какие|сколько|что у меня|запланируй|назначь|отмен)/i;
-    if (cmdPatterns.test(text.trim())) return 'command';
-    if (text.length > 300) return 'ingest'; // Long text = likely content
+  /** Classify message using AI */
+  private async classifyMessage(text: string): Promise<'command' | 'ingest' | 'chat'> {
+    // Short messages are almost always commands or chat
+    if (text.length < 200) {
+      const cmdPatterns = /^(созда|добав|перенес|перемест|удал|сделай|поставь|измени|обнови|покажи|какие|сколько|что у меня|запланируй|назначь|отмен|привяжи|прикрепи|отредактируй|поменяй)/i;
+      if (cmdPatterns.test(text.trim())) return 'command';
+      // If we have chat history, likely a follow-up
+      if (this.chatHistory.length > 0) return 'command';
+      return 'chat';
+    }
+    // Long text = content to ingest
     return 'ingest';
+  }
+
+  /** Transcribe audio via Whisper API */
+  private async transcribeAudio(buffer: Buffer, filename: string): Promise<string> {
+    const openai = new OpenAI({ apiKey: config.openaiApiKey });
+    const file = new File([buffer], filename, { type: 'audio/ogg' });
+    const result = await openai.audio.transcriptions.create({
+      model: 'whisper-1',
+      file,
+      language: 'ru',
+    });
+    return result.text;
   }
 
   start(): void {
@@ -367,12 +404,12 @@ export class TelegramService {
       return msg;
     };
 
-    // Any text message → smart routing (command or ingest)
+    // Any text message → smart routing
     this.bot.on(message('text'), async (ctx) => {
       if (ctx.message.text.startsWith('/')) return;
       try {
         const intent = await this.classifyMessage(ctx.message.text);
-        if (intent === 'command') {
+        if (intent === 'command' || intent === 'chat') {
           const response = await this.executeCommand(ctx.message.text);
           ctx.reply(response);
         } else {
@@ -385,7 +422,7 @@ export class TelegramService {
       }
     });
 
-    // Voice message → transcribe + smart ingest
+    // Voice message → transcribe first, then decide
     this.bot.on(message('voice'), async (ctx) => {
       try {
         ctx.reply('🎤 Транскрибирую...');
@@ -394,15 +431,29 @@ export class TelegramService {
         const response = await fetch(fileLink.href);
         const buffer = Buffer.from(await response.arrayBuffer());
 
-        const ingestService = new IngestService();
-        const result = await ingestService.ingestBuffer(buffer, 'voice.ogg');
-        ctx.reply(formatIngestResult(result));
+        // Transcribe via Whisper
+        const transcript = await this.transcribeAudio(buffer, 'voice.ogg');
+        if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
+
+        // Show transcript
+        ctx.reply(`📝 Распознано:\n${transcript}`);
+
+        // Route: short = command, long = ingest as meeting
+        const intent = await this.classifyMessage(transcript);
+        if (intent === 'command' || intent === 'chat') {
+          const cmdResponse = await this.executeCommand(transcript);
+          ctx.reply(cmdResponse);
+        } else {
+          const ingestService = new IngestService();
+          const result = await ingestService.ingestText(transcript);
+          ctx.reply(formatIngestResult(result));
+        }
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
     });
 
-    // Document → smart ingest
+    // Document → ingest
     this.bot.on(message('document'), async (ctx) => {
       try {
         ctx.reply('📄 Обрабатываю файл...');
