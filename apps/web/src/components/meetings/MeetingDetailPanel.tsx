@@ -112,7 +112,12 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
           {(meeting as unknown as Record<string, unknown>)['vault_path'] && (
             <div className="text-xs text-gray-400 flex items-center gap-1">
               <span>Obsidian:</span>
-              <span className="text-indigo-500">{String((meeting as unknown as Record<string, unknown>)['vault_path'])}</span>
+              <a
+                href={`obsidian://open?vault=ObsidianVault&file=${encodeURIComponent(String((meeting as unknown as Record<string, unknown>)['vault_path']).replace('.md', ''))}`}
+                className="text-indigo-500 hover:text-indigo-700 underline"
+              >
+                {String((meeting as unknown as Record<string, unknown>)['vault_path'])}
+              </a>
             </div>
           )}
 

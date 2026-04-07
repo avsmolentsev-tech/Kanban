@@ -105,6 +105,16 @@ peopleRouter.patch('/:id', (req: Request, res: Response) => {
   res.json(ok(withProjects));
 });
 
+peopleRouter.delete('/:id', (req: Request, res: Response) => {
+  const id = Number(req.params['id']);
+  const person = getDb().prepare('SELECT * FROM people WHERE id = ?').get(id);
+  if (!person) { res.status(404).json(fail('Person not found')); return; }
+  getDb().prepare('DELETE FROM task_people WHERE person_id = ?').run(id);
+  getDb().prepare('DELETE FROM meeting_people WHERE person_id = ?').run(id);
+  getDb().prepare('DELETE FROM people WHERE id = ?').run(id);
+  res.json(ok({ deleted: true }));
+});
+
 peopleRouter.get('/:id/history', (req: Request, res: Response) => {
   const person = getDb().prepare('SELECT * FROM people WHERE id = ?').get(Number(req.params['id']));
   if (!person) { res.status(404).json(fail('Person not found')); return; }

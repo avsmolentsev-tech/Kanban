@@ -9,9 +9,10 @@ interface Props {
   projects: Project[];
   onClose: () => void;
   onUpdated: () => void;
+  onDeleted?: () => void;
 }
 
-export function PersonDetailPanel({ person, projects, onClose, onUpdated }: Props) {
+export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDeleted }: Props) {
   const [form, setForm] = useState<Partial<Person>>({});
   const [projectIds, setProjectIds] = useState<number[]>([]);
 
@@ -99,7 +100,22 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated }: Prop
               rows={4} value={form.notes ?? ''} onChange={(e) => handleChange('notes', e.target.value)} onBlur={() => handleBlur('notes')} />
           </div>
 
-          <div className="text-xs text-gray-400 pt-2">Created: {person.created_at}</div>
+          <div className="text-xs text-gray-400 pt-2">Создан: {person.created_at}</div>
+
+          {onDeleted && (
+            <button
+              onClick={async () => {
+                if (confirm(`Удалить ${person.name}?`)) {
+                  await peopleApi.delete(person.id);
+                  onDeleted();
+                  onClose();
+                }
+              }}
+              className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors"
+            >
+              Удалить
+            </button>
+          )}
         </div>
       )}
     </SlidePanel>

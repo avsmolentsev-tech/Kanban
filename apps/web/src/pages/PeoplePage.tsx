@@ -247,7 +247,7 @@ export function PeoplePage() {
         </DragOverlay>
       </DndContext>
 
-      <PersonDetailPanel person={selected} projects={projects} onClose={() => setSelected(null)} onUpdated={load} />
+      <PersonDetailPanel person={selected} projects={projects} onClose={() => setSelected(null)} onUpdated={load} onDeleted={() => { setSelected(null); load(); }} />
     </div>
   );
 }
