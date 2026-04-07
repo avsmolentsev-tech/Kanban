@@ -453,17 +453,60 @@ export class TelegramService {
       }
     });
 
-    // Document → ingest
+    // Document → check if audio, transcribe; otherwise ingest
     this.bot.on(message('document'), async (ctx) => {
       try {
-        ctx.reply('📄 Обрабатываю файл...');
         const doc = ctx.message.document;
+        const filename = doc.file_name ?? 'file';
+        const mime = doc.mime_type ?? '';
+        const isAudio = mime.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|webm|flac|aac|wma)$/i.test(filename);
+
         const fileLink = await ctx.telegram.getFileLink(doc.file_id);
         const response = await fetch(fileLink.href);
         const buffer = Buffer.from(await response.arrayBuffer());
 
+        if (isAudio) {
+          // Transcribe audio file
+          ctx.reply('🎤 Транскрибирую аудиофайл...');
+          const transcript = await this.transcribeAudio(buffer, filename);
+          if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
+
+          // Show transcript
+          const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
+          ctx.reply(`📝 Транскрипция (${transcript.length} символов):\n${preview}`);
+
+          // Ingest the transcript as text
+          const ingestService = new IngestService();
+          const result = await ingestService.ingestText(transcript);
+          ctx.reply(formatIngestResult(result));
+        } else {
+          ctx.reply('📄 Обрабатываю файл...');
+          const ingestService = new IngestService();
+          const result = await ingestService.ingestBuffer(buffer, filename);
+          ctx.reply(formatIngestResult(result));
+        }
+      } catch (err) {
+        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
+      }
+    });
+
+    // Audio message (mp3 etc sent as audio, not voice)
+    this.bot.on(message('audio'), async (ctx) => {
+      try {
+        ctx.reply('🎤 Транскрибирую аудио...');
+        const audio = ctx.message.audio;
+        const fileLink = await ctx.telegram.getFileLink(audio.file_id);
+        const response = await fetch(fileLink.href);
+        const buffer = Buffer.from(await response.arrayBuffer());
+
+        const transcript = await this.transcribeAudio(buffer, audio.file_name ?? 'audio.mp3');
+        if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
+
+        const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
+        ctx.reply(`📝 Транскрипция (${transcript.length} символов):\n${preview}`);
+
         const ingestService = new IngestService();
-        const result = await ingestService.ingestBuffer(buffer, doc.file_name ?? 'file');
+        const result = await ingestService.ingestText(transcript);
         ctx.reply(formatIngestResult(result));
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
