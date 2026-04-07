@@ -13,7 +13,10 @@ import { CalendarPage } from './pages/CalendarPage';
 import { MorePage } from './pages/MorePage';
 import { SearchBar } from './components/search/SearchBar';
 import { MobileNav } from './components/layout/MobileNav';
+import { VoiceCommandButton } from './components/voice/VoiceCommandButton';
 import { isTelegramWebApp, initTelegramApp } from './lib/telegram';
+import { useTasksStore } from './store/tasks.store';
+import { useProjectsStore } from './store/projects.store';
 
 const desktopNav = [
   { to: '/', label: 'Kanban' },
@@ -46,6 +49,10 @@ export default function App() {
   }, []);
 
   const useMobileLayout = isTg || isMobile;
+
+  const fetchTasks = useTasksStore((s) => s.fetchTasks);
+  const fetchProjects = useProjectsStore((s) => s.fetchProjects);
+  const refreshAll = () => { fetchTasks(); fetchProjects(); };
 
   return (
     <BrowserRouter>
@@ -93,6 +100,9 @@ export default function App() {
           {/* Mobile bottom nav */}
           {useMobileLayout && <MobileNav />}
         </div>
+
+        {/* Voice command FAB */}
+        <VoiceCommandButton onActionDone={refreshAll} />
       </div>
     </BrowserRouter>
   );

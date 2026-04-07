@@ -1,0 +1,242 @@
+import { useState, useRef, useEffect } from 'react';
+import { apiPost } from '../../api/client';
+
+interface SpeechRecognitionEvent extends Event {
+  results: { [index: number]: { [index: number]: { transcript: string }; isFinal?: boolean }; length: number };
+  resultIndex: number;
+}
+
+interface SpeechRecognitionInstance extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  onend: (() => void) | null;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognitionInstance;
+    webkitSpeechRecognition: new () => SpeechRecognitionInstance;
+  }
+}
+
+interface VoiceResult {
+  type: string;
+  success: boolean;
+  detail: string;
+}
+
+export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const [processing, setProcessing] = useState(false);
+  const [response, setResponse] = useState('');
+  const [results, setResults] = useState<VoiceResult[]>([]);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const supported = typeof window !== 'undefined' &&
+    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        recognitionRef.current?.stop();
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const startRecording = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+
+    const recognition = new SR();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'ru-RU';
+
+    let finalText = '';
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result && result[0]) {
+          if ((result as unknown as { isFinal: boolean }).isFinal) {
+            finalText += result[0].transcript + ' ';
+          } else {
+            interim += result[0].transcript;
+          }
+        }
+      }
+      setTranscript(finalText + interim);
+    };
+
+    recognition.onerror = () => setRecording(false);
+    recognition.onend = () => setRecording(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setRecording(true);
+    setResponse('');
+    setResults([]);
+  };
+
+  const stopRecording = () => {
+    recognitionRef.current?.stop();
+    setRecording(false);
+  };
+
+  const executeCommand = async () => {
+    if (!transcript.trim()) return;
+    setProcessing(true);
+    setResponse('');
+    setResults([]);
+
+    try {
+      const data = await apiPost<{ response: string; results: VoiceResult[] }>('/ai/voice-command', {
+        text: transcript.trim(),
+      });
+      setResponse(data.response);
+      setResults(data.results);
+      setTranscript('');
+      onActionDone?.();
+    } catch (err) {
+      setResponse(`Ошибка: ${err instanceof Error ? err.message : 'неизвестная'}`);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  if (!supported) return null;
+
+  return (
+    <>
+      {/* FAB button */}
+      <button
+        onClick={() => {
+          setOpen(!open);
+          if (open) recognitionRef.current?.stop();
+        }}
+        className={`fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${
+          open ? 'bg-gray-700' : 'bg-indigo-600 hover:bg-indigo-700'
+        } ${recording ? 'animate-pulse bg-red-500' : ''}`}
+      >
+        {open ? (
+          <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        ) : (
+          <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+          </svg>
+        )}
+      </button>
+
+      {/* Voice panel */}
+      {open && (
+        <div
+          ref={panelRef}
+          className="fixed bottom-36 right-4 z-50 w-80 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden"
+        >
+          {/* Header */}
+          <div className="px-4 py-3 bg-indigo-600 text-white">
+            <div className="font-semibold text-sm">Голосовое управление</div>
+            <div className="text-xs text-indigo-200">Скажи что сделать с задачами</div>
+          </div>
+
+          {/* Content */}
+          <div className="p-4 space-y-3">
+            {/* Mic button */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={recording ? stopRecording : startRecording}
+                disabled={processing}
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
+                  recording
+                    ? 'bg-red-500 hover:bg-red-600 animate-pulse shadow-lg shadow-red-200'
+                    : 'bg-indigo-600 hover:bg-indigo-700'
+                } ${processing ? 'opacity-50' : ''}`}
+              >
+                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+              </button>
+              <div className="flex-1 text-sm">
+                {recording ? (
+                  <span className="text-red-500 font-medium">Слушаю... (нажми стоп)</span>
+                ) : processing ? (
+                  <span className="text-indigo-500 font-medium">Выполняю...</span>
+                ) : (
+                  <span className="text-gray-500">Нажми микрофон и говори</span>
+                )}
+              </div>
+            </div>
+
+            {/* Transcript */}
+            {(transcript || recording) && (
+              <textarea
+                className="w-full border border-gray-200 rounded-lg p-2.5 text-sm resize-none focus:outline-none focus:border-indigo-300 bg-gray-50"
+                rows={3}
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+                placeholder="Текст появится здесь..."
+              />
+            )}
+
+            {/* Execute button */}
+            {transcript.trim() && !recording && (
+              <button
+                onClick={executeCommand}
+                disabled={processing}
+                className="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {processing ? 'Выполняю...' : 'Выполнить'}
+              </button>
+            )}
+
+            {/* Response */}
+            {response && (
+              <div className="p-3 bg-gray-50 rounded-lg text-sm">
+                <div className="text-gray-800">{response}</div>
+                {results.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {results.map((r, i) => (
+                      <div key={i} className={`text-xs flex items-center gap-1 ${r.success ? 'text-green-600' : 'text-red-500'}`}>
+                        <span>{r.success ? '✓' : '✗'}</span>
+                        <span>{r.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Hints */}
+            {!transcript && !response && !recording && (
+              <div className="text-xs text-gray-400 space-y-1">
+                <div>Примеры:</div>
+                <div>• «Создай задачу купить молоко в проект Личные»</div>
+                <div>• «Перенеси ревью кода в работу»</div>
+                <div>• «Удали задачу написать документацию»</div>
+                <div>• «Создай проект Маркетинг»</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
