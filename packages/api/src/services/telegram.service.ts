@@ -159,21 +159,55 @@ export class TelegramService {
       ctx.reply(`🔍 Результаты:\n\n${lines.join('\n')}`);
     });
 
-    // Any text message → inbox
+    // Format ingest result nicely
+    const formatIngestResult = (result: { detected_type: string; summary: string; created_records: Array<{ type: string; id: number; title: string }> }): string => {
+      const typeLabels: Record<string, string> = { meeting: '🤝 Встреча', task: '📋 Задача', idea: '💡 Идея', inbox: '📥 Входящее' };
+      const label = typeLabels[result.detected_type] ?? result.detected_type;
+      let msg = `${label}: ${result.summary}`;
+      if (result.created_records?.length > 0) {
+        for (const rec of result.created_records) {
+          msg += `\n  → ${rec.type} #${rec.id}: ${rec.title}`;
+        }
+        // Show linked project/people
+        const db = getDb();
+        for (const rec of result.created_records) {
+          if (rec.type === 'meeting') {
+            const m = db.prepare('SELECT project_id FROM meetings WHERE id = ?').get(rec.id) as { project_id: number | null } | undefined;
+            if (m?.project_id) {
+              const p = db.prepare('SELECT name FROM projects WHERE id = ?').get(m.project_id) as { name: string } | undefined;
+              if (p) msg += `\n  📁 Проект: ${p.name}`;
+            }
+            const people = db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(rec.id) as Array<{ name: string }>;
+            if (people.length > 0) msg += `\n  👥 Участники: ${people.map(p => p.name).join(', ')}`;
+          }
+          if (rec.type === 'task') {
+            const t = db.prepare('SELECT project_id FROM tasks WHERE id = ?').get(rec.id) as { project_id: number | null } | undefined;
+            if (t?.project_id) {
+              const p = db.prepare('SELECT name FROM projects WHERE id = ?').get(t.project_id) as { name: string } | undefined;
+              if (p) msg += `\n  📁 Проект: ${p.name}`;
+            }
+          }
+        }
+      }
+      return msg;
+    };
+
+    // Any text message → smart ingest
     this.bot.on(message('text'), async (ctx) => {
       if (ctx.message.text.startsWith('/')) return;
       try {
         const ingestService = new IngestService();
         const result = await ingestService.ingestText(ctx.message.text);
-        ctx.reply(`📥 Обработано: ${result.detected_type}\n${result.summary}`);
+        ctx.reply(formatIngestResult(result));
       } catch (err) {
-        ctx.reply(`❌ Error: ${err instanceof Error ? err.message : 'Unknown'}`);
+        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
     });
 
-    // Voice message → transcribe + inbox
+    // Voice message → transcribe + smart ingest
     this.bot.on(message('voice'), async (ctx) => {
       try {
+        ctx.reply('🎤 Транскрибирую...');
         const fileId = ctx.message.voice.file_id;
         const fileLink = await ctx.telegram.getFileLink(fileId);
         const response = await fetch(fileLink.href);
@@ -181,15 +215,16 @@ export class TelegramService {
 
         const ingestService = new IngestService();
         const result = await ingestService.ingestBuffer(buffer, 'voice.ogg');
-        ctx.reply(`🎤 Голосовое обработано: ${result.detected_type}\n${result.summary}`);
+        ctx.reply(formatIngestResult(result));
       } catch (err) {
-        ctx.reply(`❌ Error: ${err instanceof Error ? err.message : 'Unknown'}`);
+        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
     });
 
-    // Document/photo → inbox
+    // Document → smart ingest
     this.bot.on(message('document'), async (ctx) => {
       try {
+        ctx.reply('📄 Обрабатываю файл...');
         const doc = ctx.message.document;
         const fileLink = await ctx.telegram.getFileLink(doc.file_id);
         const response = await fetch(fileLink.href);
@@ -197,9 +232,9 @@ export class TelegramService {
 
         const ingestService = new IngestService();
         const result = await ingestService.ingestBuffer(buffer, doc.file_name ?? 'file');
-        ctx.reply(`📄 Файл обработан: ${result.detected_type}\n${result.summary}`);
+        ctx.reply(formatIngestResult(result));
       } catch (err) {
-        ctx.reply(`❌ Error: ${err instanceof Error ? err.message : 'Unknown'}`);
+        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
     });
 
