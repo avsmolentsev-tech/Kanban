@@ -128,24 +128,82 @@ export class SearchService {
     const vaultPath = config.vaultPath;
     if (!fs.existsSync(vaultPath)) return;
 
+    // Debounce map to avoid processing the same file multiple times
+    const pending = new Map<string, NodeJS.Timeout>();
+
     try {
       fs.watch(vaultPath, { recursive: true }, (eventType, filename) => {
         if (!filename || !filename.endsWith('.md')) return;
-        const fullPath = path.join(vaultPath, filename);
-        try {
-          if (fs.existsSync(fullPath)) {
-            const content = fs.readFileSync(fullPath, 'utf-8');
-            const title = path.basename(filename, '.md');
-            // Use a hash of the path as ref_id
-            const refId = -(Math.abs(this.hashCode(filename)) % 1000000);
-            this.indexRecord('vault', refId, title, content);
-          }
-        } catch {}
+
+        // Debounce — wait 500ms before processing
+        if (pending.has(filename)) clearTimeout(pending.get(filename));
+        pending.set(filename, setTimeout(() => {
+          pending.delete(filename);
+          const fullPath = path.join(vaultPath, filename);
+          try {
+            if (fs.existsSync(fullPath)) {
+              const content = fs.readFileSync(fullPath, 'utf-8');
+              const title = path.basename(filename, '.md');
+              const refId = -(Math.abs(this.hashCode(filename)) % 1000000);
+              this.indexRecord('vault', refId, title, content);
+
+              // Sync back to DB if it's a task file with frontmatter
+              this.syncVaultFileToDb(filename, content);
+            }
+          } catch {}
+        }, 500));
       });
       console.log('[search] vault watcher started');
     } catch (err) {
       console.warn('[search] vault watcher failed:', err);
     }
+  }
+
+  /** Parse vault .md file and sync changes back to database */
+  private syncVaultFileToDb(filename: string, content: string): void {
+    try {
+      const db = getDb();
+      const fm = this.parseFrontmatter(content);
+      if (!fm['type']) return;
+
+      // Find task by vault_path
+      const vaultRelPath = filename.replace(/\\/g, '/');
+
+      if (fm['type'] === 'task') {
+        const task = db.prepare('SELECT id FROM tasks WHERE vault_path = ?').get(vaultRelPath) as { id: number } | undefined;
+        if (!task) return;
+
+        const updates: string[] = [];
+        const values: unknown[] = [];
+
+        if (fm['status'] && ['backlog', 'todo', 'in_progress', 'done', 'someday'].includes(fm['status'])) {
+          updates.push('status = ?'); values.push(fm['status']);
+        }
+        if (fm['priority']) { updates.push('priority = ?'); values.push(Number(fm['priority'])); }
+        if (fm['urgency']) { updates.push('urgency = ?'); values.push(Number(fm['urgency'])); }
+        if (fm['due_date'] && fm['due_date'] !== 'null') { updates.push('due_date = ?'); values.push(fm['due_date']); }
+
+        if (updates.length > 0) {
+          db.prepare(`UPDATE tasks SET ${updates.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, task.id);
+          console.log(`[vault-sync] updated task #${task.id} from ${vaultRelPath}`);
+        }
+      }
+    } catch {}
+  }
+
+  private parseFrontmatter(content: string): Record<string, string> {
+    const match = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!match) return {};
+    const result: Record<string, string> = {};
+    for (const line of match[1].split('\n')) {
+      const idx = line.indexOf(':');
+      if (idx > 0) {
+        let val = line.slice(idx + 1).trim();
+        val = val.replace(/\[\[([^\]]+)\]\]/g, '$1').replace(/^["']|["']$/g, '');
+        result[line.slice(0, idx).trim()] = val;
+      }
+    }
+    return result;
   }
 
   private hashCode(str: string): number {

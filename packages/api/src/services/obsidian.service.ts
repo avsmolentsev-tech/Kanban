@@ -134,6 +134,87 @@ export class ObsidianService {
     return `Inbox/${filename}`;
   }
 
+  /** Update an existing .md file by vault_path */
+  updateTask(vaultRelPath: string, params: WriteTaskParams): void {
+    const fullPath = path.join(this.vaultPath, vaultRelPath);
+    if (!fs.existsSync(fullPath)) return;
+    const people = (params.people ?? []).map((p) => this.wikiLink(p));
+    const frontmatter = [
+      '---', 'type: task', `status: ${params.status}`,
+      `project: ${params.project ? this.wikiLink(params.project) : 'null'}`,
+      `priority: ${params.priority}`, `urgency: ${params.urgency}`,
+      `due_date: ${params.due_date ?? 'null'}`,
+      `people: [${people.join(', ')}]`,
+      `tags: [task]`,
+      `updated_at: ${this.now()}`, '---',
+    ].join('\n');
+    // Preserve body content after frontmatter
+    const existing = fs.readFileSync(fullPath, 'utf-8');
+    const bodyMatch = existing.match(/^---[\s\S]*?---\n*([\s\S]*)$/);
+    const body = bodyMatch ? bodyMatch[1] : `\n# ${params.title}\n\n`;
+    fs.writeFileSync(fullPath, `${frontmatter}\n\n${body}`, 'utf-8');
+  }
+
+  /** Delete (move to trash or remove) a vault file */
+  deleteFile(vaultRelPath: string): void {
+    const fullPath = path.join(this.vaultPath, vaultRelPath);
+    if (fs.existsSync(fullPath)) {
+      const trashDir = path.join(this.vaultPath, '.trash');
+      this.ensureDir(trashDir);
+      const filename = path.basename(fullPath);
+      fs.renameSync(fullPath, path.join(trashDir, filename));
+    }
+  }
+
+  /** Parse frontmatter from a .md file */
+  parseFrontmatter(content: string): Record<string, string> {
+    const match = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!match) return {};
+    const result: Record<string, string> = {};
+    for (const line of match[1].split('\n')) {
+      const idx = line.indexOf(':');
+      if (idx > 0) {
+        const key = line.slice(0, idx).trim();
+        let val = line.slice(idx + 1).trim();
+        // Clean wiki links
+        val = val.replace(/\[\[([^\]]+)\]\]/g, '$1');
+        // Clean quotes
+        val = val.replace(/^["']|["']$/g, '');
+        result[key] = val;
+      }
+    }
+    return result;
+  }
+
+  /** Get body content (after frontmatter) */
+  parseBody(content: string): string {
+    const match = content.match(/^---[\s\S]*?---\n*([\s\S]*)$/);
+    return match ? match[1].replace(/^#\s+.*\n*/, '').trim() : content.trim();
+  }
+
+  /** Read all vault content for AI context */
+  readAllForContext(): string {
+    const sections: string[] = [];
+    for (const folder of ['Projects', 'Tasks', 'Meetings', 'Ideas', 'People', 'Goals', 'Materials']) {
+      const files = this.listFolder(folder);
+      if (files.length === 0) continue;
+      const items: string[] = [];
+      for (const f of files) {
+        try {
+          const content = this.readFile(f);
+          const fm = this.parseFrontmatter(content);
+          const body = this.parseBody(content);
+          const title = path.basename(f, '.md');
+          items.push(`### ${title}\n${Object.entries(fm).map(([k, v]) => `${k}: ${v}`).join(', ')}\n${body.slice(0, 500)}`);
+        } catch {}
+      }
+      if (items.length > 0) {
+        sections.push(`## ${folder}\n${items.join('\n\n')}`);
+      }
+    }
+    return sections.join('\n\n---\n\n');
+  }
+
   readFile(relativePath: string): string {
     return fs.readFileSync(path.join(this.vaultPath, relativePath), 'utf-8');
   }

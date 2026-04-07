@@ -3,9 +3,12 @@ import { z } from 'zod';
 import { ClaudeService } from '../services/claude.service';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
+import { ObsidianService } from '../services/obsidian.service';
+import { config } from '../config';
 
 export const aiRouter = Router();
 const claude = new ClaudeService();
+const obsidian = new ObsidianService(config.vaultPath);
 
 const ChatSchema = z.object({
   messages: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })),
@@ -16,7 +19,16 @@ aiRouter.post('/chat', async (req: Request, res: Response) => {
   const parsed = ChatSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   try {
-    const reply = await claude.chat(parsed.data.messages, parsed.data.context);
+    // Build vault context for AI
+    let vaultContext = '';
+    try { vaultContext = obsidian.readAllForContext(); } catch {}
+
+    const systemPrompt = [
+      parsed.data.context ?? '',
+      vaultContext ? `\n\nДанные из Obsidian Vault (проекты, задачи, встречи, идеи, люди):\n\n${vaultContext}` : '',
+    ].filter(Boolean).join('\n');
+
+    const reply = await claude.chat(parsed.data.messages, systemPrompt, 'gpt-4.1');
     res.json(ok({ reply }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));

@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
+import { ObsidianService } from '../services/obsidian.service';
+import { config } from '../config';
+
+const obsidian = new ObsidianService(config.vaultPath);
 
 export const tasksRouter = Router();
 
@@ -80,6 +84,13 @@ tasksRouter.post('/', (req: Request, res: Response) => {
   }
   const task = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Record<string, unknown>;
   searchService.indexRecord('task', taskId, parsed.data.title, parsed.data.description ?? '');
+  // Sync to vault
+  try {
+    const projectName = project_id ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(project_id) as { name: string } | undefined)?.name : undefined;
+    const vaultPath = await obsidian.writeTask({ title, status, priority, urgency, project: projectName, due_date });
+    getDb().prepare('UPDATE tasks SET vault_path = ? WHERE id = ?').run(vaultPath, taskId);
+    (task as Record<string, unknown>)['vault_path'] = vaultPath;
+  } catch {}
   res.status(201).json(ok(enrichTasksWithPeople([task])[0]));
 });
 
@@ -99,18 +110,49 @@ tasksRouter.patch('/:id', (req: Request, res: Response) => {
     setTaskPeople(taskId, person_ids);
   }
   const task = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Record<string, unknown>;
-  if (task) searchService.indexRecord('task', task['id'] as number, task['title'] as string, (task['description'] as string) ?? '');
+  if (task) {
+    searchService.indexRecord('task', task['id'] as number, task['title'] as string, (task['description'] as string) ?? '');
+    // Sync to vault
+    try {
+      const vp = task['vault_path'] as string | null;
+      if (vp) {
+        const projectName = task['project_id'] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(task['project_id'] as number) as { name: string } | undefined)?.name : undefined;
+        obsidian.updateTask(vp, {
+          title: task['title'] as string, status: task['status'] as string,
+          priority: task['priority'] as number, urgency: task['urgency'] as number,
+          project: projectName, due_date: task['due_date'] as string | null,
+        });
+      }
+    } catch {}
+  }
   res.json(ok(enrichTasksWithPeople([task])[0]));
 });
 
 tasksRouter.patch('/:id/move', (req: Request, res: Response) => {
   const parsed = MoveSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  getDb().prepare(`UPDATE tasks SET status = ?, order_index = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(parsed.data.status, parsed.data.order_index, Number(req.params['id']));
-  res.json(ok(getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(Number(req.params['id']))));
+  const taskId = Number(req.params['id']);
+  getDb().prepare(`UPDATE tasks SET status = ?, order_index = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(parsed.data.status, parsed.data.order_index, taskId);
+  const task = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Record<string, unknown>;
+  // Sync to vault
+  try {
+    const vp = task['vault_path'] as string | null;
+    if (vp) {
+      const projectName = task['project_id'] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(task['project_id'] as number) as { name: string } | undefined)?.name : undefined;
+      obsidian.updateTask(vp, {
+        title: task['title'] as string, status: parsed.data.status,
+        priority: task['priority'] as number, urgency: task['urgency'] as number,
+        project: projectName, due_date: task['due_date'] as string | null,
+      });
+    }
+  } catch {}
+  res.json(ok(task));
 });
 
 tasksRouter.delete('/:id', (req: Request, res: Response) => {
+  const task = getDb().prepare('SELECT vault_path FROM tasks WHERE id = ?').get(Number(req.params['id'])) as { vault_path: string | null } | undefined;
   getDb().prepare(`UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(Number(req.params['id']));
+  // Move vault file to trash
+  try { if (task?.vault_path) obsidian.deleteFile(task.vault_path); } catch {}
   res.json(ok({ archived: true }));
 });
