@@ -66,21 +66,34 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
     recognition.interimResults = true;
     recognition.lang = 'ru-RU';
 
-    let finalText = '';
+    // Only track what speech recognition adds, don't touch user edits
+    let lastInterim = '';
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let newFinal = '';
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result && result[0]) {
           if ((result as unknown as { isFinal: boolean }).isFinal) {
-            finalText += result[0].transcript + ' ';
+            newFinal += result[0].transcript;
           } else {
             interim += result[0].transcript;
           }
         }
       }
-      setTranscript(finalText + interim);
+
+      setTranscript((prev) => {
+        // Remove previous interim text from the end
+        let base = prev;
+        if (lastInterim && base.endsWith(lastInterim)) {
+          base = base.slice(0, -lastInterim.length);
+        }
+        // Append finalized + new interim
+        lastInterim = interim;
+        const addition = newFinal ? newFinal + ' ' : '';
+        return base + addition + interim;
+      });
     };
 
     recognition.onerror = () => setRecording(false);
@@ -223,7 +236,11 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
               className="w-full border border-gray-200 rounded-lg p-2.5 text-sm resize-none focus:outline-none focus:border-indigo-300 bg-gray-50"
               rows={3}
               value={transcript}
-              onChange={(e) => setTranscript(e.target.value)}
+              onChange={(e) => {
+                // User is manually editing — stop recording so it doesn't overwrite
+                if (recording) stopRecording();
+                setTranscript(e.target.value);
+              }}
               placeholder={recording ? 'Говори, текст появится...' : 'Или напиши команду текстом...'}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
