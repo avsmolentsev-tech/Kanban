@@ -5,6 +5,7 @@ export interface UpdateMeetingDto {
   title?: string;
   date?: string;
   project_id?: number | null;
+  project_ids?: number[];
   summary_raw?: string;
 }
 

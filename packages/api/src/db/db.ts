@@ -87,6 +87,18 @@ export function initDb(): void {
       )
     `);
   } catch {}
+
+  // Meeting-projects junction (many-to-many)
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS meeting_projects (
+        meeting_id INTEGER NOT NULL REFERENCES meetings(id),
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        PRIMARY KEY (meeting_id, project_id)
+      )
+    `);
+    _db.exec("INSERT OR IGNORE INTO meeting_projects (meeting_id, project_id) SELECT id, project_id FROM meetings WHERE project_id IS NOT NULL");
+  } catch {}
 }
 
 export function initTestDb(): void {
@@ -131,6 +143,18 @@ export function initTestDb(): void {
         created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
       )
     `);
+  } catch {}
+
+  // Meeting-projects junction (many-to-many)
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS meeting_projects (
+        meeting_id INTEGER NOT NULL REFERENCES meetings(id),
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        PRIMARY KEY (meeting_id, project_id)
+      )
+    `);
+    _db.exec("INSERT OR IGNORE INTO meeting_projects (meeting_id, project_id) SELECT id, project_id FROM meetings WHERE project_id IS NOT NULL");
   } catch {}
 }
 

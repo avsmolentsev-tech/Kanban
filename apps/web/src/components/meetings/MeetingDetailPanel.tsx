@@ -123,21 +123,35 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-xs text-gray-500 mb-1">Дата</div>
-                  <input type="date" className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
-                    value={form.date ?? ''} onChange={(e) => handleChange('date', e.target.value)} onBlur={() => handleBlur('date')} />
-                </div>
-                <div>
-                  <div className="text-xs text-gray-500 mb-1">Проект</div>
-                  <select className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 bg-white"
-                    value={form.project_id ?? ''} onChange={(e) => handleProjectChange(e.target.value)}>
-                    <option value="">Без проекта</option>
-                    {projects.filter((p) => !p.archived).map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Дата</div>
+                <input type="date" className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
+                  value={form.date ?? ''} onChange={(e) => handleChange('date', e.target.value)} onBlur={() => handleBlur('date')} />
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-500 mb-1.5">Проекты (можно несколько)</div>
+                <div className="flex flex-wrap gap-2">
+                  {projects.filter((p) => !p.archived).map((p) => {
+                    const projectIds = ((meeting as unknown as Record<string, unknown>)['project_ids'] as number[] | undefined) ?? (meeting.project_id ? [meeting.project_id] : []);
+                    const active = projectIds.includes(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={async () => {
+                          const next = active ? projectIds.filter(x => x !== p.id) : [...projectIds, p.id];
+                          await meetingsApi.update(meeting.id, { project_ids: next });
+                          onUpdated();
+                        }}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${active ? 'border-transparent text-white' : 'border-gray-200 text-gray-600 bg-white hover:border-gray-300'}`}
+                        style={active ? { backgroundColor: p.color, borderColor: p.color } : {}}
+                      >
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: active ? 'rgba(255,255,255,0.7)' : p.color }} />
+                        {p.name}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

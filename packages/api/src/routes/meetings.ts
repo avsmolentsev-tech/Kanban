@@ -14,33 +14,82 @@ const openai = new OpenAI({ apiKey: config.openaiApiKey });
 
 export const meetingsRouter = Router();
 
-const CreateSchema = z.object({ title: z.string().min(1), date: z.string(), project_id: z.number().int().optional(), summary_raw: z.string().default('') });
-const UpdateSchema = z.object({ title: z.string().min(1).optional(), date: z.string().optional(), project_id: z.number().int().nullable().optional(), summary_raw: z.string().optional() });
+const CreateSchema = z.object({
+  title: z.string().min(1),
+  date: z.string(),
+  project_id: z.number().int().optional(),
+  project_ids: z.array(z.number().int()).optional(),
+  summary_raw: z.string().default(''),
+});
+const UpdateSchema = z.object({
+  title: z.string().min(1).optional(),
+  date: z.string().optional(),
+  project_id: z.number().int().nullable().optional(),
+  project_ids: z.array(z.number().int()).optional(),
+  summary_raw: z.string().optional(),
+});
+
+function attachProjects(meetings: Record<string, unknown>[]): Record<string, unknown>[] {
+  if (meetings.length === 0) return meetings;
+  const ids = meetings.map(m => m['id']);
+  const rows = getDb().prepare(`
+    SELECT mp.meeting_id, p.id, p.name, p.color
+    FROM meeting_projects mp JOIN projects p ON p.id = mp.project_id
+    WHERE mp.meeting_id IN (${ids.map(() => '?').join(',')})
+  `).all(...ids) as Array<{ meeting_id: number; id: number; name: string; color: string }>;
+  const byMeeting = new Map<number, Array<{ id: number; name: string; color: string }>>();
+  for (const r of rows) {
+    if (!byMeeting.has(r.meeting_id)) byMeeting.set(r.meeting_id, []);
+    byMeeting.get(r.meeting_id)!.push({ id: r.id, name: r.name, color: r.color });
+  }
+  return meetings.map(m => {
+    const projects = byMeeting.get(m['id'] as number) ?? [];
+    return { ...m, projects, project_ids: projects.map(p => p.id) };
+  });
+}
+
+function setMeetingProjects(meetingId: number, projectIds: number[]): void {
+  const db = getDb();
+  db.prepare('DELETE FROM meeting_projects WHERE meeting_id = ?').run(meetingId);
+  const stmt = db.prepare('INSERT OR IGNORE INTO meeting_projects (meeting_id, project_id) VALUES (?, ?)');
+  for (const pid of projectIds) stmt.run(meetingId, pid);
+  // Keep legacy project_id in sync with first
+  db.prepare('UPDATE meetings SET project_id = ? WHERE id = ?').run(projectIds[0] ?? null, meetingId);
+}
 
 meetingsRouter.get('/', (req: Request, res: Response) => {
-  let query = 'SELECT * FROM meetings WHERE 1=1';
+  let query = 'SELECT DISTINCT m.* FROM meetings m';
   const params: unknown[] = [];
-  if (req.query['project']) { query += ' AND project_id = ?'; params.push(Number(req.query['project'])); }
-  if (req.query['from']) { query += ' AND date >= ?'; params.push(req.query['from']); }
-  if (req.query['to']) { query += ' AND date <= ?'; params.push(req.query['to']); }
-  query += ' ORDER BY date DESC';
-  res.json(ok(getDb().prepare(query).all(...params)));
+  if (req.query['project']) {
+    query += ' LEFT JOIN meeting_projects mp ON mp.meeting_id = m.id WHERE (m.project_id = ? OR mp.project_id = ?)';
+    params.push(Number(req.query['project']), Number(req.query['project']));
+  } else {
+    query += ' WHERE 1=1';
+  }
+  if (req.query['from']) { query += ' AND m.date >= ?'; params.push(req.query['from']); }
+  if (req.query['to']) { query += ' AND m.date <= ?'; params.push(req.query['to']); }
+  query += ' ORDER BY m.date DESC';
+  const meetings = getDb().prepare(query).all(...params) as Record<string, unknown>[];
+  res.json(ok(attachProjects(meetings)));
 });
 
 meetingsRouter.post('/', async (req: Request, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const { title, date, project_id, summary_raw } = parsed.data;
-  const result = getDb().prepare('INSERT INTO meetings (title, date, project_id, summary_raw) VALUES (?, ?, ?, ?)').run(title, date, project_id ?? null, summary_raw);
+  const { title, date, project_id, project_ids, summary_raw } = parsed.data;
+  const effectiveIds = project_ids && project_ids.length > 0 ? project_ids : project_id != null ? [project_id] : [];
+  const result = getDb().prepare('INSERT INTO meetings (title, date, project_id, summary_raw) VALUES (?, ?, ?, ?)').run(title, date, effectiveIds[0] ?? null, summary_raw);
   const meetingId = Number(result.lastInsertRowid);
+  if (effectiveIds.length > 0) setMeetingProjects(meetingId, effectiveIds);
   searchService.indexRecord('meeting', meetingId, title, summary_raw);
   // Sync to vault
   try {
-    const projectName = project_id ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(project_id) as { name: string } | undefined)?.name : undefined;
+    const projectName = effectiveIds[0] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(effectiveIds[0]) as { name: string } | undefined)?.name : undefined;
     const vaultPath = await obsidian.writeMeeting({ title, date, project: projectName, summary: summary_raw, people: [] });
     getDb().prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultPath, meetingId);
   } catch {}
-  res.status(201).json(ok(getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId)));
+  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId) as Record<string, unknown>;
+  res.status(201).json(ok(attachProjects([meeting])[0]));
 });
 
 meetingsRouter.patch('/:id', (req: Request, res: Response) => {
@@ -49,15 +98,23 @@ meetingsRouter.patch('/:id', (req: Request, res: Response) => {
   if (!existing) { res.status(404).json(fail('Meeting not found')); return; }
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const fields = parsed.data;
-  const keys = Object.keys(fields) as Array<keyof typeof fields>;
-  if (keys.length === 0) { res.json(ok(existing)); return; }
-  const setClauses = keys.map((k) => `${k} = ?`).join(', ');
-  const values = keys.map((k) => fields[k] ?? null);
-  getDb().prepare(`UPDATE meetings SET ${setClauses} WHERE id = ?`).run(...values, id);
-  const updated = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id) as any;
-  if (updated) searchService.indexRecord('meeting', updated.id, updated.title, updated.summary_raw ?? '');
-  res.json(ok(updated));
+  const { project_ids, ...rest } = parsed.data;
+
+  // Handle project_ids separately (junction table)
+  if (project_ids !== undefined) {
+    setMeetingProjects(id, project_ids);
+  }
+
+  const keys = Object.keys(rest).filter(k => (rest as Record<string, unknown>)[k] !== undefined);
+  if (keys.length > 0) {
+    const setClauses = keys.map((k) => `${k} = ?`).join(', ');
+    const values = keys.map((k) => (rest as Record<string, unknown>)[k] ?? null);
+    getDb().prepare(`UPDATE meetings SET ${setClauses} WHERE id = ?`).run(...values, id);
+  }
+
+  const updated = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id) as Record<string, unknown>;
+  if (updated) searchService.indexRecord('meeting', updated['id'] as number, updated['title'] as string, (updated['summary_raw'] as string) ?? '');
+  res.json(ok(attachProjects([updated])[0]));
 });
 
 meetingsRouter.get('/:id', (req: Request, res: Response) => {
@@ -73,6 +130,7 @@ meetingsRouter.delete('/:id', (req: Request, res: Response) => {
   const meeting = getDb().prepare('SELECT vault_path FROM meetings WHERE id = ?').get(id) as { vault_path: string | null } | undefined;
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
   getDb().prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(id);
+  getDb().prepare('DELETE FROM meeting_projects WHERE meeting_id = ?').run(id);
   getDb().prepare('DELETE FROM agreements WHERE meeting_id = ?').run(id);
   getDb().prepare('DELETE FROM meetings WHERE id = ?').run(id);
   searchService.removeRecord('meeting', id);
