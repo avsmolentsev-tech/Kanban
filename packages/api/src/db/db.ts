@@ -73,6 +73,20 @@ export function initDb(): void {
       )
     `);
   } catch {}
+
+  // Claude notes — queue for Claude Code processing
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS claude_notes (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        content    TEXT    NOT NULL,
+        source     TEXT    NOT NULL DEFAULT 'telegram',
+        processed  INTEGER NOT NULL DEFAULT 0,
+        vault_path TEXT,
+        created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
 }
 
 export function initTestDb(): void {
@@ -101,6 +115,20 @@ export function initTestDb(): void {
         title,
         body,
         tokenize='unicode61'
+      )
+    `);
+  } catch {}
+
+  // Claude notes — queue for Claude Code processing
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS claude_notes (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        content    TEXT    NOT NULL,
+        source     TEXT    NOT NULL DEFAULT 'telegram',
+        processed  INTEGER NOT NULL DEFAULT 0,
+        vault_path TEXT,
+        created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
       )
     `);
   } catch {}

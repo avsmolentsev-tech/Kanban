@@ -60,6 +60,20 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
 
   try {
     const db = getDb();
+
+    // Check for claude/клод prefix → save as Claude note
+    const claudeMatch = parsed.data.text.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
+    if (claudeMatch) {
+      const content = claudeMatch[2].trim();
+      db.prepare('INSERT INTO claude_notes (content, source) VALUES (?, ?)').run(content, 'web');
+      const pending = (db.prepare('SELECT COUNT(*) as c FROM claude_notes WHERE processed = 0').get() as { c: number }).c;
+      res.json(ok({
+        actions: [],
+        results: [],
+        response: `📝 Заметка сохранена для Claude Code\n📬 В очереди: ${pending}\n\nСкажи мне в Claude Code "обработай заметки"`,
+      }));
+      return;
+    }
     const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
     const tasks = db.prepare("SELECT id, title, status, project_id FROM tasks WHERE archived = 0").all() as Array<{ id: number; title: string; status: string; project_id: number | null }>;
     const meetings = db.prepare("SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null }>;

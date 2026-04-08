@@ -407,15 +407,27 @@ export class TelegramService {
 
     // Any text message → smart routing
     this.bot.on(message('text'), async (ctx) => {
-      if (ctx.message.text.startsWith('/')) return;
+      const text = ctx.message.text;
+      if (text.startsWith('/')) return;
+
+      // Check for claude/клод prefix → save for Claude Code processing
+      const claudeMatch = text.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
+      if (claudeMatch) {
+        const content = claudeMatch[2].trim();
+        getDb().prepare('INSERT INTO claude_notes (content, source) VALUES (?, ?)').run(content, 'telegram');
+        const pending = (getDb().prepare('SELECT COUNT(*) as c FROM claude_notes WHERE processed = 0').get() as { c: number }).c;
+        ctx.reply(`📝 Заметка сохранена для Claude Code\n📬 В очереди: ${pending}\n\nСкажи мне в Claude Code "обработай заметки" — разложу всё по Obsidian`);
+        return;
+      }
+
       try {
-        const intent = await this.classifyMessage(ctx.message.text);
+        const intent = await this.classifyMessage(text);
         if (intent === 'command' || intent === 'chat') {
-          const response = await this.executeCommand(ctx.message.text);
+          const response = await this.executeCommand(text);
           ctx.reply(response);
         } else {
           const ingestService = new IngestService();
-          const result = await ingestService.ingestText(ctx.message.text);
+          const result = await ingestService.ingestText(text);
           ctx.reply(formatIngestResult(result));
         }
       } catch (err) {
@@ -438,6 +450,16 @@ export class TelegramService {
 
         // Show transcript
         ctx.reply(`📝 Распознано:\n${transcript}`);
+
+        // Check for claude/клод prefix in voice
+        const claudeMatch = transcript.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
+        if (claudeMatch) {
+          const content = claudeMatch[2].trim();
+          getDb().prepare('INSERT INTO claude_notes (content, source) VALUES (?, ?)').run(content, 'telegram-voice');
+          const pending = (getDb().prepare('SELECT COUNT(*) as c FROM claude_notes WHERE processed = 0').get() as { c: number }).c;
+          ctx.reply(`📝 Заметка сохранена для Claude Code\n📬 В очереди: ${pending}`);
+          return;
+        }
 
         // Route: short = command, long = ingest as meeting
         const intent = await this.classifyMessage(transcript);
