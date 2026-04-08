@@ -4,6 +4,7 @@ import { config } from '../config';
 import { getDb } from '../db/db';
 import { IngestService } from './ingest.service';
 import { ClaudeService } from './claude.service';
+import { ObsidianService } from './obsidian.service';
 import OpenAI from 'openai';
 import { moscowDateString, moscowDateTimeString } from '../utils/time';
 
@@ -20,15 +21,26 @@ export class TelegramService {
     const meetings = db.prepare("SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null }>;
     const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
 
+    // Read vault context (Obsidian notes)
+    let vaultContext = '';
+    try {
+      const obsidian = new ObsidianService(config.vaultPath);
+      vaultContext = obsidian.readAllForContext();
+      // Truncate if too large (to avoid token limits)
+      if (vaultContext.length > 60000) vaultContext = vaultContext.slice(0, 60000) + '\n\n...(обрезано)';
+    } catch {}
+
     const systemPrompt = `Ты — персональный ассистент пользователя в Telegram. Ты умный, дружелюбный, вдумчивый собеседник.
 
-Ты подключён к таск-трекеру, но главное — ты можешь разговаривать на любые темы, советовать, обсуждать идеи, помогать думать. Ты эксперт во всём — бизнес, проекты, продуктивность, саморазвитие, технологии, жизнь.
+Ты подключён к таск-трекеру и Obsidian vault пользователя, но главное — ты можешь разговаривать на любые темы, советовать, обсуждать идеи, помогать думать. Ты эксперт во всём — бизнес, проекты, продуктивность, саморазвитие, технологии, жизнь.
 
-ДАННЫЕ СИСТЕМЫ ПОЛЬЗОВАТЕЛЯ (используй если нужно):
+ДАННЫЕ СИСТЕМЫ ПОЛЬЗОВАТЕЛЯ:
 Проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
 Задачи: ${JSON.stringify(tasks.slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
 Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
+
+${vaultContext ? `СОДЕРЖИМОЕ OBSIDIAN VAULT (используй для ответов на вопросы о проектах, встречах, идеях):\n\n${vaultContext}\n\n` : ''}
 
 Статусы задач: backlog, todo, in_progress, done, someday
 Сейчас: ${moscowDateTimeString()}
