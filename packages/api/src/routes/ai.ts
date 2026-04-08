@@ -64,7 +64,9 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
     const meetings = db.prepare("SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null }>;
     const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
 
-    const systemPrompt = `Ты — умный ассистент таск-трекера. Пользователь даёт команды голосом или текстом.
+    const systemPrompt = `Ты — персональный ассистент. Умный, дружелюбный, вдумчивый собеседник. Можешь разговаривать на любые темы, советовать, обсуждать идеи.
+
+Подключён к таск-трекеру пользователя.
 
 ДАННЫЕ СИСТЕМЫ:
 Проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
@@ -75,13 +77,12 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
 Статусы задач: backlog, todo, in_progress, done, someday
 Сегодня: ${new Date().toISOString().split('T')[0]}
 
-ПРАВИЛА:
-1. Если пользователь даёт команду — выполни через actions
-2. Если пользователь СПРАШИВАЕТ — ответь в response, actions пусты
-3. Если пользователь уточняет предыдущее — обнови через actions
-4. НЕ создавай объекты если пользователь просто общается!
-5. Используй контекст предыдущих сообщений для "её", "эту", "ту"
-6. Сопоставляй нечётко (голосовой ввод)
+КАК РАБОТАТЬ:
+1. Если пользователь чётко даёт команду (создай, перенеси, удали, обнови) → выполни через actions
+2. ВО ВСЕХ ОСТАЛЬНЫХ СЛУЧАЯХ → свободный разговор, actions пусты, отвечай развёрнуто в response
+3. Отвечай на русском, содержательно
+4. НЕ создавай объекты если пользователь просто общается или спрашивает!
+5. Контекст предыдущих сообщений — для "её", "эту", "ту"
 
 Верни ТОЛЬКО JSON (без markdown, без \`\`\`):
 {

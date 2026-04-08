@@ -34,7 +34,7 @@ export class ClaudeService {
   async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = '', model?: string): Promise<string> {
     const response = await this.client.chat.completions.create({
       model: model ?? 'gpt-4.1-mini',
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [
         { role: 'system', content: this.buildSystemPrompt(systemPrompt) },
         ...messages,

@@ -19,9 +19,11 @@ export class TelegramService {
     const meetings = db.prepare("SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null }>;
     const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
 
-    const systemPrompt = `Ты — умный ассистент таск-трекера в Telegram. Ты ведёшь диалог с пользователем.
+    const systemPrompt = `Ты — персональный ассистент пользователя в Telegram. Ты умный, дружелюбный, вдумчивый собеседник.
 
-ДАННЫЕ СИСТЕМЫ:
+Ты подключён к таск-трекеру, но главное — ты можешь разговаривать на любые темы, советовать, обсуждать идеи, помогать думать. Ты эксперт во всём — бизнес, проекты, продуктивность, саморазвитие, технологии, жизнь.
+
+ДАННЫЕ СИСТЕМЫ ПОЛЬЗОВАТЕЛЯ (используй если нужно):
 Проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
 Задачи: ${JSON.stringify(tasks.slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
 Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
@@ -30,13 +32,14 @@ export class TelegramService {
 Статусы задач: backlog, todo, in_progress, done, someday
 Сегодня: ${new Date().toISOString().split('T')[0]}
 
-ПРАВИЛА:
-1. Если пользователь даёт команду (создай, перенеси, удали, привяжи, обнови) — выполни через actions
-2. Если пользователь СПРАШИВАЕТ или ОБЩАЕТСЯ (что у меня, как дела, расскажи) — ответь в response, actions пусты
-3. Если пользователь уточняет предыдущее действие ("привяжи к проекту X", "добавь туда Васю") — обнови через actions
-4. НЕ создавай встречи/задачи если пользователь просто общается или уточняет!
-5. Используй контекст предыдущих сообщений для "её", "эту", "ту встречу/задачу"
-6. Сопоставляй названия нечётко (голосовой ввод → неточности)
+КАК РАБОТАТЬ:
+1. Если пользователь чётко даёт команду (создай, перенеси, удали, обнови, привяжи) → выполни через actions
+2. ВО ВСЕХ ОСТАЛЬНЫХ СЛУЧАЯХ → свободный разговор, actions пусты, отвечай развёрнуто в response
+3. Можно обсуждать идеи, давать советы, помогать думать, шутить, рассказывать, объяснять
+4. Отвечай на русском, содержательно, без канцелярита
+5. Используй данные пользователя когда уместно (помню какие у тебя проекты, задачи)
+6. Контекст предыдущих сообщений — используй для «её», «эту», «ту»
+7. НЕ создавай встречи/задачи просто так — только когда явно просят
 
 Верни ТОЛЬКО JSON (без markdown, без \`\`\`):
 {
@@ -54,7 +57,7 @@ export class TelegramService {
 }`;
 
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
-      ...this.chatHistory.slice(-10), // last 5 exchanges
+      ...this.chatHistory.slice(-40), // last 20 exchanges
       { role: 'user', content: text },
     ];
 
@@ -162,23 +165,20 @@ export class TelegramService {
     // Save to history
     this.chatHistory.push({ role: 'user', content: text });
     this.chatHistory.push({ role: 'assistant', content: responseText });
-    if (this.chatHistory.length > 20) this.chatHistory = this.chatHistory.slice(-20);
+    if (this.chatHistory.length > 100) this.chatHistory = this.chatHistory.slice(-100);
 
     return responseText;
   }
 
-  /** Classify message using AI */
+  /** Classify message — chat/command vs ingest (for long content) */
   private async classifyMessage(text: string): Promise<'command' | 'ingest' | 'chat'> {
-    // Short messages are almost always commands or chat
-    if (text.length < 200) {
-      const cmdPatterns = /^(созда|добав|перенес|перемест|удал|сделай|поставь|измени|обнови|покажи|какие|сколько|что у меня|запланируй|назначь|отмен|привяжи|прикрепи|отредактируй|поменяй)/i;
-      if (cmdPatterns.test(text.trim())) return 'command';
-      // If we have chat history, likely a follow-up
-      if (this.chatHistory.length > 0) return 'command';
-      return 'chat';
-    }
-    // Long text = content to ingest
-    return 'ingest';
+    // Ingest signals: explicit meeting/transcription content
+    const ingestPatterns = /^(стенограмма|транскрип|запись встречи|текст встречи|протокол|заметки со встречи)/i;
+    if (ingestPatterns.test(text.trim())) return 'ingest';
+    // Very long text without context → probably content (e.g. pasted transcript)
+    if (text.length > 500 && this.chatHistory.length === 0) return 'ingest';
+    // Everything else → chat/command routing through AI
+    return 'command';
   }
 
   /** Transcribe audio via Whisper API */
