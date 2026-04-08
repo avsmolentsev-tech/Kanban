@@ -41,6 +41,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
     project_id: null,
   });
   const [saving, setSaving] = useState(false);
+  const [assignedIdsLocal, setAssignedIdsLocal] = useState<number[]>([]);
 
   useEffect(() => {
     if (task) {
@@ -53,10 +54,11 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
         due_date: task.due_date ?? '',
         project_id: task.project_id,
       });
+      setAssignedIdsLocal((task.people ?? []).map((p) => p.id));
     }
   }, [task]);
 
-  const assignedIds = new Set((task?.people ?? []).map((p) => p.id));
+  const assignedIds = new Set(assignedIdsLocal);
 
   const save = async (updates: Partial<FormState>) => {
     if (!task) return;
@@ -92,13 +94,17 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
   const togglePerson = async (personId: number) => {
     if (!task) return;
+    const next = assignedIds.has(personId)
+      ? assignedIdsLocal.filter((id) => id !== personId)
+      : [...assignedIdsLocal, personId];
+    setAssignedIdsLocal(next); // instant UI update
     setSaving(true);
     try {
-      const next = assignedIds.has(personId)
-        ? [...assignedIds].filter((id) => id !== personId)
-        : [...assignedIds, personId];
       await tasksApi.update(task.id, { person_ids: next });
       onUpdated();
+    } catch (err) {
+      setAssignedIdsLocal(assignedIdsLocal); // revert on error
+      alert('Ошибка: ' + (err instanceof Error ? err.message : 'unknown'));
     } finally {
       setSaving(false);
     }
@@ -195,7 +201,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
           {/* Assignees */}
           {people.length > 0 && (
             <div>
-              <div className="text-xs text-gray-500 mb-2">Assignees</div>
+              <div className="text-xs text-gray-500 mb-2">Исполнители</div>
               <div className="flex flex-wrap gap-2">
                 {people.map((p) => {
                   const assigned = assignedIds.has(p.id);
