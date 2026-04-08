@@ -181,8 +181,14 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
               action['project_id'] ?? null, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null
             );
             const taskId = Number(r.lastInsertRowid);
-            if (Array.isArray(action['person_ids'])) {
-              for (const pid of action['person_ids'] as number[]) db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(taskId, pid);
+            // Auto-add self if no people specified
+            let peopleIds = Array.isArray(action['person_ids']) ? action['person_ids'] as number[] : [];
+            if (peopleIds.length === 0) {
+              const selfRow = db.prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
+              if (selfRow) peopleIds = [selfRow.id];
+            }
+            for (const pid of peopleIds) {
+              db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(taskId, pid);
             }
             results.push({ type: 'create_task', success: true, detail: `Задача "${action['title']}" создана` });
             break;

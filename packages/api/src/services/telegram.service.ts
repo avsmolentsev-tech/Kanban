@@ -91,10 +91,14 @@ export class TelegramService {
               action['project_id'] ?? null, action['title'], '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null
             );
             const taskId = Number(r.lastInsertRowid);
-            if (Array.isArray(action['person_ids'])) {
-              for (const pid of action['person_ids'] as number[]) {
-                db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(taskId, pid);
-              }
+            // Auto-add self if no people specified
+            let peopleIds = Array.isArray(action['person_ids']) ? action['person_ids'] as number[] : [];
+            if (peopleIds.length === 0) {
+              const selfRow = db.prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
+              if (selfRow) peopleIds = [selfRow.id];
+            }
+            for (const pid of peopleIds) {
+              db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(taskId, pid);
             }
             const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
             results.push(`✅ Задача "${action['title']}"${projName ? ` → ${projName}` : ''}`);
@@ -340,7 +344,10 @@ export class TelegramService {
       const text = ctx.message.text.replace(/^\/add\s*/, '').trim();
       if (!text) { ctx.reply('Формат: /add Название задачи'); return; }
 
-      getDb().prepare('INSERT INTO tasks (title, status, priority) VALUES (?, ?, ?)').run(text, 'todo', 3);
+      const r = getDb().prepare('INSERT INTO tasks (title, status, priority) VALUES (?, ?, ?)').run(text, 'todo', 3);
+      const tid = Number(r.lastInsertRowid);
+      const selfRow = getDb().prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
+      if (selfRow) getDb().prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(tid, selfRow.id);
       ctx.reply(`✅ Задача добавлена: ${text}`);
     });
 

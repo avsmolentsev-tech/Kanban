@@ -62,6 +62,16 @@ function setTaskPeople(taskId: number, personIds: number[]) {
   }
 }
 
+/** Find self person id (named "Я", "Me", or similar) */
+export function getSelfPersonId(): number | null {
+  try {
+    const row = getDb().prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','я','self') ORDER BY id LIMIT 1").get() as { id: number } | undefined;
+    return row?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 tasksRouter.get('/', (req: Request, res: Response) => {
   let query = 'SELECT * FROM tasks WHERE archived = 0';
   const params: unknown[] = [];
@@ -79,8 +89,15 @@ tasksRouter.post('/', async (req: Request, res: Response) => {
   const { project_id, title, description, status, priority, urgency, due_date, start_date, person_ids } = parsed.data;
   const result = getDb().prepare('INSERT INTO tasks (project_id, title, description, status, priority, urgency, due_date, start_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(project_id ?? null, title, description, status, priority, urgency, due_date ?? null, start_date ?? null);
   const taskId = result.lastInsertRowid as number;
-  if (person_ids && person_ids.length > 0) {
-    setTaskPeople(taskId, person_ids);
+
+  // Auto-add self if no people specified
+  let effectivePeople = person_ids ?? [];
+  if (effectivePeople.length === 0) {
+    const selfId = getSelfPersonId();
+    if (selfId) effectivePeople = [selfId];
+  }
+  if (effectivePeople.length > 0) {
+    setTaskPeople(taskId, effectivePeople);
   }
   const task = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Record<string, unknown>;
   searchService.indexRecord('task', taskId, parsed.data.title, parsed.data.description ?? '');
