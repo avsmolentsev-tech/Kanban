@@ -121,17 +121,33 @@ export function MeetingsPage() {
     } finally { setTranscribing(false); }
   };
 
-  // Filter meetings
+  // Filter meetings (use project_ids many-to-many, fallback to project_id)
+  const meetingProjectIds = (m: Meeting): number[] => {
+    const ids = (m as unknown as Record<string, unknown>)['project_ids'] as number[] | undefined;
+    if (ids && ids.length > 0) return ids;
+    return m.project_id != null ? [m.project_id] : [];
+  };
+
   const filtered = selectedProjectIds === null
     ? meetings
-    : meetings.filter((m) => m.project_id !== null && selectedProjectIds.has(m.project_id));
+    : meetings.filter((m) => {
+        const ids = meetingProjectIds(m);
+        return ids.some((id) => selectedProjectIds.has(id));
+      });
 
-  // Group by project → time period
+  // Group: a meeting with multiple projects appears in EACH project's row
   const projectGroups = new Map<number | null, Meeting[]>();
   for (const m of filtered) {
-    const pid = m.project_id ?? null;
-    if (!projectGroups.has(pid)) projectGroups.set(pid, []);
-    projectGroups.get(pid)!.push(m);
+    const ids = meetingProjectIds(m);
+    if (ids.length === 0) {
+      if (!projectGroups.has(null)) projectGroups.set(null, []);
+      projectGroups.get(null)!.push(m);
+    } else {
+      for (const pid of ids) {
+        if (!projectGroups.has(pid)) projectGroups.set(pid, []);
+        projectGroups.get(pid)!.push(m);
+      }
+    }
   }
 
   const rows: Array<{ project: Project | null; meetings: Meeting[] }> = [];

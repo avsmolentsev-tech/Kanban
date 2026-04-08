@@ -21,6 +21,7 @@ interface ChatMessage {
 
 export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDeleted, onTranscribe, transcribing }: Props) {
   const [form, setForm] = useState<Partial<Meeting>>({});
+  const [projectIds, setProjectIds] = useState<number[]>([]);
   const [tab, setTab] = useState<'details' | 'chat'>('details');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -30,6 +31,8 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
   useEffect(() => {
     if (meeting) {
       setForm({ ...meeting });
+      const ids = (meeting as unknown as Record<string, unknown>)['project_ids'] as number[] | undefined;
+      setProjectIds(ids ?? (meeting.project_id != null ? [meeting.project_id] : []));
       setChatMessages([]);
       setTab('details');
     }
@@ -133,7 +136,6 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                 <div className="text-xs text-gray-500 mb-1.5">Проекты (можно несколько)</div>
                 <div className="flex flex-wrap gap-2">
                   {projects.filter((p) => !p.archived).map((p) => {
-                    const projectIds = ((meeting as unknown as Record<string, unknown>)['project_ids'] as number[] | undefined) ?? (meeting.project_id ? [meeting.project_id] : []);
                     const active = projectIds.includes(p.id);
                     return (
                       <button
@@ -141,8 +143,15 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                         type="button"
                         onClick={async () => {
                           const next = active ? projectIds.filter(x => x !== p.id) : [...projectIds, p.id];
-                          await meetingsApi.update(meeting.id, { project_ids: next });
-                          onUpdated();
+                          setProjectIds(next); // immediate UI update
+                          try {
+                            await meetingsApi.update(meeting.id, { project_ids: next });
+                            onUpdated();
+                          } catch (err) {
+                            // Revert on error
+                            setProjectIds(projectIds);
+                            alert('Ошибка: ' + (err instanceof Error ? err.message : 'unknown'));
+                          }
                         }}
                         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${active ? 'border-transparent text-white' : 'border-gray-200 text-gray-600 bg-white hover:border-gray-300'}`}
                         style={active ? { backgroundColor: p.color, borderColor: p.color } : {}}
