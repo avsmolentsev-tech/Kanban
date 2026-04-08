@@ -5,6 +5,7 @@ import { getDb } from '../db/db';
 import { IngestService } from './ingest.service';
 import { ClaudeService } from './claude.service';
 import OpenAI from 'openai';
+import { moscowDateString, moscowDateTimeString } from '../utils/time';
 
 export class TelegramService {
   private bot: Telegraf | null = null;
@@ -30,7 +31,7 @@ export class TelegramService {
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 
 Статусы задач: backlog, todo, in_progress, done, someday
-Сегодня: ${new Date().toISOString().split('T')[0]}
+Сейчас: ${moscowDateTimeString()}
 
 КАК РАБОТАТЬ:
 1. Если пользователь чётко даёт команду (создай, перенеси, удали, обнови, привяжи) → выполни через actions
@@ -61,7 +62,7 @@ export class TelegramService {
       { role: 'user', content: text },
     ];
 
-    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1');
+    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1', true);
 
     const jsonMatch = result.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
@@ -335,7 +336,7 @@ export class TelegramService {
     // /brief — daily brief
     this.bot.command('brief', async (ctx) => {
       const db = getDb();
-      const today = new Date().toISOString().split('T')[0];
+      const today = moscowDateString();
       const tasks = db.prepare(
         "SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') ORDER BY priority DESC LIMIT 10"
       ).all();

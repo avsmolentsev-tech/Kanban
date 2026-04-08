@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { config } from '../config';
 import type { MeetingStructured, InboxAnalysis } from '@pis/shared';
+import { toolDefinitions, executeTool } from './tools.service';
 
 export interface TaskSuggestion {
   title: string;
@@ -31,16 +32,49 @@ export class ClaudeService {
     ].filter(Boolean).join('\n');
   }
 
-  async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = '', model?: string): Promise<string> {
-    const response = await this.client.chat.completions.create({
+  async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = '', model?: string, useTools = false): Promise<string> {
+    const chatMessages: Array<Record<string, unknown>> = [
+      { role: 'system', content: this.buildSystemPrompt(systemPrompt) },
+      ...messages,
+    ];
+
+    const requestOpts: Record<string, unknown> = {
       model: model ?? 'gpt-4.1-mini',
       max_tokens: 8192,
-      messages: [
-        { role: 'system', content: this.buildSystemPrompt(systemPrompt) },
-        ...messages,
-      ],
-    });
-    return response.choices[0]?.message?.content ?? '';
+      messages: chatMessages,
+    };
+
+    if (useTools) {
+      requestOpts['tools'] = toolDefinitions;
+    }
+
+    let response = await this.client.chat.completions.create(requestOpts as Parameters<typeof this.client.chat.completions.create>[0]);
+    let message = response.choices[0]?.message;
+
+    // Handle tool calls in a loop (max 3 iterations)
+    let iterations = 0;
+    while (useTools && message?.tool_calls && message.tool_calls.length > 0 && iterations < 3) {
+      iterations++;
+      chatMessages.push(message as unknown as Record<string, unknown>);
+      for (const toolCall of message.tool_calls) {
+        if (toolCall.type === 'function') {
+          const args = JSON.parse(toolCall.function.arguments || '{}');
+          const result = await executeTool(toolCall.function.name, args);
+          chatMessages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: result,
+          });
+        }
+      }
+      response = await this.client.chat.completions.create({
+        ...requestOpts,
+        messages: chatMessages,
+      } as Parameters<typeof this.client.chat.completions.create>[0]);
+      message = response.choices[0]?.message;
+    }
+
+    return message?.content ?? '';
   }
 
   async parseMeeting(rawText: string): Promise<MeetingStructured> {

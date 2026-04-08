@@ -5,6 +5,7 @@ import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
+import { moscowDateString, moscowDateTimeString } from '../utils/time';
 
 export const aiRouter = Router();
 const claude = new ClaudeService();
@@ -37,7 +38,7 @@ aiRouter.post('/chat', async (req: Request, res: Response) => {
 
 aiRouter.post('/daily-brief', async (_req: Request, res: Response) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = moscowDateString();
     const tasks = getDb().prepare("SELECT title, status, priority, urgency, due_date FROM tasks WHERE archived = 0 AND status != 'done' ORDER BY priority DESC LIMIT 20").all();
     const meetings = getDb().prepare('SELECT title, date FROM meetings WHERE date >= ? ORDER BY date ASC LIMIT 10').all(today);
     const brief = await claude.dailyBrief(JSON.stringify(tasks), JSON.stringify(meetings));
@@ -75,7 +76,7 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 
 Статусы задач: backlog, todo, in_progress, done, someday
-Сегодня: ${new Date().toISOString().split('T')[0]}
+Сейчас: ${moscowDateTimeString()}
 
 КАК РАБОТАТЬ:
 1. Если пользователь чётко даёт команду (создай, перенеси, удали, обнови) → выполни через actions
