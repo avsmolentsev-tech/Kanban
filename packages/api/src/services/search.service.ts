@@ -166,11 +166,16 @@ export class SearchService {
   private syncVaultFileToDb(filename: string, content: string): void {
     try {
       const db = getDb();
+      const vaultRelPath = filename.replace(/\\/g, '/');
+
+      // Check if it's in Meetings folder → handle as new meeting
+      if (vaultRelPath.startsWith('Meetings/')) {
+        this.syncMeetingFromVault(vaultRelPath, content);
+        return;
+      }
+
       const fm = this.parseFrontmatter(content);
       if (!fm['type']) return;
-
-      // Find task by vault_path
-      const vaultRelPath = filename.replace(/\\/g, '/');
 
       if (fm['type'] === 'task') {
         const task = db.prepare('SELECT id FROM tasks WHERE vault_path = ?').get(vaultRelPath) as { id: number } | undefined;
@@ -192,6 +197,95 @@ export class SearchService {
         }
       }
     } catch {}
+  }
+
+  /** Sync meeting from vault file. If new — create record + extract tasks via AI */
+  private async syncMeetingFromVault(vaultRelPath: string, content: string): Promise<void> {
+    try {
+      const db = getDb();
+      const existing = db.prepare('SELECT id FROM meetings WHERE vault_path = ?').get(vaultRelPath) as { id: number } | undefined;
+      if (existing) return; // Already exists, don't re-extract tasks
+
+      // Parse frontmatter for metadata
+      const fm = this.parseFrontmatter(content);
+      const body = content.replace(/^---[\s\S]*?---\n*/, '').trim();
+      if (body.length < 50) return; // Skip empty/tiny files
+
+      // Extract title from filename or first heading
+      const filename = vaultRelPath.split('/').pop()!.replace('.md', '');
+      const titleMatch = body.match(/^#\s+(.+)$/m);
+      const title = titleMatch?.[1] ?? fm['title'] ?? filename;
+      const date = fm['date'] ?? new Date().toISOString().split('T')[0]!;
+
+      // Try to match project by frontmatter or filename
+      const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
+      let projectId: number | null = null;
+      const projectHint = (fm['project'] ?? '').toLowerCase();
+      if (projectHint) {
+        const match = projects.find(p => p.name.toLowerCase().includes(projectHint) || projectHint.includes(p.name.toLowerCase()));
+        if (match) projectId = match.id;
+      }
+
+      // Create meeting record
+      const result = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw, vault_path, processed) VALUES (?, ?, ?, ?, ?, 1)').run(
+        title, date, projectId, body, vaultRelPath
+      );
+      const meetingId = Number(result.lastInsertRowid);
+      if (projectId) db.prepare('INSERT OR IGNORE INTO meeting_projects (meeting_id, project_id) VALUES (?, ?)').run(meetingId, projectId);
+      this.indexRecord('meeting', meetingId, title, body);
+      console.log(`[vault-sync] created meeting #${meetingId} from ${vaultRelPath}`);
+
+      // Extract tasks via AI (async, don't block watcher)
+      this.extractTasksFromMeeting(meetingId, title, body, projectId).catch(err => {
+        console.warn('[vault-sync] task extraction failed:', err);
+      });
+    } catch (err) {
+      console.warn('[vault-sync] syncMeetingFromVault failed:', err);
+    }
+  }
+
+  /** Extract tasks from meeting content using AI */
+  private async extractTasksFromMeeting(meetingId: number, title: string, body: string, projectId: number | null): Promise<void> {
+    try {
+      const { ClaudeService } = require('./claude.service');
+      const claude = new ClaudeService();
+
+      const prompt = `Из текста встречи извлеки список конкретных задач (action items, договорённости, что-то нужно сделать). Верни ТОЛЬКО JSON массив строк (без markdown), например:
+["Подготовить презентацию", "Связаться с клиентом", "Написать отчёт"]
+
+Если задач нет — верни пустой массив [].
+
+Текст встречи:
+${body.slice(0, 8000)}`;
+
+      const result = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
+      const jsonMatch = result.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return;
+      const tasks = JSON.parse(jsonMatch[0]) as string[];
+      if (!Array.isArray(tasks) || tasks.length === 0) return;
+
+      const db = getDb();
+      const selfRow = db.prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
+
+      let created = 0;
+      for (const taskTitle of tasks) {
+        if (!taskTitle || typeof taskTitle !== 'string' || taskTitle.length < 3) continue;
+        try {
+          const tr = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority) VALUES (?, ?, ?, ?, ?)').run(
+            projectId, taskTitle, `Из встречи: ${title}`, 'backlog', 3
+          );
+          const newTaskId = Number(tr.lastInsertRowid);
+          if (selfRow) db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(newTaskId, selfRow.id);
+          this.indexRecord('task', newTaskId, taskTitle, '');
+          created++;
+        } catch {}
+      }
+      if (created > 0) {
+        console.log(`[vault-sync] extracted ${created} tasks from meeting #${meetingId}`);
+      }
+    } catch (err) {
+      console.warn('[vault-sync] extractTasksFromMeeting error:', err);
+    }
   }
 
   /** Archive DB records when vault file is deleted */
