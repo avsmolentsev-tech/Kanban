@@ -4,7 +4,6 @@ import { config } from '../config';
 import { getDb } from '../db/db';
 import { IngestService } from './ingest.service';
 import { ClaudeService } from './claude.service';
-import { ObsidianService } from './obsidian.service';
 import OpenAI from 'openai';
 import { moscowDateString, moscowDateTimeString } from '../utils/time';
 
@@ -21,14 +20,7 @@ export class TelegramService {
     const meetings = db.prepare("SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null }>;
     const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
 
-    // Read vault context (Obsidian notes)
-    let vaultContext = '';
-    try {
-      const obsidian = new ObsidianService(config.vaultPath);
-      vaultContext = obsidian.readAllForContext();
-      // Truncate if too large (to avoid token limits)
-      if (vaultContext.length > 60000) vaultContext = vaultContext.slice(0, 60000) + '\n\n...(обрезано)';
-    } catch {}
+    // Vault access via tools (search_vault, read_vault_file, list_vault_folder)
 
     const systemPrompt = `Ты — персональный ассистент пользователя в Telegram. Ты умный, дружелюбный, вдумчивый собеседник.
 
@@ -40,7 +32,14 @@ export class TelegramService {
 Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 
-${vaultContext ? `СОДЕРЖИМОЕ OBSIDIAN VAULT (используй для ответов на вопросы о проектах, встречах, идеях):\n\n${vaultContext}\n\n` : ''}
+ДОСТУП К OBSIDIAN VAULT через инструменты:
+- search_vault(query) — поиск по всему vault
+- read_vault_file(path) — прочитать конкретный файл
+- list_vault_folder(folder) — список файлов в папке (Meetings, Ideas, Tasks, People, Projects, Goals, Materials)
+- get_entity_details(type, id) — детали задачи/встречи/проекта/человека
+- get_weather(city) — текущая погода
+
+Когда пользователь спрашивает что-то конкретное — ИСПОЛЬЗУЙ инструменты, не гадай. Сначала поищи, потом прочитай, потом ответь.
 
 Статусы задач: backlog, todo, in_progress, done, someday
 Сейчас: ${moscowDateTimeString()}

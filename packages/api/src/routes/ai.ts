@@ -48,6 +48,45 @@ aiRouter.post('/daily-brief', async (_req: Request, res: Response) => {
   }
 });
 
+aiRouter.post('/weekly-brief', async (_req: Request, res: Response) => {
+  try {
+    const today = moscowDateString();
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const db = getDb();
+    const completedTasks = db.prepare("SELECT title, priority FROM tasks WHERE status = 'done' AND updated_at >= ? ORDER BY updated_at DESC").all(weekAgo);
+    const activeTasks = db.prepare("SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') ORDER BY priority DESC LIMIT 20").all();
+    const weekMeetings = db.prepare('SELECT title, date, summary_raw FROM meetings WHERE date >= ? AND date <= ? ORDER BY date DESC').all(weekAgo, today);
+    const upcomingMeetings = db.prepare('SELECT title, date FROM meetings WHERE date > ? ORDER BY date ASC LIMIT 5').all(today);
+
+    const prompt = `Создай еженедельный обзор на русском языке.
+
+Выполнено за неделю (${weekAgo} — ${today}):
+${JSON.stringify(completedTasks)}
+
+Активные задачи:
+${JSON.stringify(activeTasks)}
+
+Встречи за неделю:
+${JSON.stringify(weekMeetings)}
+
+Предстоящие встречи:
+${JSON.stringify(upcomingMeetings)}
+
+Сделай структурированный обзор:
+1. Главные достижения недели
+2. Незавершённые дела и приоритеты
+3. Предстоящие встречи
+4. Рекомендации на следующую неделю
+5. Общие наблюдения и тренды`;
+
+    const brief = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1');
+    res.json(ok({ brief }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
+  }
+});
+
 // Voice command — parse natural language into action and execute
 const VoiceCommandSchema = z.object({
   text: z.string().min(1),
