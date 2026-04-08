@@ -53,7 +53,27 @@ export class IngestService {
         for (const pid of matchedPeopleIds) {
           db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, pid);
         }
+        // Link to project (also via meeting_projects junction)
+        if (matchedProjectId) {
+          db.prepare('INSERT OR IGNORE INTO meeting_projects (meeting_id, project_id) VALUES (?, ?)').run(meetingId, matchedProjectId);
+        }
         createdRecords.push({ type: 'meeting', id: meetingId, title: analysis.title, vault_path: vaultPath });
+
+        // Extract tasks from meeting → backlog
+        const tasksFromMeeting = analysis.tasks ?? [];
+        const selfRow = db.prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
+        for (const taskTitle of tasksFromMeeting) {
+          if (!taskTitle || typeof taskTitle !== 'string') continue;
+          try {
+            const tr = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority) VALUES (?, ?, ?, ?, ?)').run(
+              matchedProjectId, taskTitle, `Из встречи: ${analysis.title}`, 'backlog', 3
+            );
+            const newTaskId = Number(tr.lastInsertRowid);
+            // Auto-assign self
+            if (selfRow) db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(newTaskId, selfRow.id);
+            createdRecords.push({ type: 'task', id: newTaskId, title: taskTitle });
+          } catch {}
+        }
       } else if (analysis.detected_type === 'task') {
         const date = analysis.date ?? null;
         const result = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, due_date) VALUES (?, ?, ?, ?, ?, ?)').run(

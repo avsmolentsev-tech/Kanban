@@ -58,7 +58,7 @@ function computePeriodDueDate(period: TimePeriod): string {
 }
 
 function TimelineColumn({ period, tasks, projects, onTaskClick, onToggleDone, projectId, people, onRefresh, dueDate }: {
-  period: TimePeriod | 'none' | 'done' | 'someday'; tasks: Task[]; projects: Project[]; onTaskClick: (t: Task) => void;
+  period: TimePeriod | 'none' | 'done' | 'someday' | 'backlog'; tasks: Task[]; projects: Project[]; onTaskClick: (t: Task) => void;
   onToggleDone: (id: number, newStatus: import('@pis/shared').TaskStatus) => void;
   projectId: number | null; people: Person[]; onRefresh: () => void; dueDate?: string | null;
 }) {
@@ -134,6 +134,7 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
     <div className="p-4 overflow-auto">
       {/* Column headers */}
       <div className="flex mb-2 ml-44">
+        <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-purple-600 text-center">Backlog</div>
         {PERIODS.map((p) => (
           <div key={p} className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-500 text-center">
             {PERIOD_LABELS[p]}
@@ -147,12 +148,14 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
       {/* Project swimlanes */}
       <SortableContext items={projectOrder.map((p) => `project-row-${p.project?.id ?? 'none'}`)} strategy={verticalListSortingStrategy}>
         {projectOrder.map(({ project, tasks: pTasks }) => {
-          const grouped: Record<TimePeriod | 'none' | 'done' | 'someday', Task[]> = { today: [], week: [], month: [], year: [], none: [], done: [], someday: [] };
+          const grouped: Record<TimePeriod | 'none' | 'done' | 'someday' | 'backlog', Task[]> = { backlog: [], today: [], week: [], month: [], year: [], none: [], done: [], someday: [] };
           for (const t of pTasks) {
             if (t.status === 'done') {
               grouped.done.push(t);
             } else if (t.status === 'someday') {
               grouped.someday.push(t);
+            } else if (t.status === 'backlog') {
+              grouped.backlog.push(t);
             } else {
               grouped[classifyTask(t.due_date)].push(t);
             }
@@ -181,6 +184,8 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
 
                   {/* Period columns */}
                   <div className="flex gap-4">
+                    <TimelineColumn period="backlog" tasks={grouped.backlog} projects={projects} onTaskClick={onTaskClick}
+                      onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
                     {PERIODS.map((period) => (
                       <TimelineColumn key={`${project?.id ?? 'none'}-${period}`} period={period} tasks={grouped[period]} projects={projects}
                         onTaskClick={onTaskClick} onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh}

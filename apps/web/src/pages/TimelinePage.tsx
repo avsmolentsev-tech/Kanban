@@ -67,23 +67,21 @@ export function TimelinePage() {
       reorderProjects(items);
     } else {
       const taskId = Number(activeId);
-      let target: TimePeriod | 'none' | 'done' | 'someday' | null = null;
+      let target: TimePeriod | 'none' | 'done' | 'someday' | 'backlog' | null = null;
 
       if (overId.startsWith('timeline-')) {
         // Format: timeline-{projectId}-{period}
         const parts = overId.split('-');
-        target = parts[parts.length - 1] as TimePeriod | 'none' | 'done' | 'someday';
-        // Extract target project ID for cross-project moves
-        const targetProjectPart = parts.slice(1, -1).join('-'); // e.g. "1", "none"
+        target = parts[parts.length - 1] as TimePeriod | 'none' | 'done' | 'someday' | 'backlog';
+        const targetProjectPart = parts.slice(1, -1).join('-');
         const targetProjectId = targetProjectPart === 'none' ? null : Number(targetProjectPart);
         const task = tasks.find((t) => t.id === taskId);
         if (task && task.project_id !== targetProjectId) {
-          // Moving to a different project
-          if (target === 'done' || target === 'someday') {
+          if (target === 'done' || target === 'someday' || target === 'backlog') {
             await tasksApi.update(taskId, { status: target, project_id: targetProjectId });
           } else {
             const updates: Record<string, unknown> = { due_date: computeDueDate(target), project_id: targetProjectId };
-            if (task.status === 'done' || task.status === 'someday') updates.status = 'todo';
+            if (task.status === 'done' || task.status === 'someday' || task.status === 'backlog') updates.status = 'todo';
             await tasksApi.update(taskId, updates);
           }
           await fetchTasks();
@@ -92,17 +90,17 @@ export function TimelinePage() {
       } else {
         const overTask = tasks.find((t) => t.id === Number(overId));
         if (overTask) {
-          target = overTask.status === 'done' ? 'done' : overTask.status === 'someday' ? 'someday' : classifyTask(overTask.due_date);
+          target = overTask.status === 'done' ? 'done' : overTask.status === 'someday' ? 'someday' : overTask.status === 'backlog' ? 'backlog' : classifyTask(overTask.due_date);
         }
       }
 
-      if (target === 'done' || target === 'someday') {
+      if (target === 'done' || target === 'someday' || target === 'backlog') {
         await tasksApi.update(taskId, { status: target });
         await fetchTasks();
       } else if (target !== null) {
         const task = tasks.find((t) => t.id === taskId);
         const updates: Record<string, unknown> = { due_date: computeDueDate(target) };
-        if (task?.status === 'done' || task?.status === 'someday') updates.status = 'todo';
+        if (task?.status === 'done' || task?.status === 'someday' || task?.status === 'backlog') updates.status = 'todo';
         await tasksApi.update(taskId, updates);
         await fetchTasks();
       }
