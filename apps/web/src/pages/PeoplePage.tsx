@@ -35,8 +35,27 @@ function DraggablePersonCard({ person, project, onClick }: { person: Person; pro
   );
 }
 
-function AsapZone({ people, onClickPerson }: { people: Person[]; onClickPerson: (p: Person) => void }) {
+function AsapZone({ people, projects, onClickPerson }: { people: Person[]; projects: Project[]; onClickPerson: (p: Person) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: 'people-asap' });
+
+  // Group ASAP people by project (a person can appear in multiple)
+  const byProject = new Map<number | null, Person[]>();
+  for (const p of people) {
+    const ids = p.project_ids && p.project_ids.length > 0 ? p.project_ids : [null];
+    for (const pid of ids) {
+      if (!byProject.has(pid)) byProject.set(pid, []);
+      byProject.get(pid)!.push(p);
+    }
+  }
+
+  const rows: Array<{ project: Project | null; people: Person[] }> = [];
+  for (const p of projects.filter(pr => !pr.archived)) {
+    const list = byProject.get(p.id);
+    if (list) rows.push({ project: p, people: list });
+  }
+  const unassigned = byProject.get(null);
+  if (unassigned) rows.push({ project: null, people: unassigned });
+
   return (
     <div
       ref={setNodeRef}
@@ -47,12 +66,26 @@ function AsapZone({ people, onClickPerson }: { people: Person[]; onClickPerson: 
         <span className="text-sm font-bold text-red-700 dark:text-red-300">С кем встретиться ASAP</span>
         <span className="text-xs text-red-400">({people.length})</span>
       </div>
+
       {people.length === 0 ? (
         <div className="text-xs text-red-400 dark:text-red-500">Перетащи сюда людей, с которыми нужно встретиться срочно</div>
       ) : (
-        <div className="flex flex-wrap gap-2">
-          {people.map(p => (
-            <DraggablePersonCard key={p.id} person={p} project={null} onClick={() => onClickPerson(p)} />
+        <div className="space-y-3">
+          {rows.map(({ project, people: rowPeople }) => (
+            <div key={project?.id ?? 'none'} className="flex gap-3">
+              <div className="w-40 min-w-[160px] flex-shrink-0 pt-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 truncate">{project?.name ?? 'Без проекта'}</span>
+                </div>
+                <div className="text-xs text-gray-400 mt-0.5 ml-5">{rowPeople.length}</div>
+              </div>
+              <div className="flex flex-wrap gap-2 flex-1">
+                {rowPeople.map(p => (
+                  <DraggablePersonCard key={`asap-${project?.id ?? 'none'}-${p.id}`} person={p} project={project} onClick={() => onClickPerson(p)} />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -268,6 +301,7 @@ export function PeoplePage() {
         {/* ASAP section */}
         <AsapZone
           people={people.filter(p => (p as unknown as Record<string, unknown>)['meet_asap'] === 1)}
+          projects={projects}
           onClickPerson={setSelected}
         />
 
