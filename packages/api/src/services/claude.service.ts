@@ -93,15 +93,52 @@ ${rawText}`;
   }
 
   async parseInboxItem(text: string, fileType: string): Promise<InboxAnalysis> {
-    const prompt = `Analyze this content (file type: ${fileType}) and return ONLY valid JSON:
-{"detected_type":"meeting|idea|task|material|unknown","title":"string","date":"YYYY-MM-DD or null","people":["names"],"project_hints":["names"],"agreements":["strings"],"tasks":["strings"],"ideas":["strings"],"summary":"2-3 sentences","key_facts":["strings"],"tags":["strings"]}
+    const prompt = `Ты — профессиональный аналитик встреч и знаний. Проанализируй контент (тип файла: ${fileType}) и создай структурированное резюме на УРОВНЕ Plaud / Otter.ai.
 
-Content:
+ТРЕБОВАНИЯ К АНАЛИЗУ:
+1. Определи тип контента (встреча, идея, задача, материал)
+2. Создай КАЧЕСТВЕННОЕ саммари на русском языке со следующей структурой:
+   - Executive summary (2-3 предложения о сути)
+   - Ключевые темы (список с кратким описанием каждой)
+   - Принятые решения (что было решено)
+   - Action items (конкретные задачи с исполнителями)
+   - Важные цитаты и инсайты
+   - Открытые вопросы
+   - Следующие шаги
+3. Извлеки все имена людей (только реальные собственные имена, не "я"/"мы")
+4. Найди упоминания проектов/компаний/продуктов
+5. Выдели все задачи которые кто-то обязался сделать
+6. Теги: ключевые темы одним словом
+
+Верни ТОЛЬКО валидный JSON без markdown:
+{
+  "detected_type": "meeting|idea|task|material|unknown",
+  "title": "Краткое информативное название (не более 80 символов)",
+  "date": "YYYY-MM-DD или null",
+  "people": ["имена реальных участников"],
+  "project_hints": ["названия проектов/компаний"],
+  "agreements": ["договорённости списком"],
+  "tasks": ["конкретные задачи, одна строка = одна задача"],
+  "ideas": ["идеи которые прозвучали"],
+  "summary": "# Резюме\\n\\n[2-3 предложения executive summary]\\n\\n## Ключевые темы\\n- **Тема 1**: описание\\n- **Тема 2**: описание\\n\\n## Решения\\n- Решение 1\\n- Решение 2\\n\\n## Action items\\n- [ ] Задача 1 (кто делает)\\n- [ ] Задача 2\\n\\n## Инсайты и цитаты\\n> Важная цитата\\n\\n## Открытые вопросы\\n- Вопрос 1\\n\\n## Следующие шаги\\n- Шаг 1",
+  "key_facts": ["факты и цифры"],
+  "tags": ["ключевые", "слова"]
+}
+
+Отвечай на русском языке во всех текстовых полях. Будь конкретным и полезным — избегай общих фраз.
+
+Контент:
 ${text}`;
-    const result = await this.chat([{ role: 'user', content: prompt }]);
-    const jsonMatch = result.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Claude did not return valid JSON for inbox analysis');
-    return JSON.parse(jsonMatch[0]) as InboxAnalysis;
+    const result = await this.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1', false, true);
+    let parsed: InboxAnalysis;
+    try {
+      parsed = JSON.parse(result) as InboxAnalysis;
+    } catch {
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('Claude did not return valid JSON for inbox analysis');
+      parsed = JSON.parse(jsonMatch[0]) as InboxAnalysis;
+    }
+    return parsed;
   }
 
   async suggestTasks(projectContext: string): Promise<TaskSuggestion[]> {
