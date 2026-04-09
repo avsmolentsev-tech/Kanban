@@ -103,6 +103,9 @@ export function initDb(): void {
   // Ideas status column
   try { _db.exec("ALTER TABLE ideas ADD COLUMN status TEXT NOT NULL DEFAULT 'backlog'"); } catch {}
   try { _db.exec("ALTER TABLE ideas ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch {}
+
+  // People: ASAP flag
+  try { _db.exec("ALTER TABLE people ADD COLUMN meet_asap INTEGER NOT NULL DEFAULT 0"); } catch {}
 }
 
 export function initTestDb(): void {
@@ -164,6 +167,9 @@ export function initTestDb(): void {
   // Ideas status column
   try { _db.exec("ALTER TABLE ideas ADD COLUMN status TEXT NOT NULL DEFAULT 'backlog'"); } catch {}
   try { _db.exec("ALTER TABLE ideas ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch {}
+
+  // People: ASAP flag
+  try { _db.exec("ALTER TABLE people ADD COLUMN meet_asap INTEGER NOT NULL DEFAULT 0"); } catch {}
 }
 
 export function closeDb(): void {

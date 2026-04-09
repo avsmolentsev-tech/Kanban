@@ -73,6 +73,7 @@ const UpdatePersonSchema = z.object({
   notes: z.string().optional(),
   project_id: z.number().int().nullable().optional(),
   project_ids: z.array(z.number().int()).optional(),
+  meet_asap: z.boolean().optional(),
 });
 
 peopleRouter.patch('/:id', (req: Request, res: Response) => {
@@ -90,6 +91,11 @@ peopleRouter.patch('/:id', (req: Request, res: Response) => {
     if (!('project_id' in rest)) {
       (rest as Record<string, unknown>)['project_id'] = project_ids[0] ?? null;
     }
+  }
+
+  // Convert boolean meet_asap to number for SQLite
+  if (typeof (rest as Record<string, unknown>)['meet_asap'] === 'boolean') {
+    (rest as Record<string, unknown>)['meet_asap'] = (rest as Record<string, unknown>)['meet_asap'] ? 1 : 0;
   }
 
   const fields = Object.entries(rest).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);

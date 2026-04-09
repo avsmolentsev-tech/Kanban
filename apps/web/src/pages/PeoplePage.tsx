@@ -35,6 +35,31 @@ function DraggablePersonCard({ person, project, onClick }: { person: Person; pro
   );
 }
 
+function AsapZone({ people, onClickPerson }: { people: Person[]; onClickPerson: (p: Person) => void }) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'people-asap' });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`rounded-xl border-2 border-dashed p-4 transition-colors ${isOver ? 'border-red-400 bg-red-50 dark:bg-red-900/20' : 'border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/10'}`}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">🔥</span>
+        <span className="text-sm font-bold text-red-700 dark:text-red-300">С кем встретиться ASAP</span>
+        <span className="text-xs text-red-400">({people.length})</span>
+      </div>
+      {people.length === 0 ? (
+        <div className="text-xs text-red-400 dark:text-red-500">Перетащи сюда людей, с которыми нужно встретиться срочно</div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {people.map(p => (
+            <DraggablePersonCard key={p.id} person={p} project={null} onClick={() => onClickPerson(p)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { projectId: number | null; project: Project | null; groupPeople: Person[]; onClickPerson: (p: Person) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: `people-zone-${projectId ?? 'none'}` });
 
@@ -145,21 +170,30 @@ export function PeoplePage() {
     if (!over) return;
     const personId = Number(active.id);
     const overId = String(over.id);
+    const person = people.find((p) => p.id === personId);
+    if (!person) return;
+
+    // Drop on ASAP zone
+    if (overId === 'people-asap') {
+      await peopleApi.update(personId, { meet_asap: true } as unknown as Partial<{ meet_asap: boolean }>);
+      load();
+      return;
+    }
+
     if (!overId.startsWith('people-zone-')) return;
     const targetProjectId = overId.replace('people-zone-', '');
     const targetPid = targetProjectId === 'none' ? null : Number(targetProjectId);
-    const person = people.find((p) => p.id === personId);
-    if (!person) return;
     const currentIds = person.project_ids ?? [];
     let newIds: number[];
     if (targetPid === null) {
       newIds = [];
     } else if (currentIds.includes(targetPid)) {
-      return; // already in this project
+      return;
     } else {
       newIds = [...currentIds, targetPid];
     }
-    await peopleApi.update(personId, { project_ids: newIds });
+    // Also remove ASAP flag when moving back to a project
+    await peopleApi.update(personId, { project_ids: newIds, meet_asap: false } as unknown as Partial<{ project_ids: number[]; meet_asap: boolean }>);
     load();
   };
 
@@ -231,7 +265,13 @@ export function PeoplePage() {
       {people.length === 0 && <div className="text-gray-400 text-sm">No people yet</div>}
 
       <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={(e) => setDraggingPerson(people.find((p) => p.id === Number(e.active.id)) ?? null)} onDragEnd={handleDragEnd}>
-        <div className="space-y-4">
+        {/* ASAP section */}
+        <AsapZone
+          people={people.filter(p => (p as unknown as Record<string, unknown>)['meet_asap'] === 1)}
+          onClickPerson={setSelected}
+        />
+
+        <div className="space-y-4 mt-4">
           {filteredGrouped.map(({ project, people: groupPeople }) => (
             <PeopleDropZone key={project?.id ?? 'unassigned'} projectId={project?.id ?? null} project={project} groupPeople={groupPeople} onClickPerson={setSelected} />
           ))}
