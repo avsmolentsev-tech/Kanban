@@ -38,6 +38,8 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
   const [response, setResponse] = useState('');
   const [results, setResults] = useState<VoiceResult[]>([]);
   const [history, setHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [swipeStart, setSwipeStart] = useState<number | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -183,22 +185,34 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
         <div
           ref={panelRef}
           className="fixed inset-4 md:inset-auto md:bottom-36 md:right-4 md:w-[500px] md:h-[80vh] z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col"
-          onTouchStart={(e) => {
-            const touch = e.touches[0];
-            if (touch) (e.currentTarget as unknown as { _touchY?: number })._touchY = touch.clientY;
-          }}
-          onTouchEnd={(e) => {
-            const startY = (e.currentTarget as unknown as { _touchY?: number })._touchY;
-            const endY = e.changedTouches[0]?.clientY;
-            if (startY && endY && endY - startY > 80) {
-              // Swipe down → close
-              recognitionRef.current?.stop();
-              setOpen(false);
-            }
+          style={{
+            transform: `translateY(${swipeOffset}px)`,
+            transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none',
           }}
         >
-          {/* Header */}
-          <div className="px-4 py-3 bg-indigo-600 text-white flex items-center justify-between">
+          {/* Header — swipe area */}
+          <div
+            className="px-4 py-3 bg-indigo-600 text-white flex items-center justify-between cursor-grab active:cursor-grabbing"
+            onTouchStart={(e) => {
+              const touch = e.touches[0];
+              if (touch) setSwipeStart(touch.clientY);
+            }}
+            onTouchMove={(e) => {
+              if (swipeStart === null) return;
+              const touch = e.touches[0];
+              if (!touch) return;
+              const delta = touch.clientY - swipeStart;
+              if (delta > 0) setSwipeOffset(delta);
+            }}
+            onTouchEnd={() => {
+              if (swipeOffset > 100) {
+                recognitionRef.current?.stop();
+                setOpen(false);
+              }
+              setSwipeStart(null);
+              setSwipeOffset(0);
+            }}
+          >
             {/* Mobile drag handle */}
             <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-1 bg-indigo-400 rounded-full md:hidden" />
             <div>
