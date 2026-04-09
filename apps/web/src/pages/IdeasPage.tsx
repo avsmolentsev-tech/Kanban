@@ -4,6 +4,7 @@ import { apiGet, apiPost, apiPatch } from '../api/client';
 import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { useFiltersStore, useProjectsStore } from '../store';
 import { IdeaDetailPanel } from '../components/ideas/IdeaDetailPanel';
+import type { Project } from '@pis/shared';
 
 interface Idea {
   id: number;
@@ -12,18 +13,27 @@ interface Idea {
   category: 'business' | 'product' | 'personal' | 'growth';
   project_id: number | null;
   vault_path: string | null;
+  status: 'backlog' | 'in_obsidian' | 'completed' | 'garbage';
   created_at: string;
 }
 
-const CATEGORIES = ['business', 'product', 'personal', 'growth'] as const;
-const CAT_COLORS: Record<string, string> = {
-  business: '#6366f1',
-  product: '#10b981',
-  personal: '#f59e0b',
-  growth: '#ec4899',
+type IdeaStatus = Idea['status'];
+
+const STATUSES: IdeaStatus[] = ['backlog', 'in_obsidian', 'completed', 'garbage'];
+const STATUS_LABELS: Record<IdeaStatus, string> = {
+  backlog: 'Backlog',
+  in_obsidian: 'В Obsidian',
+  completed: 'Выполнено',
+  garbage: 'Мусор',
+};
+const STATUS_COLORS: Record<IdeaStatus, string> = {
+  backlog: 'text-purple-600',
+  in_obsidian: 'text-indigo-600',
+  completed: 'text-green-600',
+  garbage: 'text-red-400',
 };
 
-function DraggableIdeaCard({ idea, project, onClick }: { idea: Idea; project: { name: string; color: string } | null; onClick: () => void }) {
+function DraggableIdeaCard({ idea, project, onClick }: { idea: Idea; project: Project | null; onClick: () => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: `idea-${idea.id}` });
   const style = { transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined, opacity: isDragging ? 0.4 : 1 };
 
@@ -32,37 +42,29 @@ function DraggableIdeaCard({ idea, project, onClick }: { idea: Idea; project: { 
       className="bg-white rounded-lg border border-gray-200 p-3 hover:border-indigo-300 hover:shadow-sm transition-all cursor-pointer">
       <div className="text-sm font-medium text-gray-800 mb-1">{idea.title}</div>
       {idea.body && <div className="text-xs text-gray-500 line-clamp-2 mb-1.5">{idea.body}</div>}
-      <div className="flex items-center gap-1.5">
-        {project && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: project.color }}>
-            {project.name}
-          </span>
-        )}
-        <span className="text-[10px] text-gray-400 ml-auto">{idea.created_at.split('T')[0]}</span>
-      </div>
+      <div className="text-[10px] text-gray-400">{idea.created_at.split('T')[0]}</div>
+      {idea.vault_path && (
+        <div className="text-[10px] text-indigo-400 truncate mt-0.5">📄 {idea.vault_path}</div>
+      )}
     </div>
   );
 }
 
-function CategoryColumn({ cat, ideas, projectMap, onClickIdea }: {
-  cat: string; ideas: Idea[]; projectMap: Map<number, { name: string; color: string }>;
-  onClickIdea: (idea: Idea) => void;
+function IdeaColumn({ projectId, status, ideas, projects, onClickIdea }: {
+  projectId: number | null; status: IdeaStatus; ideas: Idea[]; projects: Project[]; onClickIdea: (idea: Idea) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `cat-${cat}` });
+  const droppableId = `idea-${projectId ?? 'none'}-${status}`;
+  const { setNodeRef, isOver } = useDroppable({ id: droppableId });
+  const pMap = new Map(projects.map(p => [p.id, p]));
 
   return (
-    <div className="w-72 min-w-[288px] bg-gray-100 rounded-xl p-3">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CAT_COLORS[cat] }} />
-        <h3 className="text-sm font-semibold text-gray-700 capitalize">{cat}</h3>
-        <span className="text-xs text-gray-400">{ideas.length}</span>
-      </div>
-      <div ref={setNodeRef}
-        className={`flex flex-col gap-2 min-h-[60px] rounded-lg p-1 transition-colors ${isOver ? 'bg-indigo-50 border-2 border-dashed border-indigo-300' : ''}`}>
-        {ideas.map((idea) => (
-          <DraggableIdeaCard key={idea.id} idea={idea} project={idea.project_id ? projectMap.get(idea.project_id) ?? null : null} onClick={() => onClickIdea(idea)} />
+    <div ref={setNodeRef}
+      className={`flex flex-col w-56 min-w-[224px] bg-gray-100 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50' : ''}`}>
+      <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
+        {ideas.map(i => (
+          <DraggableIdeaCard key={i.id} idea={i} project={i.project_id ? (pMap.get(i.project_id) ?? null) : null} onClick={() => onClickIdea(i)} />
         ))}
-        {ideas.length === 0 && <div className="text-gray-300 text-xs text-center py-4">Drop here</div>}
+        {ideas.length === 0 && <div className="text-gray-300 text-xs text-center py-4">—</div>}
       </div>
     </div>
   );
@@ -72,113 +74,170 @@ export function IdeasPage() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const { projects, fetchProjects } = useProjectsStore();
   const { selectedProjectIds } = useFiltersStore();
-  const [adding, setAdding] = useState(false);
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [category, setCategory] = useState<string>('personal');
-  const [projectId, setProjectId] = useState<number | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [selectedIdea, setSelectedIdea] = useState<Idea | null>(null);
+  const [selected, setSelected] = useState<Idea | null>(null);
   const [draggingIdea, setDraggingIdea] = useState<Idea | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newProjectId, setNewProjectId] = useState<number | ''>('');
+
+  const load = async () => {
+    const data = await apiGet<Idea[]>('/ideas');
+    setIdeas(data);
+  };
+
+  useEffect(() => { load(); fetchProjects(); }, [fetchProjects]);
+
+  const submit = async () => {
+    if (!newTitle.trim()) return;
+    await apiPost('/ideas', {
+      title: newTitle.trim(),
+      project_id: newProjectId !== '' ? Number(newProjectId) : null,
+      status: 'backlog',
+      category: 'personal',
+    });
+    setNewTitle(''); setNewProjectId(''); setAdding(false);
+    load();
+  };
 
   const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 3 } });
   const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } });
   const sensors = useSensors(mouseSensor, touchSensor);
 
-  const load = () => { apiGet<Idea[]>('/ideas').then(setIdeas).catch(() => {}); };
-  useEffect(() => { load(); fetchProjects(); }, [fetchProjects]);
-
-  const submit = async () => {
-    if (!title.trim()) return;
-    setSubmitting(true);
-    try {
-      await apiPost('/ideas', { title: title.trim(), body, category, project_id: projectId });
-      setTitle(''); setBody(''); setCategory('personal'); setProjectId(null);
-      setAdding(false);
-      load();
-    } finally { setSubmitting(false); }
-  };
-
   const handleDragEnd = async (e: DragEndEvent) => {
     setDraggingIdea(null);
     const { active, over } = e;
     if (!over) return;
-    const activeId = String(active.id);
+    const ideaId = Number(String(active.id).replace('idea-', ''));
     const overId = String(over.id);
-    if (!activeId.startsWith('idea-') || !overId.startsWith('cat-')) return;
-    const ideaId = Number(activeId.replace('idea-', ''));
-    const newCategory = overId.replace('cat-', '');
-    const idea = ideas.find((i) => i.id === ideaId);
-    if (!idea || idea.category === newCategory) return;
-    await apiPatch(`/ideas/${ideaId}`, { category: newCategory });
+    if (!overId.startsWith('idea-')) return;
+    // Format: idea-{projectId}-{status}
+    const parts = overId.replace('idea-', '').split('-');
+    const status = parts.pop() as IdeaStatus;
+    const targetProjectPart = parts.join('-');
+    const targetProjectId = targetProjectPart === 'none' ? null : Number(targetProjectPart);
+
+    const idea = ideas.find(i => i.id === ideaId);
+    if (!idea) return;
+
+    const updates: Record<string, unknown> = {};
+    if (idea.status !== status) updates.status = status;
+    if (idea.project_id !== targetProjectId) updates.project_id = targetProjectId;
+    if (Object.keys(updates).length === 0) return;
+
+    await apiPatch(`/ideas/${ideaId}`, updates);
     load();
   };
 
-  // Group by category
-  const grouped: Record<string, Idea[]> = { business: [], product: [], personal: [], growth: [] };
-  for (const idea of ideas) {
-    if (selectedProjectIds !== null && idea.project_id !== null && !selectedProjectIds.has(idea.project_id)) continue;
-    if (!grouped[idea.category]) grouped[idea.category] = [];
-    grouped[idea.category]!.push(idea);
+  // Filter
+  const filteredIdeas = selectedProjectIds === null
+    ? ideas
+    : ideas.filter(i => i.project_id !== null && selectedProjectIds.has(i.project_id));
+
+  // Group by project → status
+  const byProject = new Map<number | null, Idea[]>();
+  for (const i of filteredIdeas) {
+    const key = i.project_id;
+    if (!byProject.has(key)) byProject.set(key, []);
+    byProject.get(key)!.push(i);
   }
 
-  const projectMap = new Map(projects.map((p) => [p.id, { name: p.name, color: p.color }]));
+  const activeProjects = projects.filter(p => !p.archived);
+  const rows: Array<{ project: Project | null; ideas: Idea[] }> = [];
+  for (const p of activeProjects) {
+    const is = byProject.get(p.id);
+    rows.push({ project: p, ideas: is ?? [] });
+  }
+  const unassigned = byProject.get(null);
+  if (unassigned && unassigned.length > 0) {
+    rows.push({ project: null, ideas: unassigned });
+  }
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 pt-4 pb-2 bg-white border-b">
-        <h1 className="text-xl font-bold text-gray-800">Ideas</h1>
+      <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Идеи</h1>
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
           {!adding && (
-            <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 flex-shrink-0">
-              + New idea
+            <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
+              + Идея
             </button>
           )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4">
-        {adding && (
-          <div className="bg-white rounded-xl border border-indigo-200 shadow-lg p-4 mb-6 max-w-md space-y-3">
+      {adding && (
+        <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 p-4">
+          <div className="max-w-md space-y-3">
             <input autoFocus className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-              placeholder="Idea title *" value={title} onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false); }} />
-            <textarea className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 resize-none"
-              placeholder="Description..." rows={3} value={body} onChange={(e) => setBody(e.target.value)} />
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-500 mr-1">Category:</span>
-              {CATEGORIES.map((c) => (
-                <button key={c} onClick={() => setCategory(c)}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors capitalize ${category === c ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200'}`}
-                  style={category === c ? { backgroundColor: CAT_COLORS[c] } : undefined}>
-                  {c}
-                </button>
-              ))}
-            </div>
+              placeholder="Название идеи" value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false); }} />
             <select className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 bg-white"
-              value={projectId ?? ''} onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : null)}>
-              <option value="">No project</option>
-              {projects.filter((p) => !p.archived).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              value={newProjectId} onChange={(e) => setNewProjectId(e.target.value !== '' ? Number(e.target.value) : '')}>
+              <option value="">Без проекта</option>
+              {activeProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">Cancel</button>
-              <button onClick={submit} disabled={!title.trim() || submitting}
+              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">Отмена</button>
+              <button onClick={submit} disabled={!newTitle.trim()}
                 className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                {submitting ? '...' : 'Add idea'}
+                Добавить
               </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
+      <div className="flex-1 overflow-auto relative">
         <DndContext sensors={sensors} collisionDetection={rectIntersection}
-          onDragStart={(e) => setDraggingIdea(ideas.find((i) => i.id === Number(String(e.active.id).replace('idea-', ''))) ?? null)}
+          onDragStart={(e) => {
+            const id = Number(String(e.active.id).replace('idea-', ''));
+            setDraggingIdea(ideas.find(i => i.id === id) ?? null);
+          }}
           onDragEnd={handleDragEnd}>
-          <div className="flex gap-4 overflow-x-auto">
-            {CATEGORIES.map((cat) => (
-              <CategoryColumn key={cat} cat={cat} ideas={grouped[cat] ?? []} projectMap={projectMap} onClickIdea={setSelectedIdea} />
+
+          {/* Sticky column headers */}
+          <div className="sticky top-0 z-30 flex bg-gray-50 border-b border-gray-200 py-2">
+            <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-gray-50 pl-4" />
+            {STATUSES.map(s => (
+              <div key={s} className={`w-56 min-w-[224px] mx-1.5 text-sm font-semibold text-center ${STATUS_COLORS[s]}`}>
+                {STATUS_LABELS[s]}
+              </div>
             ))}
           </div>
+
+          {/* Project rows */}
+          <div className="p-4 pt-2">
+            {rows.map(({ project, ideas: rowIdeas }) => {
+              const grouped: Record<IdeaStatus, Idea[]> = { backlog: [], in_obsidian: [], completed: [], garbage: [] };
+              for (const i of rowIdeas) grouped[i.status ?? 'backlog'].push(i);
+
+              return (
+                <div key={project?.id ?? 'none'} className="flex mb-4">
+                  <div className="sticky left-0 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-gray-50 border-r border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                      <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'Без проекта'}</span>
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1 ml-5">{rowIdeas.length} идей</div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    {STATUSES.map(status => (
+                      <IdeaColumn key={`${project?.id ?? 'none'}-${status}`}
+                        projectId={project?.id ?? null} status={status}
+                        ideas={grouped[status]} projects={projects} onClickIdea={setSelected} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {rows.length === 0 && (
+              <div className="text-gray-400 text-sm text-center py-8">Нет идей</div>
+            )}
+          </div>
+
           <DragOverlay>
             {draggingIdea && (
               <div className="bg-white rounded-lg border-2 border-indigo-400 shadow-xl p-3 w-56 opacity-90">
@@ -190,11 +249,11 @@ export function IdeasPage() {
       </div>
 
       <IdeaDetailPanel
-        idea={selectedIdea}
+        idea={selected}
         projects={projects}
-        onClose={() => setSelectedIdea(null)}
-        onUpdated={() => { load(); setSelectedIdea(null); }}
-        onDeleted={() => { setSelectedIdea(null); load(); }}
+        onClose={() => setSelected(null)}
+        onUpdated={() => { load(); setSelected(null); }}
+        onDeleted={() => { setSelected(null); load(); }}
       />
     </div>
   );

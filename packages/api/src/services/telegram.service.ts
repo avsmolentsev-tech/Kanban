@@ -61,6 +61,7 @@ export class TelegramService {
     {"type": "delete_task", "task_id": number},
     {"type": "update_task", "task_id": number, "title": "string?", "priority": number?, "due_date": "YYYY-MM-DD?", "project_id": number?, "person_ids": [number]?},
     {"type": "create_project", "name": "string", "color": "#hex"},
+    {"type": "create_idea", "title": "string", "body": "string?", "project_id": number|null, "category": "business|product|personal|growth"},
     {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number], "summary_raw": "string?"},
     {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?, "person_ids": [number]?, "summary_raw": "string?"},
     {"type": "delete_meeting", "meeting_id": number}
@@ -129,6 +130,15 @@ export class TelegramService {
           case 'create_project': {
             db.prepare('INSERT INTO projects (name, color) VALUES (?, ?)').run(action['name'], action['color'] ?? '#6366f1');
             results.push(`✅ Проект "${action['name']}"`);
+            break;
+          }
+          case 'create_idea': {
+            db.prepare('INSERT INTO ideas (title, body, category, project_id, status) VALUES (?, ?, ?, ?, ?)').run(
+              action['title'], (action['body'] as string) ?? '', (action['category'] as string) ?? 'personal',
+              action['project_id'] ?? null, 'backlog'
+            );
+            const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
+            results.push(`💡 Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog`);
             break;
           }
           case 'create_meeting': {

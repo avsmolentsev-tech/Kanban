@@ -91,12 +91,11 @@ export class IngestService {
         db.prepare('UPDATE tasks SET vault_path = ? WHERE id = ?').run(vaultPath, taskId);
         createdRecords.push({ type: 'task', id: taskId, title: analysis.title, vault_path: vaultPath });
       } else if (analysis.detected_type === 'idea') {
-        const date = analysis.date ?? new Date().toISOString().split('T')[0]!;
-        const vaultPath = await this.obsidian.writeIdea({
-          title: analysis.title, body: analysis.summary, category: 'personal', source: originalFilename, date,
-        });
-        const result = db.prepare('INSERT INTO ideas (title, body, vault_path) VALUES (?, ?, ?)').run(analysis.title, analysis.summary, vaultPath);
-        createdRecords.push({ type: 'idea', id: Number(result.lastInsertRowid), title: analysis.title, vault_path: vaultPath });
+        // Ideas go to backlog first, NOT written to vault until user moves to "В Obsidian"
+        const result = db.prepare('INSERT INTO ideas (title, body, category, project_id, status) VALUES (?, ?, ?, ?, ?)').run(
+          analysis.title, analysis.summary, 'personal', matchedProjectId, 'backlog'
+        );
+        createdRecords.push({ type: 'idea', id: Number(result.lastInsertRowid), title: analysis.title });
       } else {
         const vaultPath = await this.obsidian.writeInboxItem(
           originalFilename, `# ${analysis.title}\n\n${analysis.summary}\n\n---\n\n${extractedText}`

@@ -146,6 +146,7 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
     {"type": "delete_task", "task_id": number},
     {"type": "update_task", "task_id": number, ...fields},
     {"type": "create_project", "name": "string", "color": "#hex"},
+    {"type": "create_idea", "title": "string", "body": "string?", "project_id": number|null, "category": "business|product|personal|growth"},
     {"type": "update_project", "project_id": number, "name": "string?", "color": "#hex?", "status": "string?"},
     {"type": "delete_project", "project_id": number},
     {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number]},
@@ -213,8 +214,19 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
             break;
           }
           case 'create_project': {
-            const r = db.prepare('INSERT INTO projects (name, color) VALUES (?, ?)').run(action['name'], action['color'] ?? '#6366f1');
+            db.prepare('INSERT INTO projects (name, color) VALUES (?, ?)').run(action['name'], action['color'] ?? '#6366f1');
             results.push({ type: 'create_project', success: true, detail: `Проект "${action['name']}" создан` });
+            break;
+          }
+          case 'create_idea': {
+            const r = db.prepare('INSERT INTO ideas (title, body, category, project_id, status) VALUES (?, ?, ?, ?, ?)').run(
+              action['title'], (action['body'] as string) ?? '', (action['category'] as string) ?? 'personal',
+              action['project_id'] ?? null, 'backlog'
+            );
+            const ideaId = Number(r.lastInsertRowid);
+            const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
+            results.push({ type: 'create_idea', success: true, detail: `Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog` });
+            void ideaId;
             break;
           }
           case 'update_project': {

@@ -99,6 +99,10 @@ export function initDb(): void {
     `);
     _db.exec("INSERT OR IGNORE INTO meeting_projects (meeting_id, project_id) SELECT id, project_id FROM meetings WHERE project_id IS NOT NULL");
   } catch {}
+
+  // Ideas status column
+  try { _db.exec("ALTER TABLE ideas ADD COLUMN status TEXT NOT NULL DEFAULT 'backlog'"); } catch {}
+  try { _db.exec("ALTER TABLE ideas ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch {}
 }
 
 export function initTestDb(): void {
@@ -156,6 +160,10 @@ export function initTestDb(): void {
     `);
     _db.exec("INSERT OR IGNORE INTO meeting_projects (meeting_id, project_id) SELECT id, project_id FROM meetings WHERE project_id IS NOT NULL");
   } catch {}
+
+  // Ideas status column
+  try { _db.exec("ALTER TABLE ideas ADD COLUMN status TEXT NOT NULL DEFAULT 'backlog'"); } catch {}
+  try { _db.exec("ALTER TABLE ideas ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch {}
 }
 
 export function closeDb(): void {
