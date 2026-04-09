@@ -38,8 +38,8 @@ export class IngestService {
       if (analysis.detected_type === 'meeting') {
         const date = analysis.date ?? new Date().toISOString().split('T')[0]!;
         const projectName = matchedProjectId ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(matchedProjectId) as { name: string } | undefined)?.name : undefined;
-        // Full text for Obsidian: AI summary + full transcription
-        const fullContent = `## Резюме\n${analysis.summary}\n\n## Полный текст\n${extractedText}`;
+        // Full content: AI summary + full transcription (saved both in DB and Obsidian)
+        const fullContent = `${analysis.summary}\n\n---\n\n## Полная транскрипция\n\n${extractedText}`;
         const vaultPath = await this.obsidian.writeMeeting({
           title: analysis.title, date, people: analysis.people,
           summary: fullContent, agreements: analysis.agreements.length,
@@ -47,7 +47,7 @@ export class IngestService {
         });
         const result = db.prepare(
           'INSERT INTO meetings (title, date, project_id, summary_raw, summary_structured, vault_path, source_file, processed) VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
-        ).run(analysis.title, date, matchedProjectId, extractedText, JSON.stringify(analysis), vaultPath, originalFilename);
+        ).run(analysis.title, date, matchedProjectId, fullContent, JSON.stringify(analysis), vaultPath, originalFilename);
         const meetingId = Number(result.lastInsertRowid);
         // Link people to meeting
         for (const pid of matchedPeopleIds) {

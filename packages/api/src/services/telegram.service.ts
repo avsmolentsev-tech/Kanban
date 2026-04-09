@@ -95,7 +95,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 }`;
 
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
-      ...this.chatHistory.slice(-40), // last 20 exchanges
+      ...this.chatHistory.slice(-200), // last 100 exchanges
       { role: 'user', content: text },
     ];
 
@@ -225,7 +225,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // Save to history
     this.chatHistory.push({ role: 'user', content: text });
     this.chatHistory.push({ role: 'assistant', content: responseText });
-    if (this.chatHistory.length > 100) this.chatHistory = this.chatHistory.slice(-100);
+    if (this.chatHistory.length > 200) this.chatHistory = this.chatHistory.slice(-200);
 
     return responseText;
   }
@@ -434,36 +434,49 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       ctx.reply(`🔍 Результаты:\n\n${lines.join('\n')}`);
     });
 
-    // Format ingest result nicely
+    // Split long message into chunks for Telegram (max 4096 chars)
+    const sendLong = async (ctx: { reply: (text: string) => Promise<unknown> }, text: string): Promise<void> => {
+      const CHUNK = 4000;
+      if (text.length <= CHUNK) { await ctx.reply(text); return; }
+      for (let i = 0; i < text.length; i += CHUNK) {
+        await ctx.reply(text.slice(i, i + CHUNK));
+      }
+    };
+
+    // Format ingest result nicely (compact version for Telegram 4096 limit)
     const formatIngestResult = (result: { detected_type: string; summary: string; created_records: Array<{ type: string; id: number; title: string }> }): string => {
       const typeLabels: Record<string, string> = { meeting: '🤝 Встреча', task: '📋 Задача', idea: '💡 Идея', inbox: '📥 Входящее' };
       const label = typeLabels[result.detected_type] ?? result.detected_type;
-      let msg = `${label}: ${result.summary}`;
-      if (result.created_records?.length > 0) {
-        for (const rec of result.created_records) {
-          msg += `\n  → ${rec.type} #${rec.id}: ${rec.title}`;
-        }
-        // Show linked project/people
-        const db = getDb();
-        for (const rec of result.created_records) {
-          if (rec.type === 'meeting') {
-            const m = db.prepare('SELECT project_id FROM meetings WHERE id = ?').get(rec.id) as { project_id: number | null } | undefined;
-            if (m?.project_id) {
-              const p = db.prepare('SELECT name FROM projects WHERE id = ?').get(m.project_id) as { name: string } | undefined;
-              if (p) msg += `\n  📁 Проект: ${p.name}`;
-            }
-            const people = db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(rec.id) as Array<{ name: string }>;
-            if (people.length > 0) msg += `\n  👥 Участники: ${people.map(p => p.name).join(', ')}`;
+
+      // Count tasks separately from main record
+      const mainRec = result.created_records?.[0];
+      const extraTasks = result.created_records?.filter((_, i) => i > 0 && result.created_records[i]!.type === 'task') ?? [];
+
+      let msg = `${label}`;
+      if (mainRec) {
+        msg += ` #${mainRec.id}\n**${mainRec.title}**`;
+
+        // Show linked project/people for meeting
+        if (mainRec.type === 'meeting') {
+          const db = getDb();
+          const m = db.prepare('SELECT project_id FROM meetings WHERE id = ?').get(mainRec.id) as { project_id: number | null } | undefined;
+          if (m?.project_id) {
+            const p = db.prepare('SELECT name FROM projects WHERE id = ?').get(m.project_id) as { name: string } | undefined;
+            if (p) msg += `\n📁 Проект: ${p.name}`;
           }
-          if (rec.type === 'task') {
-            const t = db.prepare('SELECT project_id FROM tasks WHERE id = ?').get(rec.id) as { project_id: number | null } | undefined;
-            if (t?.project_id) {
-              const p = db.prepare('SELECT name FROM projects WHERE id = ?').get(t.project_id) as { name: string } | undefined;
-              if (p) msg += `\n  📁 Проект: ${p.name}`;
-            }
-          }
+          const people = db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(mainRec.id) as Array<{ name: string }>;
+          if (people.length > 0) msg += `\n👥 ${people.map(p => p.name).join(', ')}`;
         }
       }
+
+      if (extraTasks.length > 0) {
+        msg += `\n\n✅ Создано ${extraTasks.length} задач в Backlog`;
+      }
+
+      // Short summary (first 2000 chars max)
+      const shortSummary = result.summary.length > 2000 ? result.summary.slice(0, 2000) + '...' : result.summary;
+      msg += `\n\n${shortSummary}`;
+
       return msg;
     };
 
@@ -490,7 +503,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         } else {
           const ingestService = new IngestService();
           const result = await ingestService.ingestText(text);
-          ctx.reply(formatIngestResult(result));
+          await sendLong(ctx, formatIngestResult(result));
         }
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
@@ -531,7 +544,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         } else {
           const ingestService = new IngestService();
           const result = await ingestService.ingestText(transcript);
-          ctx.reply(formatIngestResult(result));
+          await sendLong(ctx, formatIngestResult(result));
         }
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
@@ -563,12 +576,12 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
           // Ingest the transcript as text
           const ingestService = new IngestService();
           const result = await ingestService.ingestText(transcript);
-          ctx.reply(formatIngestResult(result));
+          await sendLong(ctx, formatIngestResult(result));
         } else {
           ctx.reply('📄 Обрабатываю файл...');
           const ingestService = new IngestService();
           const result = await ingestService.ingestBuffer(buffer, filename);
-          ctx.reply(formatIngestResult(result));
+          await sendLong(ctx, formatIngestResult(result));
         }
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
@@ -592,7 +605,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
         const ingestService = new IngestService();
         const result = await ingestService.ingestText(transcript);
-        ctx.reply(formatIngestResult(result));
+        await sendLong(ctx, formatIngestResult(result));
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
