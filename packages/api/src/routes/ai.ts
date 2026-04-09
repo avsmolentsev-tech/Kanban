@@ -163,15 +163,22 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
       { role: 'user', content: parsed.data.text },
     ];
 
-    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1');
+    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1', false, true);
 
-    const jsonMatch = result.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      res.json(ok({ actions: [], results: [], response: 'Не удалось распознать команду' }));
-      return;
+    let command: { actions: Array<Record<string, unknown>>; response: string };
+    try {
+      command = JSON.parse(result) as { actions: Array<Record<string, unknown>>; response: string };
+    } catch {
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try { command = JSON.parse(jsonMatch[0]); }
+        catch { command = { actions: [], response: result }; }
+      } else {
+        command = { actions: [], response: result };
+      }
     }
-
-    const command = JSON.parse(jsonMatch[0]) as { actions: Array<Record<string, unknown>>; response: string };
+    if (!command.actions) command.actions = [];
+    if (!command.response) command.response = '';
     const results: Array<{ type: string; success: boolean; detail: string }> = [];
 
     for (const action of command.actions) {

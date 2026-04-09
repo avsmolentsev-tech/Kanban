@@ -32,7 +32,7 @@ export class ClaudeService {
     ].filter(Boolean).join('\n');
   }
 
-  async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = '', model?: string, useTools = false): Promise<string> {
+  async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = '', model?: string, useTools = false, jsonMode = false): Promise<string> {
     const chatMessages: Array<Record<string, unknown>> = [
       { role: 'system', content: this.buildSystemPrompt(systemPrompt) },
       ...messages,
@@ -46,6 +46,9 @@ export class ClaudeService {
 
     if (useTools) {
       requestOpts['tools'] = toolDefinitions;
+    }
+    if (jsonMode) {
+      requestOpts['response_format'] = { type: 'json_object' };
     }
 
     let response = await this.client.chat.completions.create(requestOpts as Parameters<typeof this.client.chat.completions.create>[0]);

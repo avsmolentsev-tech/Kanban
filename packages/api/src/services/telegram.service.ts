@@ -46,12 +46,15 @@ export class TelegramService {
 
 КАК РАБОТАТЬ:
 1. Если пользователь чётко даёт команду (создай, перенеси, удали, обнови, привяжи) → выполни через actions
-2. ВО ВСЕХ ОСТАЛЬНЫХ СЛУЧАЯХ → свободный разговор, actions пусты, отвечай развёрнуто в response
-3. Можно обсуждать идеи, давать советы, помогать думать, шутить, рассказывать, объяснять
-4. Отвечай на русском, содержательно, без канцелярита
-5. Используй данные пользователя когда уместно (помню какие у тебя проекты, задачи)
+2. Если пользователь СПРАШИВАЕТ («какая», «когда», «сколько», «что у меня», «покажи», «какой», «где») → ответь в поле response, actions пусты
+3. Если нужны конкретные данные — используй инструменты (search_vault, list_vault_folder, get_entity_details)
+4. Можно обсуждать идеи, давать советы, помогать думать
+5. Отвечай на русском, содержательно, без канцелярита
 6. Контекст предыдущих сообщений — используй для «её», «эту», «ту»
 7. НЕ создавай встречи/задачи просто так — только когда явно просят
+
+ВАЖНО: Всегда отвечай в формате JSON с полями "actions" (массив) и "response" (строка).
+Для вопросов actions = [], а ответ в response.
 
 Верни ТОЛЬКО JSON (без markdown, без \`\`\`):
 {
@@ -74,14 +77,23 @@ export class TelegramService {
       { role: 'user', content: text },
     ];
 
-    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1', true);
+    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1', true, true);
 
-    const jsonMatch = result.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return 'Не удалось распознать команду';
+    let command: { actions: Array<Record<string, unknown>>; response: string };
+    try {
+      // JSON mode should return valid JSON directly
+      command = JSON.parse(result) as { actions: Array<Record<string, unknown>>; response: string };
+    } catch {
+      // Fallback: extract JSON from text or use raw text as response
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try { command = JSON.parse(jsonMatch[0]); }
+        catch { command = { actions: [], response: result }; }
+      } else {
+        command = { actions: [], response: result };
+      }
     }
-
-    const command = JSON.parse(jsonMatch[0]) as { actions: Array<Record<string, unknown>>; response: string };
+    if (!command.response) command.response = '';
     const results: string[] = [];
 
     for (const action of command.actions) {
