@@ -35,66 +35,12 @@ function DraggablePersonCard({ person, project, onClick }: { person: Person; pro
   );
 }
 
-function AsapZone({ people, projects, onClickPerson }: { people: Person[]; projects: Project[]; onClickPerson: (p: Person) => void }) {
-  const { setNodeRef, isOver } = useDroppable({ id: 'people-asap' });
-
-  // Group ASAP people by project (a person can appear in multiple)
-  const byProject = new Map<number | null, Person[]>();
-  for (const p of people) {
-    const ids = p.project_ids && p.project_ids.length > 0 ? p.project_ids : [null];
-    for (const pid of ids) {
-      if (!byProject.has(pid)) byProject.set(pid, []);
-      byProject.get(pid)!.push(p);
-    }
-  }
-
-  const rows: Array<{ project: Project | null; people: Person[] }> = [];
-  for (const p of projects.filter(pr => !pr.archived)) {
-    const list = byProject.get(p.id);
-    if (list) rows.push({ project: p, people: list });
-  }
-  const unassigned = byProject.get(null);
-  if (unassigned) rows.push({ project: null, people: unassigned });
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={`rounded-xl border-2 border-dashed p-4 transition-colors ${isOver ? 'border-red-400 bg-red-50 dark:bg-red-900/20' : 'border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/10'}`}
-    >
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-lg">🔥</span>
-        <span className="text-sm font-bold text-red-700 dark:text-red-300">С кем встретиться ASAP</span>
-        <span className="text-xs text-red-400">({people.length})</span>
-      </div>
-
-      {people.length === 0 ? (
-        <div className="text-xs text-red-400 dark:text-red-500">Перетащи сюда людей, с которыми нужно встретиться срочно</div>
-      ) : (
-        <div className="space-y-3">
-          {rows.map(({ project, people: rowPeople }) => (
-            <div key={project?.id ?? 'none'} className="flex gap-3">
-              <div className="w-40 min-w-[160px] flex-shrink-0 pt-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 truncate">{project?.name ?? 'Без проекта'}</span>
-                </div>
-                <div className="text-xs text-gray-400 mt-0.5 ml-5">{rowPeople.length}</div>
-              </div>
-              <div className="flex flex-wrap gap-2 flex-1">
-                {rowPeople.map(p => (
-                  <DraggablePersonCard key={`asap-${project?.id ?? 'none'}-${p.id}`} person={p} project={project} onClick={() => onClickPerson(p)} />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { projectId: number | null; project: Project | null; groupPeople: Person[]; onClickPerson: (p: Person) => void }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `people-zone-${projectId ?? 'none'}` });
+  const { setNodeRef: setRegularRef, isOver: isOverRegular } = useDroppable({ id: `people-zone-${projectId ?? 'none'}` });
+  const { setNodeRef: setAsapRef, isOver: isOverAsap } = useDroppable({ id: `people-asap-${projectId ?? 'none'}` });
+
+  const asapPeople = groupPeople.filter(p => (p as unknown as Record<string, unknown>)['meet_asap'] === 1);
+  const regularPeople = groupPeople.filter(p => (p as unknown as Record<string, unknown>)['meet_asap'] !== 1);
 
   return (
     <div className="flex">
@@ -105,12 +51,33 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
         </div>
         <div className="text-xs text-gray-400 mt-1 ml-5">{groupPeople.length} чел.</div>
       </div>
-      <div ref={setNodeRef}
-        className={`flex gap-3 flex-wrap flex-1 min-h-[60px] rounded-xl p-2 transition-colors ${isOver ? 'bg-indigo-50 border-2 border-dashed border-indigo-300' : ''}`}>
-        {groupPeople.map((p) => (
+
+      {/* ASAP column */}
+      <div
+        ref={setAsapRef}
+        className={`flex gap-2 flex-wrap w-72 min-w-[288px] min-h-[60px] rounded-xl p-2 mr-3 border-2 border-dashed transition-colors ${
+          isOverAsap
+            ? 'border-red-400 bg-red-100 dark:bg-red-900/30'
+            : 'border-red-300 dark:border-red-700 bg-red-50/40 dark:bg-red-900/10'
+        }`}
+      >
+        {asapPeople.length === 0 && (
+          <div className="text-xs text-red-400 self-center px-2">🔥 ASAP</div>
+        )}
+        {asapPeople.map(p => (
+          <DraggablePersonCard key={`asap-${projectId}-${p.id}`} person={p} project={project} onClick={() => onClickPerson(p)} />
+        ))}
+      </div>
+
+      {/* Regular people */}
+      <div
+        ref={setRegularRef}
+        className={`flex gap-3 flex-wrap flex-1 min-h-[60px] rounded-xl p-2 transition-colors ${isOverRegular ? 'bg-indigo-50 border-2 border-dashed border-indigo-300' : ''}`}
+      >
+        {regularPeople.map((p) => (
           <DraggablePersonCard key={`${projectId}-${p.id}`} person={p} project={project} onClick={() => onClickPerson(p)} />
         ))}
-        {groupPeople.length === 0 && <div className="text-gray-300 text-xs self-center">Drop here</div>}
+        {regularPeople.length === 0 && <div className="text-gray-300 text-xs self-center">Drop here</div>}
       </div>
     </div>
   );
@@ -206,9 +173,16 @@ export function PeoplePage() {
     const person = people.find((p) => p.id === personId);
     if (!person) return;
 
-    // Drop on ASAP zone
-    if (overId === 'people-asap') {
-      await peopleApi.update(personId, { meet_asap: true } as unknown as Partial<{ meet_asap: boolean }>);
+    // Drop on per-project ASAP column
+    if (overId.startsWith('people-asap-')) {
+      const targetProjectPart = overId.replace('people-asap-', '');
+      const targetPid = targetProjectPart === 'none' ? null : Number(targetProjectPart);
+      const currentIds = person.project_ids ?? [];
+      const updates: Record<string, unknown> = { meet_asap: true };
+      if (targetPid && !currentIds.includes(targetPid)) {
+        updates['project_ids'] = [...currentIds, targetPid];
+      }
+      await peopleApi.update(personId, updates as Partial<{ meet_asap: boolean; project_ids: number[] }>);
       load();
       return;
     }
@@ -221,11 +195,13 @@ export function PeoplePage() {
     if (targetPid === null) {
       newIds = [];
     } else if (currentIds.includes(targetPid)) {
+      // Same project drop → just remove ASAP
+      await peopleApi.update(personId, { meet_asap: false } as unknown as Partial<{ meet_asap: boolean }>);
+      load();
       return;
     } else {
       newIds = [...currentIds, targetPid];
     }
-    // Also remove ASAP flag when moving back to a project
     await peopleApi.update(personId, { project_ids: newIds, meet_asap: false } as unknown as Partial<{ project_ids: number[]; meet_asap: boolean }>);
     load();
   };
@@ -298,12 +274,12 @@ export function PeoplePage() {
       {people.length === 0 && <div className="text-gray-400 text-sm">No people yet</div>}
 
       <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={(e) => setDraggingPerson(people.find((p) => p.id === Number(e.active.id)) ?? null)} onDragEnd={handleDragEnd}>
-        {/* ASAP section */}
-        <AsapZone
-          people={people.filter(p => (p as unknown as Record<string, unknown>)['meet_asap'] === 1)}
-          projects={projects}
-          onClickPerson={setSelected}
-        />
+        {/* Sticky header with columns */}
+        <div className="sticky top-0 z-30 flex bg-gray-50 border-b border-gray-200 py-2">
+          <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-gray-50 pl-4" />
+          <div className="w-72 min-w-[288px] mr-3 text-sm font-semibold text-red-600 text-center">🔥 ASAP</div>
+          <div className="flex-1 text-sm font-semibold text-gray-500 text-center">Все контакты</div>
+        </div>
 
         <div className="space-y-4 mt-4">
           {filteredGrouped.map(({ project, people: groupPeople }) => (
