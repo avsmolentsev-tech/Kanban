@@ -13,6 +13,7 @@ import { CalendarPage } from './pages/CalendarPage';
 import { MorePage } from './pages/MorePage';
 import { SearchBar } from './components/search/SearchBar';
 import { MobileNav } from './components/layout/MobileNav';
+import { SettingsMenu } from './components/layout/SettingsMenu';
 import { VoiceCommandButton } from './components/voice/VoiceCommandButton';
 import { isTelegramWebApp, initTelegramApp } from './lib/telegram';
 import { useTasksStore } from './store/tasks.store';
@@ -57,16 +58,16 @@ export default function App() {
   return (
     <BrowserRouter>
       <div
-        className="flex h-screen bg-gray-50"
+        className="flex h-screen bg-gray-50 dark:bg-gray-900"
         style={isTg ? { height: 'var(--tg-vh, 100vh)' } : undefined}
       >
         {/* Desktop sidebar */}
         {!useMobileLayout && (
-          <nav className="w-48 bg-white border-r border-gray-200 flex flex-col p-4 gap-1">
-            <div className="text-lg font-bold text-indigo-600 mb-6">PIS</div>
+          <nav className="w-48 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col p-4 gap-1">
+            <div className="text-lg font-bold text-indigo-600 dark:text-indigo-400 mb-6">PIS</div>
             {desktopNav.map(({ to, label }) => (
               <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) =>
-                `px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'}`
+                `px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive ? 'bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`
               }>{label}</NavLink>
             ))}
           </nav>
@@ -75,8 +76,9 @@ export default function App() {
         <div className="flex-1 flex flex-col min-w-0">
           {/* Top bar */}
           {!useMobileLayout && (
-            <div className="flex items-center justify-end px-4 py-2 bg-white border-b">
+            <div className="flex items-center justify-end gap-2 px-4 py-2 bg-white dark:bg-gray-800 border-b dark:border-gray-700">
               <SearchBar />
+              <SettingsMenu />
             </div>
           )}
 

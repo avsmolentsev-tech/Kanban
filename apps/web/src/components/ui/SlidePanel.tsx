@@ -15,29 +15,29 @@ export function SlidePanel({ open, onClose, title, children, expandable }: Slide
   useEffect(() => { if (!open) setFullscreen(false); }, [open]);
 
   const panelClass = fullscreen
-    ? 'fixed inset-0 bg-white z-50'
-    : 'fixed top-0 right-0 h-full w-full md:w-[480px] bg-white shadow-xl z-50 transform transition-transform duration-300';
+    ? 'fixed inset-0 bg-white dark:bg-gray-900 z-50'
+    : 'fixed top-0 right-0 h-full w-full md:w-[480px] bg-white dark:bg-gray-900 shadow-xl z-50 transform transition-transform duration-300';
 
   return (
     <>
       {open && !fullscreen && <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />}
       <div className={`${panelClass} ${!fullscreen && !open ? 'translate-x-full' : ''}`}>
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold truncate flex-1">{title}</h2>
+        <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+          <h2 className="text-lg font-semibold truncate flex-1 text-gray-800 dark:text-gray-100">{title}</h2>
           <div className="flex items-center gap-2">
             {expandable && (
               <button
                 onClick={() => setFullscreen(!fullscreen)}
-                className="text-gray-400 hover:text-gray-600 text-sm px-2 py-1 rounded hover:bg-gray-100"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
                 title={fullscreen ? 'Свернуть' : 'На весь экран'}
               >
                 {fullscreen ? '⊟' : '⊞'}
               </button>
             )}
-            <button onClick={() => { setFullscreen(false); onClose(); }} className="text-gray-400 hover:text-gray-600 text-xl px-1">×</button>
+            <button onClick={() => { setFullscreen(false); onClose(); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl px-1">×</button>
           </div>
         </div>
-        <div className="p-4 overflow-y-auto" style={{ height: 'calc(100% - 57px)', paddingBottom: '2rem' }}>{children}</div>
+        <div className="p-4 overflow-y-auto text-gray-800 dark:text-gray-100" style={{ height: 'calc(100% - 57px)', paddingBottom: '2rem' }}>{children}</div>
       </div>
     </>
   );

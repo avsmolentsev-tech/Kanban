@@ -164,18 +164,19 @@ export function PeoplePage() {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-gray-800">People</h1>
+    <div className="flex flex-col h-full">
+      <div className="page-header flex items-center justify-between px-6 py-4 border-b dark:border-gray-700">
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Люди</h1>
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
           {!adding && (
             <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 flex-shrink-0">
-            + New person
+            + Контакт
           </button>
           )}
         </div>
       </div>
+      <div className="flex-1 overflow-auto p-6">
 
       {adding && (
         <div className="bg-white rounded-xl border border-indigo-200 shadow-lg p-4 mb-6 max-w-md space-y-3">
@@ -246,7 +247,7 @@ export function PeoplePage() {
           )}
         </DragOverlay>
       </DndContext>
-
+      </div>
       <PersonDetailPanel person={selected} projects={projects} onClose={() => setSelected(null)} onUpdated={load} onDeleted={() => { setSelected(null); load(); }} />
     </div>
   );

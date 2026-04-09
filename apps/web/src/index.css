@@ -16,3 +16,20 @@
 html, body {
   overscroll-behavior: none;
 }
+
+/* Dark theme body */
+html.dark body {
+  background: rgb(17 24 39);
+  color: rgb(243 244 246);
+}
+
+/* Sticky page headers on all pages */
+.page-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: white;
+}
+html.dark .page-header {
+  background: rgb(31 41 55);
+}
