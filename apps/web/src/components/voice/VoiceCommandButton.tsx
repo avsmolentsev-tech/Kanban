@@ -183,23 +183,50 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
         <div
           ref={panelRef}
           className="fixed inset-4 md:inset-auto md:bottom-36 md:right-4 md:w-[500px] md:h-[80vh] z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col"
+          onTouchStart={(e) => {
+            const touch = e.touches[0];
+            if (touch) (e.currentTarget as unknown as { _touchY?: number })._touchY = touch.clientY;
+          }}
+          onTouchEnd={(e) => {
+            const startY = (e.currentTarget as unknown as { _touchY?: number })._touchY;
+            const endY = e.changedTouches[0]?.clientY;
+            if (startY && endY && endY - startY > 80) {
+              // Swipe down → close
+              recognitionRef.current?.stop();
+              setOpen(false);
+            }
+          }}
         >
           {/* Header */}
           <div className="px-4 py-3 bg-indigo-600 text-white flex items-center justify-between">
+            {/* Mobile drag handle */}
+            <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-1 bg-indigo-400 rounded-full md:hidden" />
             <div>
-              <div className="font-semibold text-sm">Голосовое управление</div>
+              <div className="font-semibold text-sm">Ассистент</div>
               <div className="text-xs text-indigo-200">
-                {history.length > 0 ? `Контекст: ${history.length / 2} сообщ.` : 'Скажи что сделать с задачами'}
+                {history.length > 0 ? `Контекст: ${history.length / 2} сообщ.` : 'Задай вопрос или команду'}
               </div>
             </div>
-            {history.length > 0 && (
+            <div className="flex items-center gap-2">
+              {history.length > 0 && (
+                <button
+                  onClick={clearHistory}
+                  className="text-xs text-indigo-200 hover:text-white px-2 py-1 rounded border border-indigo-400 hover:border-white transition-colors"
+                >
+                  Сброс
+                </button>
+              )}
               <button
-                onClick={clearHistory}
-                className="text-xs text-indigo-200 hover:text-white px-2 py-1 rounded border border-indigo-400 hover:border-white transition-colors"
+                onClick={() => { recognitionRef.current?.stop(); setOpen(false); }}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-indigo-700/50 hover:bg-indigo-800 text-white transition-colors"
+                title="Закрыть"
+                aria-label="Закрыть"
               >
-                Сброс
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
-            )}
+            </div>
           </div>
 
           {/* Scrollable content area — chat history + response */}
