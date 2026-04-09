@@ -57,12 +57,12 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
         ref={setAsapRef}
         className={`flex gap-2 flex-wrap w-72 min-w-[288px] min-h-[60px] rounded-xl p-2 mr-3 border-2 border-dashed transition-colors ${
           isOverAsap
-            ? 'border-red-400 bg-red-100 dark:bg-red-900/30'
-            : 'border-red-300 dark:border-red-700 bg-red-50/40 dark:bg-red-900/10'
+            ? 'border-amber-400 bg-amber-100/60 dark:bg-amber-900/20'
+            : 'border-amber-200 dark:border-amber-800/40 bg-amber-50/40 dark:bg-amber-900/10'
         }`}
       >
         {asapPeople.length === 0 && (
-          <div className="text-xs text-red-400 self-center px-2">🔥 ASAP</div>
+          <div className="text-xs text-amber-500 self-center px-2">⭐ ASAP</div>
         )}
         {asapPeople.map(p => (
           <DraggablePersonCard key={`asap-${projectId}-${p.id}`} person={p} project={project} onClick={() => onClickPerson(p)} />
@@ -277,7 +277,7 @@ export function PeoplePage() {
         {/* Sticky header with columns */}
         <div className="sticky top-0 z-30 flex bg-gray-50 border-b border-gray-200 py-2">
           <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-gray-50 pl-4" />
-          <div className="w-72 min-w-[288px] mr-3 text-sm font-semibold text-red-600 text-center">🔥 ASAP</div>
+          <div className="w-72 min-w-[288px] mr-3 text-sm font-semibold text-amber-600 text-center">⭐ ASAP</div>
           <div className="flex-1 text-sm font-semibold text-gray-500 text-center">Все контакты</div>
         </div>
 
