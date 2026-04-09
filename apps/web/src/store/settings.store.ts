@@ -1,22 +1,14 @@
 import { create } from 'zustand';
 
 export type Theme = 'light' | 'dark';
-export type Zoom = 'sm' | 'md' | 'lg' | 'xl';
 
 interface SettingsState {
   theme: Theme;
-  zoom: Zoom;
+  zoom: number; // font-size in px (12-24)
   setTheme: (t: Theme) => void;
-  setZoom: (z: Zoom) => void;
+  setZoom: (z: number) => void;
   toggleTheme: () => void;
 }
-
-const ZOOM_SIZES: Record<Zoom, string> = {
-  sm: '14px',
-  md: '16px',
-  lg: '18px',
-  xl: '20px',
-};
 
 function applyTheme(theme: Theme): void {
   if (typeof document === 'undefined') return;
@@ -24,15 +16,15 @@ function applyTheme(theme: Theme): void {
   else document.documentElement.classList.remove('dark');
 }
 
-function applyZoom(zoom: Zoom): void {
+function applyZoom(zoom: number): void {
   if (typeof document === 'undefined') return;
-  document.documentElement.style.fontSize = ZOOM_SIZES[zoom];
+  document.documentElement.style.fontSize = `${zoom}px`;
 }
 
 const initialTheme: Theme =
   (typeof localStorage !== 'undefined' && (localStorage.getItem('theme') as Theme | null)) ?? 'light';
-const initialZoom: Zoom =
-  (typeof localStorage !== 'undefined' && (localStorage.getItem('zoom') as Zoom | null)) ?? 'md';
+const savedZoom = typeof localStorage !== 'undefined' ? localStorage.getItem('zoom') : null;
+const initialZoom = savedZoom ? Number(savedZoom) : 16;
 
 if (typeof document !== 'undefined') {
   applyTheme(initialTheme);
@@ -48,7 +40,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ theme });
   },
   setZoom: (zoom) => {
-    localStorage.setItem('zoom', zoom);
+    localStorage.setItem('zoom', String(zoom));
     applyZoom(zoom);
     set({ zoom });
   },

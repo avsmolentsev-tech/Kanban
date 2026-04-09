@@ -1,12 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSettingsStore, type Zoom } from '../../store/settings.store';
-
-const ZOOM_LABELS: Record<Zoom, string> = {
-  sm: 'Мелко',
-  md: 'Обычно',
-  lg: 'Крупно',
-  xl: 'Очень крупно',
-};
+import { useSettingsStore } from '../../store/settings.store';
 
 export function SettingsMenu() {
   const { theme, zoom, toggleTheme, setZoom } = useSettingsStore();
@@ -52,24 +45,31 @@ export function SettingsMenu() {
             </button>
           </div>
 
-          {/* Zoom */}
+          {/* Zoom slider */}
           <div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">Размер</div>
-            <div className="grid grid-cols-2 gap-1">
-              {(['sm', 'md', 'lg', 'xl'] as Zoom[]).map((z) => (
-                <button
-                  key={z}
-                  onClick={() => setZoom(z)}
-                  className={`px-2 py-1.5 rounded-lg text-xs transition-colors ${
-                    zoom === z
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  {ZOOM_LABELS[z]}
-                </button>
-              ))}
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs text-gray-500 dark:text-gray-400">Размер</span>
+              <span className="text-xs text-gray-700 dark:text-gray-200 font-medium">{zoom}px</span>
             </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-gray-400">A</span>
+              <input
+                type="range"
+                min={12}
+                max={24}
+                step={1}
+                value={zoom}
+                onChange={(e) => setZoom(Number(e.target.value))}
+                className="zoom-slider flex-1"
+              />
+              <span className="text-lg text-gray-400">A</span>
+            </div>
+            <button
+              onClick={() => setZoom(16)}
+              className="mt-2 w-full text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              Сбросить
+            </button>
           </div>
         </div>
       )}

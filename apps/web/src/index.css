@@ -33,3 +33,49 @@ html.dark body {
 html.dark .page-header {
   background: rgb(31 41 55);
 }
+
+/* Dark mode global overrides for cards and backgrounds */
+html.dark .bg-white { background-color: rgb(31 41 55) !important; }
+html.dark .bg-gray-50 { background-color: rgb(17 24 39) !important; }
+html.dark .bg-gray-100 { background-color: rgb(31 41 55) !important; }
+html.dark .text-gray-800 { color: rgb(243 244 246) !important; }
+html.dark .text-gray-700 { color: rgb(229 231 235) !important; }
+html.dark .text-gray-600 { color: rgb(209 213 219) !important; }
+html.dark .text-gray-500 { color: rgb(156 163 175) !important; }
+html.dark .text-gray-400 { color: rgb(107 114 128) !important; }
+html.dark .border-gray-200 { border-color: rgb(55 65 81) !important; }
+html.dark .border-gray-100 { border-color: rgb(55 65 81) !important; }
+html.dark .border-gray-300 { border-color: rgb(75 85 99) !important; }
+html.dark .hover\:bg-gray-100:hover { background-color: rgb(55 65 81) !important; }
+html.dark .hover\:bg-gray-50:hover { background-color: rgb(55 65 81) !important; }
+html.dark .hover\:border-gray-300:hover { border-color: rgb(107 114 128) !important; }
+
+/* Range slider styling */
+input[type="range"].zoom-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgb(229 231 235);
+  border-radius: 2px;
+  outline: none;
+}
+html.dark input[type="range"].zoom-slider {
+  background: rgb(75 85 99);
+}
+input[type="range"].zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgb(79 70 229);
+  cursor: pointer;
+}
+input[type="range"].zoom-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgb(79 70 229);
+  cursor: pointer;
+  border: none;
+}
