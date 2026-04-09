@@ -45,14 +45,20 @@ export function SettingsMenu() {
             </button>
           </div>
 
-          {/* Zoom slider */}
+          {/* Zoom slider with +/- */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs text-gray-500 dark:text-gray-400">Размер</span>
               <span className="text-xs text-gray-700 dark:text-gray-200 font-medium">{zoom}px</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-gray-400">A</span>
+              <button
+                onClick={() => setZoom(Math.max(10, zoom - 1))}
+                className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 text-lg leading-none font-semibold"
+                title="Мельче"
+              >
+                −
+              </button>
               <input
                 type="range"
                 min={10}
@@ -62,7 +68,13 @@ export function SettingsMenu() {
                 onChange={(e) => setZoom(Number(e.target.value))}
                 className="zoom-slider flex-1"
               />
-              <span className="text-lg text-gray-400">A</span>
+              <button
+                onClick={() => setZoom(Math.min(28, zoom + 1))}
+                className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 text-lg leading-none font-semibold"
+                title="Крупнее"
+              >
+                +
+              </button>
             </div>
             <button
               onClick={() => setZoom(16)}
