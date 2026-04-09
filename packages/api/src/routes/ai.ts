@@ -6,6 +6,7 @@ import { ok, fail } from '@pis/shared';
 import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
 import { moscowDateString, moscowDateTimeString } from '../utils/time';
+import { generateBundle, findProjectByName } from '../services/bundle.service';
 
 export const aiRouter = Router();
 const claude = new ClaudeService();
@@ -165,6 +166,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
     {"type": "update_task", "task_id": number, ...fields},
     {"type": "create_project", "name": "string", "color": "#hex"},
     {"type": "create_idea", "title": "string", "body": "string?", "project_id": number|null, "category": "business|product|personal|growth"},
+    {"type": "create_bundle", "project_name": "string (название проекта или 'все')"},
     {"type": "update_project", "project_id": number, "name": "string?", "color": "#hex?", "status": "string?"},
     {"type": "delete_project", "project_id": number},
     {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number]},
@@ -252,6 +254,17 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
             results.push({ type: 'create_idea', success: true, detail: `Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog` });
             void ideaId;
+            break;
+          }
+          case 'create_bundle': {
+            const pname = (action['project_name'] as string) ?? 'все';
+            const match = findProjectByName(pname);
+            if (match === null) {
+              results.push({ type: 'create_bundle', success: false, detail: `Проект "${pname}" не найден` });
+            } else {
+              const br = generateBundle(match);
+              results.push({ type: 'create_bundle', success: true, detail: `📦 Bundle: ${br.vaultPath} (${br.sizeKb} KB)` });
+            }
             break;
           }
           case 'update_project': {

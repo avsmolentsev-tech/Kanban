@@ -6,6 +6,7 @@ import { IngestService } from './ingest.service';
 import { ClaudeService } from './claude.service';
 import OpenAI from 'openai';
 import { moscowDateString, moscowDateTimeString } from '../utils/time';
+import { generateBundle, findProjectByName } from './bundle.service';
 
 export class TelegramService {
   private bot: Telegraf | null = null;
@@ -87,6 +88,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     {"type": "update_task", "task_id": number, "title": "string?", "priority": number?, "due_date": "YYYY-MM-DD?", "project_id": number?, "person_ids": [number]?},
     {"type": "create_project", "name": "string", "color": "#hex"},
     {"type": "create_idea", "title": "string", "body": "string?", "project_id": number|null, "category": "business|product|personal|growth"},
+    {"type": "create_bundle", "project_name": "string (название проекта или 'все')"},
     {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number], "summary_raw": "string?"},
     {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?, "person_ids": [number]?, "summary_raw": "string?"},
     {"type": "delete_meeting", "meeting_id": number}
@@ -173,6 +175,17 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
             );
             const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
             results.push(`💡 Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog`);
+            break;
+          }
+          case 'create_bundle': {
+            const pname = (action['project_name'] as string) ?? 'все';
+            const match = findProjectByName(pname);
+            if (match === null) {
+              results.push(`❌ Проект "${pname}" не найден`);
+            } else {
+              const r = generateBundle(match);
+              results.push(`📦 Bundle создан: ${r.vaultPath} (${r.sizeKb} KB, встреч: ${r.sections.meetings}, задач: ${r.sections.tasks}, идей: ${r.sections.ideas})`);
+            }
             break;
           }
           case 'create_meeting': {
@@ -313,6 +326,36 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     });
 
     // /meetings — list recent meetings
+    // /bundle — generate NotebookLM bundle for project
+    this.bot.command('bundle', (ctx) => {
+      const text = ctx.message.text.replace(/^\/bundle\s*/, '').trim();
+      if (!text) {
+        ctx.reply('Формат:\n/bundle <название проекта>\n/bundle все\n\nПримеры:\n/bundle Атланты\n/bundle Robots');
+        return;
+      }
+      try {
+        const match = findProjectByName(text);
+        if (match === null) {
+          ctx.reply(`❌ Проект "${text}" не найден`);
+          return;
+        }
+        const result = generateBundle(match);
+        ctx.reply(
+          `📦 Bundle создан!\n\n` +
+          `📄 Файл: ${result.vaultPath}\n` +
+          `📊 Размер: ${result.sizeKb} KB\n` +
+          `📅 Встреч: ${result.sections.meetings}\n` +
+          `✅ Задач: ${result.sections.tasks}\n` +
+          `💡 Идей: ${result.sections.ideas}\n` +
+          `📄 Документов: ${result.sections.documents}\n` +
+          `👥 Людей: ${result.sections.people}\n\n` +
+          `Файл появится в Obsidian через 5 минут (Git sync).\nЗагрузи его в NotebookLM → получишь подкаст и mind map.`
+        );
+      } catch (err) {
+        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'unknown'}`);
+      }
+    });
+
     this.bot.command('meetings', (ctx) => {
       const db = getDb();
       const meetings = db.prepare("SELECT m.title, m.date, p.name as project_name FROM meetings m LEFT JOIN projects p ON m.project_id = p.id ORDER BY m.date DESC LIMIT 10").all() as Array<{ title: string; date: string; project_name: string | null }>;
