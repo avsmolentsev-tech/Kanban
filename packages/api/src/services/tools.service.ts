@@ -79,17 +79,17 @@ export function searchMeetingsFull(query: string, limit = 3): string {
       ORDER BY date DESC LIMIT ?
     `).all(`%${query}%`, `%${query}%`, limit) as Array<{ id: number; title: string; date: string; summary_raw: string }>;
 
+    const maxChars = 15000; // per meeting, sufficient for full transcript
     if (results.length === 0) {
-      // Fallback: return the most recent meetings if query didn't match
       const recent = db.prepare('SELECT id, title, date, summary_raw FROM meetings ORDER BY date DESC LIMIT ?').all(limit) as Array<{ id: number; title: string; date: string; summary_raw: string }>;
       if (recent.length === 0) return 'Встреч не найдено';
       return 'По запросу ничего не найдено. Недавние встречи:\n\n' + recent.map(m =>
-        `## ${m.title} (${m.date}, id=${m.id})\n${(m.summary_raw || '').slice(0, 4000)}`
+        `## ${m.title} (${m.date}, id=${m.id})\n${(m.summary_raw || '').slice(0, maxChars)}`
       ).join('\n\n---\n\n');
     }
 
     return results.map(m =>
-      `## ${m.title} (${m.date}, id=${m.id})\n${(m.summary_raw || '').slice(0, 4000)}`
+      `## ${m.title} (${m.date}, id=${m.id})\n${(m.summary_raw || '').slice(0, maxChars)}`
     ).join('\n\n---\n\n');
   } catch (err) {
     return `Ошибка: ${err instanceof Error ? err.message : 'unknown'}`;

@@ -17,7 +17,7 @@ export class TelegramService {
     const claude = new ClaudeService();
     const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
     const tasks = db.prepare("SELECT id, title, status, project_id FROM tasks WHERE archived = 0").all() as Array<{ id: number; title: string; status: string; project_id: number | null }>;
-    const meetings = db.prepare("SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null }>;
+    const meetings = db.prepare("SELECT id, title, date, project_id, substr(summary_raw, 1, 500) as preview FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null; preview: string }>;
     const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
 
     // Vault access via tools (search_vault, read_vault_file, list_vault_folder)
@@ -29,7 +29,7 @@ export class TelegramService {
 ДАННЫЕ СИСТЕМЫ ПОЛЬЗОВАТЕЛЯ:
 Проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
 Задачи: ${JSON.stringify(tasks.slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
-Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
+Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.preview || '').slice(0, 200) })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 
 ДОСТУП К OBSIDIAN VAULT через инструменты:
@@ -40,11 +40,12 @@ export class TelegramService {
 - list_vault_folder(folder) — список файлов в папке
 - get_weather(city) — погода
 
-КРИТИЧЕСКИ ВАЖНО:
-- Если спрашивают о СОДЕРЖИМОМ встречи (что обсуждали, о чём говорили, детали) — используй search_meetings_full ИЛИ get_entity_details(meeting, id) чтобы получить ПОЛНЫЙ текст. НЕ отвечай по названию!
-- Если нашёл id через search_vault — сразу вызывай get_entity_details для подробностей
-- Не говори "у меня нет расшифровки" — попробуй инструменты до 3-4 раз
-- Отвечай конкретно, цитатами из реального содержимого
+🚨 КРИТИЧЕСКИ ВАЖНО про встречи:
+- В контексте выше ты уже видишь список встреч с id и preview. Если тебя спрашивают о СОДЕРЖИМОМ встречи — ВСЕГДА вызывай get_entity_details(type='meeting', id=<id>) чтобы получить ПОЛНЫЙ текст summary_raw (там может быть 20000+ символов транскрипции).
+- НИКОГДА не отвечай «у меня нет расшифровки» — данные есть в БД, ты ОБЯЗАН вызвать get_entity_details.
+- Если пользователь упоминает тему (роботы, стартапы), а точного id не знает → search_meetings_full('тема').
+- После получения полного содержимого — отвечай КОНКРЕТНО, цитируй фрагменты.
+- Если preview в контексте показывает что-то релевантное — это лишь первые 500 символов, в реальной встрече гораздо больше.
 
 Статусы задач: backlog, todo, in_progress, done, someday
 Сейчас: ${moscowDateTimeString()}
