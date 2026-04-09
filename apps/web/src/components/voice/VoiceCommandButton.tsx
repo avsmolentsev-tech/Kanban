@@ -182,7 +182,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
       {open && (
         <div
           ref={panelRef}
-          className="fixed bottom-36 right-4 z-50 w-80 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden"
+          className="fixed inset-4 md:inset-auto md:bottom-36 md:right-4 md:w-[500px] md:h-[80vh] z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col"
         >
           {/* Header */}
           <div className="px-4 py-3 bg-indigo-600 text-white flex items-center justify-between">
@@ -202,9 +202,64 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             )}
           </div>
 
-          {/* Content */}
-          <div className="p-4 space-y-3">
-            {/* Mic button */}
+          {/* Scrollable content area — chat history + response */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* Hints */}
+            {!transcript && !response && !recording && history.length === 0 && (
+              <div className="text-sm text-gray-400 dark:text-gray-500 space-y-2 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                <div className="font-medium text-gray-500 dark:text-gray-300">Задай любой вопрос или команду:</div>
+                <div>• «Создай задачу купить молоко в проект Личные»</div>
+                <div>• «Перенеси ревью кода в работу»</div>
+                <div>• «Что обсуждали на последней встрече?»</div>
+                <div>• «Какие у меня задачи в работе?»</div>
+                <div>• «Расскажи про проект V-Cards»</div>
+                <div>• «А теперь перенеси её в работу»</div>
+              </div>
+            )}
+
+            {/* Chat history — takes full scrollable area */}
+            {history.length > 0 && (
+              <div className="space-y-3">
+                {history.map((msg, i) => (
+                  <div key={i} className={`p-3 rounded-lg text-sm ${
+                    msg.role === 'user'
+                      ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-200 ml-6'
+                      : 'bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-200 mr-6'
+                  }`}>
+                    <div className="text-xs font-medium mb-1 text-gray-400 dark:text-gray-500">
+                      {msg.role === 'user' ? 'Вы' : 'AI'}
+                    </div>
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Current response with action results */}
+            {response && history.length === 0 && (
+              <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg text-sm">
+                <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{response}</div>
+                {results.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {results.map((r, i) => (
+                      <div key={i} className={`text-xs flex items-center gap-1 ${r.success ? 'text-green-600' : 'text-red-500'}`}>
+                        <span>{r.success ? '✓' : '✗'}</span>
+                        <span>{r.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {processing && (
+              <div className="text-sm text-indigo-500 dark:text-indigo-400 px-3 py-2">Думаю...</div>
+            )}
+          </div>
+
+          {/* Fixed bottom: input + buttons */}
+          <div className="border-t border-gray-200 dark:border-gray-700 p-4 space-y-3 bg-white dark:bg-gray-800">
+            {/* Mic button + status */}
             <div className="flex items-center gap-3">
               <button
                 onClick={recording ? stopRecording : startRecording}
@@ -226,22 +281,21 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
                 ) : processing ? (
                   <span className="text-indigo-500 font-medium">Выполняю...</span>
                 ) : (
-                  <span className="text-gray-500">Нажми микрофон и говори</span>
+                  <span className="text-gray-500 dark:text-gray-400">Нажми микрофон или пиши</span>
                 )}
               </div>
             </div>
 
-            {/* Transcript / text input — always visible */}
+            {/* Text input */}
             <textarea
-              className="w-full border border-gray-200 rounded-lg p-2.5 text-sm resize-none focus:outline-none focus:border-indigo-300 bg-gray-50"
+              className="w-full border border-gray-200 dark:border-gray-600 rounded-lg p-2.5 text-sm resize-none focus:outline-none focus:border-indigo-300 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100"
               rows={3}
               value={transcript}
               onChange={(e) => {
-                // User is manually editing — stop recording so it doesn't overwrite
                 if (recording) stopRecording();
                 setTranscript(e.target.value);
               }}
-              placeholder={recording ? 'Говори, текст появится...' : 'Или напиши команду текстом...'}
+              placeholder={recording ? 'Говори, текст появится...' : 'Напиши вопрос или команду...'}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -253,56 +307,14 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
               }}
             />
 
-            {/* Execute button */}
             <button
               onClick={() => { if (recording) stopRecording(); executeCommand(); }}
               disabled={processing || !transcript.trim()}
               className="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
-              {processing ? 'Выполняю...' : recording ? 'Стоп и выполнить' : 'Выполнить'}
+              {processing ? 'Выполняю...' : recording ? 'Стоп и выполнить' : 'Отправить'}
             </button>
 
-            {/* Response */}
-            {response && (
-              <div className="p-3 bg-gray-50 rounded-lg text-sm">
-                <div className="text-gray-800">{response}</div>
-                {results.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {results.map((r, i) => (
-                      <div key={i} className={`text-xs flex items-center gap-1 ${r.success ? 'text-green-600' : 'text-red-500'}`}>
-                        <span>{r.success ? '✓' : '✗'}</span>
-                        <span>{r.detail}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Chat history */}
-            {history.length > 0 && !recording && (
-              <div className="max-h-32 overflow-auto space-y-1.5 border-t border-gray-100 pt-2">
-                {history.map((msg, i) => (
-                  <div key={i} className={`text-xs px-2 py-1 rounded ${
-                    msg.role === 'user' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-50 text-gray-600'
-                  }`}>
-                    <span className="font-medium">{msg.role === 'user' ? 'Вы: ' : 'Бот: '}</span>
-                    {msg.content}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Hints */}
-            {!transcript && !response && !recording && history.length === 0 && (
-              <div className="text-xs text-gray-400 space-y-1">
-                <div>Примеры:</div>
-                <div>• «Создай задачу купить молоко в проект Личные»</div>
-                <div>• «Перенеси ревью кода в работу»</div>
-                <div>• «Удали задачу написать документацию»</div>
-                <div>• «А теперь перенеси её в работу»</div>
-              </div>
-            )}
           </div>
         </div>
       )}
