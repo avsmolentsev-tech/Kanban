@@ -5,7 +5,6 @@ import { TimelinePage } from './pages/TimelinePage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { MeetingsPage } from './pages/MeetingsPage';
 import { PeoplePage } from './pages/PeoplePage';
-import { InboxPage } from './pages/InboxPage';
 import { IdeasPage } from './pages/IdeasPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { DailyBriefPage } from './pages/DailyBriefPage';
@@ -27,7 +26,6 @@ const desktopNav = [
   { to: '/people', label: 'People' },
   { to: '/brief', label: 'Daily Brief' },
   { to: '/calendar', label: 'Calendar' },
-  { to: '/inbox', label: 'Inbox' },
   { to: '/ideas', label: 'Ideas' },
   { to: '/documents', label: 'Documents' },
 ];
@@ -92,7 +90,6 @@ export default function App() {
               <Route path="/people" element={<PeoplePage />} />
               <Route path="/brief" element={<DailyBriefPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
-              <Route path="/inbox" element={<InboxPage />} />
               <Route path="/ideas" element={<IdeasPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/more" element={<MorePage />} />

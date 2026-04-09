@@ -2,9 +2,9 @@ import { NavLink } from 'react-router-dom';
 
 const tabs = [
   { to: '/', label: 'Задачи', icon: '📋' },
+  { to: '/timeline', label: 'Таймлайн', icon: '📊' },
   { to: '/projects', label: 'Проекты', icon: '📁' },
   { to: '/brief', label: 'Брифинг', icon: '🌅' },
-  { to: '/inbox', label: 'Входящие', icon: '📥' },
   { to: '/more', label: 'Ещё', icon: '☰' },
 ];
 
