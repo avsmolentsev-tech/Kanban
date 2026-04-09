@@ -131,81 +131,85 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
   }
 
   return (
-    <div className="p-4 overflow-auto">
-      {/* Column headers */}
-      <div className="flex mb-2 ml-44">
+    <div className="relative overflow-auto h-full">
+      {/* Sticky column headers */}
+      <div className="sticky top-0 z-30 flex bg-gray-50 border-b border-gray-200 py-2">
+        {/* Corner cell — sticky both top and left */}
+        <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-gray-50 pl-4" />
         <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-purple-600 text-center">Backlog</div>
         {PERIODS.map((p) => (
           <div key={p} className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-500 text-center">
             {PERIOD_LABELS[p]}
           </div>
         ))}
-        <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-400 text-center">No due date</div>
-        <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-green-600 text-center">Done</div>
+        <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-400 text-center">Без даты</div>
+        <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-green-600 text-center">Готово</div>
         <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-400 text-center">Когда-нибудь</div>
       </div>
 
       {/* Project swimlanes */}
-      <SortableContext items={projectOrder.map((p) => `project-row-${p.project?.id ?? 'none'}`)} strategy={verticalListSortingStrategy}>
-        {projectOrder.map(({ project, tasks: pTasks }) => {
-          const grouped: Record<TimePeriod | 'none' | 'done' | 'someday' | 'backlog', Task[]> = { backlog: [], today: [], week: [], month: [], year: [], none: [], done: [], someday: [] };
-          for (const t of pTasks) {
-            if (t.status === 'done') {
-              grouped.done.push(t);
-            } else if (t.status === 'someday') {
-              grouped.someday.push(t);
-            } else if (t.status === 'backlog') {
-              grouped.backlog.push(t);
-            } else {
-              grouped[classifyTask(t.due_date)].push(t);
+      <div className="p-4 pt-2">
+        <SortableContext items={projectOrder.map((p) => `project-row-${p.project?.id ?? 'none'}`)} strategy={verticalListSortingStrategy}>
+          {projectOrder.map(({ project, tasks: pTasks }) => {
+            const grouped: Record<TimePeriod | 'none' | 'done' | 'someday' | 'backlog', Task[]> = { backlog: [], today: [], week: [], month: [], year: [], none: [], done: [], someday: [] };
+            for (const t of pTasks) {
+              if (t.status === 'done') {
+                grouped.done.push(t);
+              } else if (t.status === 'someday') {
+                grouped.someday.push(t);
+              } else if (t.status === 'backlog') {
+                grouped.backlog.push(t);
+              } else {
+                grouped[classifyTask(t.due_date)].push(t);
+              }
             }
-          }
 
-          return (
-            <SortableProjectRow key={project?.id ?? 'none'} id={`project-row-${project?.id ?? 'none'}`}>
-              {(dragHandleProps) => (
-                <div className="flex mb-4">
-                  {/* Project label */}
-                  <div className="w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3">
-                    <div className="flex items-center gap-2">
-                      {project && (
-                        <div
-                          className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-base leading-none flex-shrink-0 select-none"
-                          {...dragHandleProps}
-                        >
-                          ⠿
-                        </div>
-                      )}
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-                      <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'No project'}</span>
+            return (
+              <SortableProjectRow key={project?.id ?? 'none'} id={`project-row-${project?.id ?? 'none'}`}>
+                {(dragHandleProps) => (
+                  <div className="flex mb-4">
+                    {/* Sticky project label (left) */}
+                    <div className="sticky left-0 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-gray-50 border-r border-gray-100">
+                      <div className="flex items-center gap-2">
+                        {project && (
+                          <div
+                            className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-base leading-none flex-shrink-0 select-none"
+                            {...dragHandleProps}
+                          >
+                            ⠿
+                          </div>
+                        )}
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                        <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'Без проекта'}</span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} задач{pTasks.length === 1 ? 'а' : pTasks.length > 4 || pTasks.length === 0 ? '' : 'и'}</div>
                     </div>
-                    <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} task{pTasks.length !== 1 ? 's' : ''}</div>
-                  </div>
 
-                  {/* Period columns */}
-                  <div className="flex gap-4">
-                    <TimelineColumn period="backlog" tasks={grouped.backlog} projects={projects} onTaskClick={onTaskClick}
-                      onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
-                    {PERIODS.map((period) => (
-                      <TimelineColumn key={`${project?.id ?? 'none'}-${period}`} period={period} tasks={grouped[period]} projects={projects}
-                        onTaskClick={onTaskClick} onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh}
-                        dueDate={computePeriodDueDate(period)} />
-                    ))}
-                    <TimelineColumn period="none" tasks={grouped.none} projects={projects} onTaskClick={onTaskClick}
-                      onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
-                    <TimelineColumn period="done" tasks={grouped.done} projects={projects} onTaskClick={onTaskClick}
-                      onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
-                    <TimelineColumn period="someday" tasks={grouped.someday} projects={projects} onTaskClick={onTaskClick}
-                      onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                    {/* Period columns */}
+                    <div className="flex gap-4">
+                      <TimelineColumn period="backlog" tasks={grouped.backlog} projects={projects} onTaskClick={onTaskClick}
+                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                      {PERIODS.map((period) => (
+                        <TimelineColumn key={`${project?.id ?? 'none'}-${period}`} period={period} tasks={grouped[period]} projects={projects}
+                          onTaskClick={onTaskClick} onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh}
+                          dueDate={computePeriodDueDate(period)} />
+                      ))}
+                      <TimelineColumn period="none" tasks={grouped.none} projects={projects} onTaskClick={onTaskClick}
+                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                      <TimelineColumn period="done" tasks={grouped.done} projects={projects} onTaskClick={onTaskClick}
+                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                      <TimelineColumn period="someday" tasks={grouped.someday} projects={projects} onTaskClick={onTaskClick}
+                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                    </div>
                   </div>
-                </div>
-              )}
-            </SortableProjectRow>
-          );
-        })}
-      </SortableContext>
+                )}
+              </SortableProjectRow>
+            );
+          })}
+        </SortableContext>
 
-      {projectOrder.length === 0 && <div className="text-gray-400 text-sm text-center py-8">No tasks yet</div>}
+        {projectOrder.length === 0 && <div className="text-gray-400 text-sm text-center py-8">Нет задач</div>}
+      </div>
     </div>
   );
 }
