@@ -17,10 +17,25 @@ export class TelegramService {
     const claude = new ClaudeService();
     const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
     const tasks = db.prepare("SELECT id, title, status, project_id FROM tasks WHERE archived = 0").all() as Array<{ id: number; title: string; status: string; project_id: number | null }>;
-    const meetings = db.prepare("SELECT id, title, date, project_id, substr(summary_raw, 1, 500) as preview FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null; preview: string }>;
     const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
 
-    // Vault access via tools (search_vault, read_vault_file, list_vault_folder)
+    // Auto-detect if question is about meetings → include full content
+    const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
+    const needsFullMeetings = meetingKeywords.test(text);
+
+    let meetings: Array<{ id: number; title: string; date: string; project_id: number | null; preview: string }>;
+    let fullMeetingContent = '';
+
+    if (needsFullMeetings) {
+      // Fetch last 5 meetings with FULL content
+      const fullMeetings = db.prepare("SELECT id, title, date, project_id, summary_raw FROM meetings ORDER BY date DESC LIMIT 5").all() as Array<{ id: number; title: string; date: string; project_id: number | null; summary_raw: string }>;
+      fullMeetingContent = fullMeetings.map(m =>
+        `## Встреча #${m.id}: ${m.title} (${m.date})\n${(m.summary_raw || '').slice(0, 8000)}`
+      ).join('\n\n---\n\n');
+      meetings = fullMeetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.summary_raw || '').slice(0, 200) }));
+    } else {
+      meetings = db.prepare("SELECT id, title, date, project_id, substr(summary_raw, 1, 500) as preview FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null; preview: string }>;
+    }
 
     const systemPrompt = `Ты — персональный ассистент пользователя в Telegram. Ты умный, дружелюбный, вдумчивый собеседник.
 
@@ -31,6 +46,7 @@ export class TelegramService {
 Задачи: ${JSON.stringify(tasks.slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
 Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.preview || '').slice(0, 200) })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
+${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕДНИХ ВСТРЕЧ ===\n${fullMeetingContent}\n=== КОНЕЦ ТРАНСКРИПЦИЙ ===\n\nОтвечай конкретно на основе содержимого транскрипций выше. Цитируй фрагменты когда уместно.` : ''}
 
 ДОСТУП К OBSIDIAN VAULT через инструменты:
 - search_vault(query) — быстрый поиск по сниппетам

@@ -115,8 +115,25 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
     }
     const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
     const tasks = db.prepare("SELECT id, title, status, project_id FROM tasks WHERE archived = 0").all() as Array<{ id: number; title: string; status: string; project_id: number | null }>;
-    const meetings = db.prepare("SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null }>;
     const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
+
+    // Auto-detect if question is about meetings → include full content
+    const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
+    const needsFullMeetings = meetingKeywords.test(parsed.data.text);
+
+    type MeetingWithContent = { id: number; title: string; date: string; project_id: number | null; summary_raw?: string };
+    let meetings: MeetingWithContent[];
+    let fullMeetingContent = '';
+
+    if (needsFullMeetings) {
+      const fullMeetings = db.prepare("SELECT id, title, date, project_id, summary_raw FROM meetings ORDER BY date DESC LIMIT 5").all() as Array<MeetingWithContent>;
+      fullMeetingContent = fullMeetings.map(m =>
+        `## Встреча #${m.id}: ${m.title} (${m.date})\n${(m.summary_raw || '').slice(0, 8000)}`
+      ).join('\n\n---\n\n');
+      meetings = fullMeetings;
+    } else {
+      meetings = db.prepare("SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<MeetingWithContent>;
+    }
 
     const systemPrompt = `Ты — персональный ассистент. Умный, дружелюбный, вдумчивый собеседник. Можешь разговаривать на любые темы, советовать, обсуждать идеи.
 
@@ -127,6 +144,7 @@ aiRouter.post('/voice-command', async (req: Request, res: Response) => {
 Задачи: ${JSON.stringify(tasks.slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
 Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
+${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕДНИХ ВСТРЕЧ ===\n${fullMeetingContent}\n=== КОНЕЦ ===\n\nОтвечай конкретно на основе содержимого транскрипций выше. Цитируй фрагменты когда уместно.` : ''}
 
 Статусы задач: backlog, todo, in_progress, done, someday
 Сейчас: ${moscowDateTimeString()}
