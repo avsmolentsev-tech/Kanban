@@ -206,9 +206,10 @@ export function MeetingsPage() {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto p-4">
-        {/* Column headers */}
-        <div className="flex mb-2 ml-44">
+      <div className="flex-1 overflow-auto relative">
+        {/* Sticky column headers */}
+        <div className="sticky top-0 z-30 flex bg-gray-50 border-b border-gray-200 py-2">
+          <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-gray-50 pl-4" />
           {periods.map((p) => (
             <div key={p} className="w-56 min-w-[224px] mx-1.5 text-sm font-semibold text-gray-500 text-center">
               {PERIOD_LABELS[p]}
@@ -216,6 +217,7 @@ export function MeetingsPage() {
           ))}
         </div>
 
+        <div className="p-4 pt-2">
         {/* Project rows */}
         {rows.map(({ project, meetings: rowMeetings }) => {
           const grouped: Record<TimePeriod | 'none', Meeting[]> = { today: [], week: [], month: [], year: [], none: [] };
@@ -223,7 +225,7 @@ export function MeetingsPage() {
 
           return (
             <div key={project?.id ?? 'none'} className="flex mb-4">
-              <div className="w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3">
+              <div className="sticky left-0 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-gray-50 border-r border-gray-100">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
                   <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'Без проекта'}</span>
@@ -243,6 +245,7 @@ export function MeetingsPage() {
         {rows.length === 0 && !adding && (
           <div className="text-gray-400 text-sm text-center py-8">Нет встреч</div>
         )}
+        </div>
       </div>
 
       {/* Hidden file input for audio upload */}

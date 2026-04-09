@@ -55,8 +55,8 @@ export function SettingsMenu() {
               <span className="text-[10px] text-gray-400">A</span>
               <input
                 type="range"
-                min={12}
-                max={24}
+                min={10}
+                max={28}
                 step={1}
                 value={zoom}
                 onChange={(e) => setZoom(Number(e.target.value))}

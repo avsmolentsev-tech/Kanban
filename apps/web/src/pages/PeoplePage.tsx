@@ -40,12 +40,12 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
 
   return (
     <div className="flex">
-      <div className="w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3">
+      <div className="sticky left-0 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-gray-50 border-r border-gray-100">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-          <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'No project'}</span>
+          <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'Без проекта'}</span>
         </div>
-        <div className="text-xs text-gray-400 mt-1 ml-5">{groupPeople.length} person{groupPeople.length !== 1 ? 's' : ''}</div>
+        <div className="text-xs text-gray-400 mt-1 ml-5">{groupPeople.length} чел.</div>
       </div>
       <div ref={setNodeRef}
         className={`flex gap-3 flex-wrap flex-1 min-h-[60px] rounded-xl p-2 transition-colors ${isOver ? 'bg-indigo-50 border-2 border-dashed border-indigo-300' : ''}`}>
