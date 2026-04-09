@@ -54,9 +54,9 @@ export class ClaudeService {
     let response = await this.client.chat.completions.create(requestOpts as Parameters<typeof this.client.chat.completions.create>[0]);
     let message = response.choices[0]?.message;
 
-    // Handle tool calls in a loop (max 3 iterations)
+    // Handle tool calls in a loop (max 6 iterations)
     let iterations = 0;
-    while (useTools && message?.tool_calls && message.tool_calls.length > 0 && iterations < 3) {
+    while (useTools && message?.tool_calls && message.tool_calls.length > 0 && iterations < 6) {
       iterations++;
       chatMessages.push(message as unknown as Record<string, unknown>);
       for (const toolCall of message.tool_calls) {

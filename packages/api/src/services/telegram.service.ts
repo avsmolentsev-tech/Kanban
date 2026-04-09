@@ -33,13 +33,18 @@ export class TelegramService {
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 
 ДОСТУП К OBSIDIAN VAULT через инструменты:
-- search_vault(query) — поиск по всему vault
-- read_vault_file(path) — прочитать конкретный файл
-- list_vault_folder(folder) — список файлов в папке (Meetings, Ideas, Tasks, People, Projects, Goals, Materials)
-- get_entity_details(type, id) — детали задачи/встречи/проекта/человека
-- get_weather(city) — текущая погода
+- search_vault(query) — быстрый поиск по сниппетам
+- search_meetings_full(query) — найти встречи с ПОЛНЫМ содержимым транскрипций (используй когда спрашивают ЧТО ОБСУЖДАЛИ, ДЕТАЛИ встречи)
+- get_entity_details(type, id) — полные данные задачи/встречи/проекта/человека (включая summary_raw для встреч)
+- read_vault_file(path) — прочитать .md файл целиком
+- list_vault_folder(folder) — список файлов в папке
+- get_weather(city) — погода
 
-Когда пользователь спрашивает что-то конкретное — ИСПОЛЬЗУЙ инструменты, не гадай. Сначала поищи, потом прочитай, потом ответь.
+КРИТИЧЕСКИ ВАЖНО:
+- Если спрашивают о СОДЕРЖИМОМ встречи (что обсуждали, о чём говорили, детали) — используй search_meetings_full ИЛИ get_entity_details(meeting, id) чтобы получить ПОЛНЫЙ текст. НЕ отвечай по названию!
+- Если нашёл id через search_vault — сразу вызывай get_entity_details для подробностей
+- Не говори "у меня нет расшифровки" — попробуй инструменты до 3-4 раз
+- Отвечай конкретно, цитатами из реального содержимого
 
 Статусы задач: backlog, todo, in_progress, done, someday
 Сейчас: ${moscowDateTimeString()}

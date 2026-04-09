@@ -62,9 +62,37 @@ export function searchVault(query: string, limit = 10): string {
     const { searchService } = require('./search.service');
     const results = searchService.search(query, limit) as Array<{ type: string; ref_id: number; title: string; snippet: string }>;
     if (results.length === 0) return 'Ничего не найдено';
-    return results.map(r => `[${r.type}] ${r.title}\n${r.snippet.replace(/<\/?mark>/g, '')}`).join('\n\n');
+    return results.map(r => `[${r.type}#${r.ref_id}] ${r.title}\n${r.snippet.replace(/<\/?mark>/g, '')}`).join('\n\n') +
+      '\n\nЧтобы получить полное содержимое, используй get_entity_details с type и id (например, type=meeting id=5) или read_vault_file.';
   } catch (err) {
     return `Ошибка поиска: ${err instanceof Error ? err.message : 'unknown'}`;
+  }
+}
+
+/** Search meetings by topic and return full content */
+export function searchMeetingsFull(query: string, limit = 3): string {
+  try {
+    const db = getDb();
+    const results = db.prepare(`
+      SELECT id, title, date, summary_raw FROM meetings
+      WHERE title LIKE ? OR summary_raw LIKE ?
+      ORDER BY date DESC LIMIT ?
+    `).all(`%${query}%`, `%${query}%`, limit) as Array<{ id: number; title: string; date: string; summary_raw: string }>;
+
+    if (results.length === 0) {
+      // Fallback: return the most recent meetings if query didn't match
+      const recent = db.prepare('SELECT id, title, date, summary_raw FROM meetings ORDER BY date DESC LIMIT ?').all(limit) as Array<{ id: number; title: string; date: string; summary_raw: string }>;
+      if (recent.length === 0) return 'Встреч не найдено';
+      return 'По запросу ничего не найдено. Недавние встречи:\n\n' + recent.map(m =>
+        `## ${m.title} (${m.date}, id=${m.id})\n${(m.summary_raw || '').slice(0, 4000)}`
+      ).join('\n\n---\n\n');
+    }
+
+    return results.map(m =>
+      `## ${m.title} (${m.date}, id=${m.id})\n${(m.summary_raw || '').slice(0, 4000)}`
+    ).join('\n\n---\n\n');
+  } catch (err) {
+    return `Ошибка: ${err instanceof Error ? err.message : 'unknown'}`;
   }
 }
 
@@ -158,12 +186,27 @@ export const toolDefinitions = [
     type: 'function' as const,
     function: {
       name: 'search_vault',
-      description: 'Полнотекстовый поиск по всему содержимому Obsidian vault (задачи, встречи, идеи, документы, заметки). Используй когда нужно найти информацию по ключевым словам.',
+      description: 'Полнотекстовый поиск по всему содержимому Obsidian vault (задачи, встречи, идеи, документы, заметки). Возвращает сниппеты. Для полного содержимого используй get_entity_details или search_meetings_full.',
       parameters: {
         type: 'object',
         properties: {
           query: { type: 'string', description: 'Поисковый запрос, например "встреча с Иваном", "проект онбординг"' },
           limit: { type: 'number', description: 'Макс количество результатов (по умолчанию 10)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'search_meetings_full',
+      description: 'Найти встречи по теме/ключевым словам и получить ПОЛНЫЙ текст их транскрипций. Используй когда пользователь спрашивает что обсуждали на встрече, содержание встречи, детали разговора.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Тема или ключевые слова, например "роботы", "онбординг", "стартап"' },
+          limit: { type: 'number', description: 'Макс встреч (по умолчанию 3)' },
         },
         required: ['query'],
       },
@@ -221,6 +264,8 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
       return await getWeather(args['city'] as string);
     case 'search_vault':
       return searchVault(args['query'] as string, (args['limit'] as number) ?? 10);
+    case 'search_meetings_full':
+      return searchMeetingsFull(args['query'] as string, (args['limit'] as number) ?? 3);
     case 'read_vault_file':
       return readVaultFile(args['path'] as string);
     case 'list_vault_folder':
