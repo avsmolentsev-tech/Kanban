@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { SettingsMenu } from '../components/layout/SettingsMenu';
 
 const items = [
+  { to: '/kanban', label: 'Kanban-доска', icon: '📋' },
   { to: '/timeline', label: 'Таймлайн', icon: '📊' },
   { to: '/calendar', label: 'Календарь', icon: '📅' },
   { to: '/meetings', label: 'Встречи', icon: '🤝' },

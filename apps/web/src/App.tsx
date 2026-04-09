@@ -10,6 +10,7 @@ import { DocumentsPage } from './pages/DocumentsPage';
 import { DailyBriefPage } from './pages/DailyBriefPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { MorePage } from './pages/MorePage';
+import { TodaySwipePage } from './pages/TodaySwipePage';
 import { SearchBar } from './components/search/SearchBar';
 import { MobileNav } from './components/layout/MobileNav';
 import { SettingsMenu } from './components/layout/SettingsMenu';
@@ -83,7 +84,8 @@ export default function App() {
           {/* Main content */}
           <main className={`flex-1 overflow-auto ${useMobileLayout ? 'pb-16' : ''}`}>
             <Routes>
-              <Route path="/" element={<KanbanPage />} />
+              <Route path="/" element={useMobileLayout ? <TodaySwipePage /> : <KanbanPage />} />
+              <Route path="/kanban" element={<KanbanPage />} />
               <Route path="/timeline" element={<TimelinePage />} />
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/meetings" element={<MeetingsPage />} />
