@@ -23,13 +23,25 @@ function classifyMeeting(date: string | null): TimePeriod | 'none' {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+
+  // Today (past or future within today)
   if (d >= today && d < tomorrow) return 'today';
+
+  // For past meetings: classify by how long ago
+  if (d < today) {
+    const daysAgo = Math.floor((today.getTime() - d.getTime()) / (24 * 60 * 60 * 1000));
+    if (daysAgo <= 7) return 'week';
+    if (daysAgo <= 30) return 'month';
+    if (d.getFullYear() === now.getFullYear()) return 'year';
+    return 'none'; // older than this year → no date column
+  }
+
+  // Future meetings
   const endOfWeek = new Date(today); endOfWeek.setDate(today.getDate() + (7 - today.getDay()));
   if (d >= tomorrow && d < endOfWeek) return 'week';
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
   if (d >= endOfWeek && d <= endOfMonth) return 'month';
   if (d.getFullYear() === now.getFullYear() && d > endOfMonth) return 'year';
-  if (d < today) return 'today'; // past → today
   return 'year';
 }
 
