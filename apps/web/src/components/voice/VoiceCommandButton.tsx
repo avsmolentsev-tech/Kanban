@@ -188,35 +188,39 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
           style={{
             transform: `translate(${swipeOffset.x}px, ${swipeOffset.y}px)`,
             transition: swipeOffset.x === 0 && swipeOffset.y === 0 ? 'transform 0.2s ease-out' : 'none',
+            opacity: Math.max(0.5, 1 - Math.max(Math.abs(swipeOffset.x), Math.abs(swipeOffset.y)) / 300),
+          }}
+          onTouchStart={(e) => {
+            const touch = e.touches[0];
+            if (touch) setSwipeStart({ x: touch.clientX, y: touch.clientY });
+          }}
+          onTouchMove={(e) => {
+            if (!swipeStart) return;
+            const touch = e.touches[0];
+            if (!touch) return;
+            const dx = touch.clientX - swipeStart.x;
+            const dy = touch.clientY - swipeStart.y;
+            // Only activate swipe-to-close if motion is primarily horizontal
+            // (to not interfere with vertical scroll of chat)
+            if (Math.abs(dx) > Math.abs(dy) * 1.5) {
+              setSwipeOffset({
+                x: dx,
+                y: dy * 0.3, // slight vertical follow for Tinder-like feel
+              });
+            }
+          }}
+          onTouchEnd={() => {
+            if (Math.abs(swipeOffset.x) > 100) {
+              recognitionRef.current?.stop();
+              setOpen(false);
+            }
+            setSwipeStart(null);
+            setSwipeOffset({ x: 0, y: 0 });
           }}
         >
-          {/* Header — swipe area */}
+          {/* Header */}
           <div
-            className="px-4 py-3 bg-indigo-600 text-white flex items-center justify-between cursor-grab active:cursor-grabbing"
-            onTouchStart={(e) => {
-              const touch = e.touches[0];
-              if (touch) setSwipeStart({ x: touch.clientX, y: touch.clientY });
-            }}
-            onTouchMove={(e) => {
-              if (!swipeStart) return;
-              const touch = e.touches[0];
-              if (!touch) return;
-              const dx = touch.clientX - swipeStart.x;
-              const dy = touch.clientY - swipeStart.y;
-              // Follow finger only for close directions (right or down)
-              setSwipeOffset({
-                x: dx > 0 ? dx : 0,
-                y: dy > 0 ? dy : 0,
-              });
-            }}
-            onTouchEnd={() => {
-              if (swipeOffset.x > 100 || swipeOffset.y > 100) {
-                recognitionRef.current?.stop();
-                setOpen(false);
-              }
-              setSwipeStart(null);
-              setSwipeOffset({ x: 0, y: 0 });
-            }}
+            className="px-4 py-3 bg-indigo-600 text-white flex items-center justify-between"
           >
             {/* Mobile drag handle */}
             <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-1 bg-indigo-400 rounded-full md:hidden" />
