@@ -96,7 +96,9 @@ export function HabitsSwipePage() {
   };
 
   const pending = habits.filter(h => !doneToday.has(h.id));
-  const current = pending[index];
+  // Reset index if out of bounds
+  const safeIndex = Math.min(index, Math.max(0, pending.length - 1));
+  const current = pending.length > 0 ? pending[safeIndex] : undefined;
 
   // List view
   if (view === 'list') {
@@ -148,7 +150,9 @@ export function HabitsSwipePage() {
           setDoneToday(prev => new Set([...prev, current.id]));
         } catch {}
       }
-      setIndex(i => i + 1);
+      // Don't increment index since pending array shrinks when habit is done
+      // For skip (left swipe), move to next
+      if (direction === 'left') setIndex(i => i + 1);
       setOffset({ x: 0, y: 0 });
       setAnimating(false);
     }, 250);
