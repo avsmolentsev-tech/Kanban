@@ -185,7 +185,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
       { role: 'user', content: parsed.data.text },
     ];
 
-    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1', false, true);
+    const result = await claude.chat(messages, systemPrompt, 'o3', false, true);
 
     let command: { actions: Array<Record<string, unknown>>; response: string };
     try {
