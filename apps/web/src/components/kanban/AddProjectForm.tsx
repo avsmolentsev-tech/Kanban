@@ -30,7 +30,7 @@ export function AddProjectForm({ onCreated }: Props) {
     return (
       <button onClick={() => setOpen(true)}
         className="flex items-center gap-2 text-sm text-gray-400 hover:text-indigo-600 transition-colors ml-2 mt-2">
-        <span className="text-lg leading-none">+</span> New project
+        <span className="text-lg leading-none">+</span> Новый проект
       </button>
     );
   }

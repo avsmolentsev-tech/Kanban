@@ -9,6 +9,8 @@ const items = [
   { to: '/people', label: 'Люди', icon: '👥' },
   { to: '/ideas', label: 'Идеи', icon: '💡' },
   { to: '/documents', label: 'Документы', icon: '📄' },
+  { to: '/dashboard', label: 'Дашборд', icon: '📊' },
+  { to: '/chat', label: 'Чат', icon: '💬' },
 ];
 
 export function MorePage() {

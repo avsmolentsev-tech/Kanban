@@ -831,6 +831,15 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       console.error('[telegram] notify failed:', err);
     }
   }
+
+  async sendFile(filePath: string, filename: string, caption?: string): Promise<void> {
+    if (!this.bot || !config.telegramUserId) return;
+    try {
+      await this.bot.telegram.sendDocument(config.telegramUserId, { source: filePath, filename }, caption ? { caption } : undefined);
+    } catch (err) {
+      console.error('[telegram] sendFile failed:', err);
+    }
+  }
 }
 
 export const telegramService = new TelegramService();

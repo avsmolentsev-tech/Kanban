@@ -4,7 +4,7 @@ const tabs = [
   { to: '/', label: 'Задачи', icon: '📋' },
   { to: '/timeline', label: 'Таймлайн', icon: '📊' },
   { to: '/projects', label: 'Проекты', icon: '📁' },
-  { to: '/brief', label: 'Брифинг', icon: '🌅' },
+  { to: '/chat', label: 'Чат', icon: '💬' },
   { to: '/more', label: 'Ещё', icon: '☰' },
 ];
 

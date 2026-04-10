@@ -40,14 +40,14 @@ export function AddTaskModal({ status, projectId, people, dueDate, onCreated, on
       <input
         autoFocus
         className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
-        placeholder="Task title..."
+        placeholder="Название задачи..."
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }}
         disabled={loading}
       />
       <div className="flex items-center gap-2">
-        <label className="text-xs text-gray-500">Priority:</label>
+        <label className="text-xs text-gray-500">Приоритет:</label>
         {[1, 2, 3, 4, 5].map((p) => (
           <button key={p} onClick={() => setPriority(p)}
             className={`w-6 h-6 rounded text-xs font-medium ${priority === p ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
@@ -57,14 +57,14 @@ export function AddTaskModal({ status, projectId, people, dueDate, onCreated, on
       </div>
       {people.length > 0 && (
         <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500">Assign:</label>
+          <label className="text-xs text-gray-500">Исполнитель:</label>
           <select
             className="text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:border-indigo-300"
             value={personId ?? ''}
             onChange={(e) => setPersonId(e.target.value ? Number(e.target.value) : null)}
             disabled={loading}
           >
-            <option value="">No one</option>
+            <option value="">Никто</option>
             {people.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
@@ -72,10 +72,10 @@ export function AddTaskModal({ status, projectId, people, dueDate, onCreated, on
         </div>
       )}
       <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1">Cancel</button>
+        <button onClick={onCancel} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1">Отмена</button>
         <button onClick={submit} disabled={!title.trim() || loading}
           className="text-xs bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700 disabled:opacity-50">
-          {loading ? '...' : 'Add'}
+          {loading ? '...' : 'Добавить'}
         </button>
       </div>
     </div>

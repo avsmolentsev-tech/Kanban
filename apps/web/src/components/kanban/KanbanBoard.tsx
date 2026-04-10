@@ -11,7 +11,7 @@ import { AddProjectForm } from './AddProjectForm';
 import { tasksApi } from '../../api/tasks.api';
 
 const COLUMNS: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'done', 'someday'];
-const COL_LABELS: Record<TaskStatus, string> = { backlog: 'Backlog', todo: 'To Do', in_progress: 'In Progress', done: 'Done', someday: 'Когда-нибудь' };
+const COL_LABELS: Record<TaskStatus, string> = { backlog: 'Бэклог', todo: 'К выполнению', in_progress: 'В работе', done: 'Готово', someday: 'Когда-нибудь' };
 
 interface Props {
   tasks: Task[];
@@ -41,7 +41,7 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
           <AddTaskModal status={status} projectId={projectId} people={people} onCreated={() => { setAdding(false); onRefresh(); }} onCancel={() => setAdding(false)} />
         </div>
       ) : (
-        <button onClick={() => setAdding(true)} className="mt-2 text-xs text-gray-400 hover:text-indigo-600 transition-colors self-center">+ Add</button>
+        <button onClick={() => setAdding(true)} className="mt-2 text-xs text-gray-400 hover:text-indigo-600 transition-colors self-center">+ Добавить</button>
       )}
     </div>
   );

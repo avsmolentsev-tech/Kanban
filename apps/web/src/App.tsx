@@ -10,6 +10,8 @@ import { DocumentsPage } from './pages/DocumentsPage';
 import { DailyBriefPage } from './pages/DailyBriefPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { MorePage } from './pages/MorePage';
+import { ChatPage } from './pages/ChatPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { TodaySwipePage } from './pages/TodaySwipePage';
 import { SearchBar } from './components/search/SearchBar';
 import { MobileNav } from './components/layout/MobileNav';
@@ -29,6 +31,8 @@ const desktopNav = [
   { to: '/calendar', label: 'Calendar' },
   { to: '/ideas', label: 'Ideas' },
   { to: '/documents', label: 'Documents' },
+  { to: '/chat', label: 'Чат' },
+  { to: '/dashboard', label: 'Дашборд' },
 ];
 
 export default function App() {
@@ -94,6 +98,8 @@ export default function App() {
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/ideas" element={<IdeasPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
+              <Route path="/chat" element={<ChatPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/more" element={<MorePage />} />
             </Routes>
           </main>

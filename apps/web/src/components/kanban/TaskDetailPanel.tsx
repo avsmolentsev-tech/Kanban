@@ -4,10 +4,10 @@ import type { Task, Project, Person, TaskStatus } from '@pis/shared';
 import { tasksApi } from '../../api/tasks.api';
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
-  { value: 'backlog', label: 'Backlog' },
-  { value: 'todo', label: 'To Do' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'done', label: 'Done' },
+  { value: 'backlog', label: 'Бэклог' },
+  { value: 'todo', label: 'К выполнению' },
+  { value: 'in_progress', label: 'В работе' },
+  { value: 'done', label: 'Готово' },
   { value: 'someday', label: 'Когда-нибудь' },
 ];
 
@@ -127,7 +127,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Status */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Status</div>
+            <div className="text-xs text-gray-500 mb-1">Статус</div>
             <select
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
               value={form.status}
@@ -142,14 +142,14 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Project */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Project</div>
+            <div className="text-xs text-gray-500 mb-1">Проект</div>
             <select
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
               value={form.project_id ?? ''}
               onChange={(e) => handleSelectChange('project_id', e.target.value === '' ? null : Number(e.target.value))}
               disabled={saving}
             >
-              <option value="">No project</option>
+              <option value="">Без проекта</option>
               {activeProjects.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -159,13 +159,13 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
           {/* Priority & Urgency */}
           <div className="grid grid-cols-2 gap-3">
             <RatingField
-              label="Priority"
+              label="Приоритет"
               value={form.priority}
               onChange={(v) => handleRatingClick('priority', v)}
               disabled={saving}
             />
             <RatingField
-              label="Urgency"
+              label="Срочность"
               value={form.urgency}
               onChange={(v) => handleRatingClick('urgency', v)}
               disabled={saving}
@@ -174,7 +174,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Due date */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Due date</div>
+            <div className="text-xs text-gray-500 mb-1">Дедлайн</div>
             <input
               type="date"
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
@@ -187,7 +187,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Description */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Description</div>
+            <div className="text-xs text-gray-500 mb-1">Описание</div>
             <textarea
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-none"
               rows={4}

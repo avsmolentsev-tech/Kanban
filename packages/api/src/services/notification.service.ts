@@ -1,8 +1,13 @@
 import { getDb } from '../db/db';
 import { telegramService } from './telegram.service';
 import { moscowNow, moscowDateString } from '../utils/time';
+import { generateBundle } from './bundle.service';
+import { generateAllFormats } from './converter.service';
+import * as path from 'path';
+import { config } from '../config';
 
 let lastMorningBrief = '';
+let lastWeeklyReport = '';
 
 export function startNotificationScheduler(): void {
   // Check every 15 minutes
@@ -10,6 +15,7 @@ export function startNotificationScheduler(): void {
     checkOverdueTasks();
     checkMorningBrief();
     checkUpcomingMeetings();
+    checkWeeklyReport();
   }, 15 * 60 * 1000);
 
   setTimeout(checkOverdueTasks, 10000);
@@ -62,7 +68,54 @@ function checkMorningBrief(): void {
   }
 }
 
-/** Remind about meetings happening in next 30 minutes */
+/** Weekly report on Monday at 10:00 Moscow time — sends PDF bundle */
+function checkWeeklyReport(): void {
+  const now = moscowNow();
+  const hour = now.getUTCHours();
+  const dayOfWeek = now.getUTCDay(); // 0=Sun, 1=Mon
+  const today = moscowDateString();
+
+  if (dayOfWeek !== 1 || hour !== 10) return; // Monday 10:00 MSK
+  if (lastWeeklyReport === today) return;
+  lastWeeklyReport = today;
+
+  try {
+    const db = getDb();
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    // Stats
+    const completed = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND updated_at >= ?").get(weekAgo) as { c: number };
+    const created = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE created_at >= ?").get(weekAgo) as { c: number };
+    const meetingsCount = db.prepare("SELECT COUNT(*) as c FROM meetings WHERE date >= ? AND date <= ?").get(weekAgo, today) as { c: number };
+    const active = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday')").get() as { c: number };
+
+    let msg = `📊 <b>Еженедельный отчёт</b>\n\n`;
+    msg += `📅 Неделя: ${weekAgo} — ${today}\n\n`;
+    msg += `✅ Завершено задач: ${completed.c}\n`;
+    msg += `➕ Создано задач: ${created.c}\n`;
+    msg += `🤝 Встреч: ${meetingsCount.c}\n`;
+    msg += `📋 Активных задач: ${active.c}\n\n`;
+
+    telegramService.notify(msg);
+
+    // Generate and send PDF bundle
+    try {
+      const result = generateBundle('all');
+      const fullPath = path.join(config.vaultPath, result.vaultPath);
+      const formats = generateAllFormats(fullPath);
+
+      if (formats.pdf) {
+        telegramService.sendFile(formats.pdf, `weekly-${today}.pdf`, '📦 Еженедельный bundle — загрузи в NotebookLM');
+      }
+    } catch (err) {
+      console.warn('[notifications] weekly bundle failed:', err);
+    }
+  } catch (err) {
+    console.warn('[notifications] weekly report failed:', err);
+  }
+}
+
+/** Remind about meetings today (once per meeting) */
 const notifiedMeetings = new Set<number>();
 function checkUpcomingMeetings(): void {
   const now = moscowNow();
@@ -73,11 +126,10 @@ function checkUpcomingMeetings(): void {
 
   for (const m of meetings) {
     if (notifiedMeetings.has(m.id)) continue;
-    // Simple: notify once per day if there's a meeting today (no time info in date field)
-    // More sophisticated logic would parse a time field if added
     notifiedMeetings.add(m.id);
+    telegramService.notify(`📅 Встреча сегодня: <b>${m.title}</b>`);
   }
 
-  // Clear old notifications at midnight
+  // Clear at midnight
   if (now.getUTCHours() === 0) notifiedMeetings.clear();
 }
