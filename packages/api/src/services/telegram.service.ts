@@ -8,6 +8,7 @@ import { ClaudeService } from './claude.service';
 import OpenAI from 'openai';
 import { moscowDateString, moscowDateTimeString } from '../utils/time';
 import { generateBundle, findProjectByName } from './bundle.service';
+import { generateAllFormats } from './converter.service';
 
 export class TelegramService {
   private bot: Telegraf | null = null;
@@ -335,15 +336,15 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     // /meetings — list recent meetings
     // /bundle — generate NotebookLM bundle for project
-    // /bundle — generate and SEND NotebookLM bundle file
+    // /bundle — generate and SEND bundle in all formats
     this.bot.command('bundle', async (ctx) => {
       const text = ctx.message.text.replace(/^\/bundle\s*/, '').trim();
       if (!text) {
-        ctx.reply('Формат:\n/bundle <название проекта>\n/bundle все\n\nПримеры:\n/bundle Атланты\n/bundle Robots');
+        ctx.reply('Формат:\n/bundle <название проекта>\n/bundle все\n\nПримеры:\n/bundle Атланты\n/bundle Robots\n\nОтправлю файлы: PDF, DOCX, MD');
         return;
       }
       try {
-        ctx.reply('📦 Собираю bundle...');
+        ctx.reply('📦 Собираю bundle и конвертирую...');
         const match = findProjectByName(text);
         if (match === null) {
           ctx.reply(`❌ Проект "${text}" не найден`);
@@ -352,13 +353,49 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         const result = generateBundle(match);
         const fullPath = path.join(config.vaultPath, result.vaultPath);
 
-        // Send file to user
-        await ctx.replyWithDocument(
-          { source: fullPath, filename: result.filename },
-          {
-            caption: `📦 Bundle: ${result.filename}\n📊 ${result.sizeKb} KB | Встреч: ${result.sections.meetings} | Задач: ${result.sections.tasks} | Идей: ${result.sections.ideas} | Людей: ${result.sections.people}\n\nЗагрузи в NotebookLM → подкаст, mind map`
-          }
-        );
+        // Generate all formats
+        const formats = generateAllFormats(fullPath);
+
+        const caption = `📦 ${result.filename.replace('.md', '')}\n📊 Встреч: ${result.sections.meetings} | Задач: ${result.sections.tasks} | Идей: ${result.sections.ideas}`;
+
+        // Send PDF first (for NotebookLM)
+        if (formats.pdf) {
+          try {
+            await ctx.replyWithDocument(
+              { source: formats.pdf, filename: result.filename.replace('.md', '.pdf') },
+              { caption: `${caption}\n\n📱 PDF → загрузи в NotebookLM` }
+            );
+          } catch {}
+        }
+
+        // Send DOCX
+        if (formats.docx) {
+          try {
+            await ctx.replyWithDocument(
+              { source: formats.docx, filename: result.filename.replace('.md', '.docx') },
+              { caption: '📄 DOCX — для Word/Google Docs' }
+            );
+          } catch {}
+        }
+
+        // Send original MD
+        try {
+          await ctx.replyWithDocument(
+            { source: fullPath, filename: result.filename },
+            { caption: '📝 MD — исходник для Obsidian' }
+          );
+        } catch {}
+
+        // Send TXT as backup
+        if (formats.txt) {
+          try {
+            await ctx.replyWithDocument(
+              { source: formats.txt, filename: result.filename.replace('.md', '.txt') },
+              { caption: '📋 TXT — Copied text для NotebookLM' }
+            );
+          } catch {}
+        }
+
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'unknown'}`);
       }
