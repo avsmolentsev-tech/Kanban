@@ -9,21 +9,24 @@ import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
 import { ProjectFilter } from '../components/filters/ProjectFilter';
 import type { Task, Person, TaskStatus } from '@pis/shared';
 
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function computeDueDate(period: TimePeriod | 'none'): string | null {
   if (period === 'none') return null;
   const now = new Date();
   switch (period) {
     case 'today':
-      return now.toISOString().split('T')[0]!;
+      return localDateStr(now);
     case 'week': {
-      const fri = new Date(now);
-      fri.setDate(now.getDate() + (5 - now.getDay()));
-      if (fri <= now) fri.setDate(fri.getDate() + 7);
-      return fri.toISOString().split('T')[0]!;
+      const d = new Date(now);
+      d.setDate(now.getDate() + 5);
+      return localDateStr(d);
     }
     case 'month': {
       const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      return end.toISOString().split('T')[0]!;
+      return localDateStr(end);
     }
     case 'year':
       return `${now.getFullYear()}-12-31`;

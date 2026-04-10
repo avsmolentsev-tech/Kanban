@@ -27,23 +27,24 @@ function classifyTask(dueDate: string | null): TimePeriod | 'none' {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
 
+  // Overdue → today
+  if (due < today) return 'today';
+
   // Today
   if (due >= today && due < tomorrow) return 'today';
 
-  // This week (rest of the week after today)
-  const endOfWeek = new Date(today);
-  endOfWeek.setDate(today.getDate() + (7 - today.getDay()));
-  if (due >= tomorrow && due < endOfWeek) return 'week';
+  // This week (next 7 days after today)
+  const weekEnd = new Date(today);
+  weekEnd.setDate(today.getDate() + 7);
+  if (due >= tomorrow && due < weekEnd) return 'week';
 
   // This month (rest of month after this week)
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-  if (due >= endOfWeek && due <= endOfMonth) return 'month';
+  if (due >= weekEnd && due <= endOfMonth) return 'month';
 
   // This year
   if (due.getFullYear() === now.getFullYear() && due > endOfMonth) return 'year';
 
-  // Past or future years — put in closest bucket
-  if (due < today) return 'today'; // overdue goes to today
   return 'year';
 }
 
