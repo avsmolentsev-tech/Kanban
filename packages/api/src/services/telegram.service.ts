@@ -558,12 +558,12 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       } catch {
         // Fallback if apiGet not available internally
         const db = getDb();
-        const habits = db.prepare("SELECT id, title, icon, streak FROM habits WHERE archived = 0").all() as Array<{ id: number; title: string; icon: string; streak: number }>;
+        const habits = db.prepare("SELECT id, title, icon FROM habits WHERE archived = 0").all() as Array<{ id: number; title: string; icon: string }>;
         if (habits.length === 0) { ctx.reply('🔥 Нет привычек'); return; }
         const today = moscowDateString();
         const logs = db.prepare("SELECT habit_id FROM habit_logs WHERE date = ?").all(today) as Array<{ habit_id: number }>;
         const doneSet = new Set(logs.map(l => l.habit_id));
-        const lines = habits.map(h => `${doneSet.has(h.id) ? '✅' : '⬜'} ${h.icon} ${h.title}${h.streak > 0 ? ` 🔥${h.streak}` : ''}`);
+        const lines = habits.map(h => `${doneSet.has(h.id) ? '✅' : '⬜'} ${h.icon} ${h.title}`);
         ctx.reply(`🔥 Привычки (${logs.length}/${habits.length}):\n\n${lines.join('\n')}`);
       }
     });
