@@ -415,6 +415,48 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       }
     });
 
+    // /transcribe <url> — download and transcribe large audio from URL
+    this.bot.command('transcribe', async (ctx) => {
+      const url = ctx.message.text.replace(/^\/transcribe\s*/, '').trim();
+      if (!url) { ctx.reply('Формат: /transcribe <ссылка на аудио>\n\nЗалей файл в Google Drive/Яндекс Диск, сделай публичную ссылку и отправь.'); return; }
+      try {
+        ctx.reply('⬇️ Скачиваю файл...');
+        const { execSync } = require('child_process');
+        const tmpFile = `/tmp/tg-download-${Date.now()}.mp3`;
+        execSync(`wget -q "${url}" -O "${tmpFile}" --max-redirect=5 --timeout=300`, { timeout: 600000 });
+
+        const stats = require('fs').statSync(tmpFile);
+        ctx.reply(`✅ Скачано (${Math.round(stats.size / 1024 / 1024)} MB). 🎤 Транскрибирую... (может занять 15-60 мин для длинных записей)`);
+
+        const { transcribeLocal, isLocalWhisperAvailable } = require('./whisper-local.service');
+        const buffer = require('fs').readFileSync(tmpFile);
+        let transcript: string;
+
+        if (isLocalWhisperAvailable()) {
+          transcript = transcribeLocal(buffer, 'download.mp3');
+        } else {
+          const openai = new OpenAI({ apiKey: config.openaiApiKey });
+          const file = new File([buffer], 'audio.mp3', { type: 'audio/mpeg' });
+          const result = await openai.audio.transcriptions.create({ model: 'whisper-1', file, language: 'ru' });
+          transcript = result.text;
+        }
+
+        // Cleanup
+        try { require('fs').unlinkSync(tmpFile); } catch {}
+
+        if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
+
+        await sendLong(ctx, `📝 Транскрипция (${transcript.length} символов):\n${transcript.slice(0, 3500)}`);
+
+        // Ingest as meeting
+        const ingestService = new IngestService();
+        const result = await ingestService.ingestText(transcript);
+        await sendLong(ctx, formatIngestResult(result));
+      } catch (err) {
+        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'unknown'}`);
+      }
+    });
+
     this.bot.command('meetings', (ctx) => {
       const db = getDb();
       const meetings = db.prepare("SELECT m.title, m.date, p.name as project_name FROM meetings m LEFT JOIN projects p ON m.project_id = p.id ORDER BY m.date DESC LIMIT 10").all() as Array<{ title: string; date: string; project_name: string | null }>;
