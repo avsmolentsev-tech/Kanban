@@ -15,7 +15,7 @@ export class TelegramService {
   private chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
   /** Execute a command via AI — same as web voice commands */
-  private async executeCommand(text: string): Promise<{ text: string; file?: { path: string; filename: string } }> {
+  private async executeCommand(text: string): Promise<{ text: string; files?: Array<{ path: string; filename: string }> }> {
     const db = getDb();
     const claude = new ClaudeService();
     const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
@@ -186,10 +186,16 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
               results.push(`❌ Проект "${pname}" не найден`);
             } else {
               const r = generateBundle(match);
-              // Store for sending file after response
-              (command as Record<string, unknown>)['_bundlePath'] = path.join(config.vaultPath, r.vaultPath);
-              (command as Record<string, unknown>)['_bundleFilename'] = r.filename;
-              results.push(`📦 Bundle: ${r.filename} (${r.sizeKb} KB, встреч: ${r.sections.meetings}, задач: ${r.sections.tasks})`);
+              const fullPath = path.join(config.vaultPath, r.vaultPath);
+              // Generate all formats
+              const formats = generateAllFormats(fullPath);
+              // Store all files for sending
+              const files: Array<{ path: string; filename: string }> = [];
+              if (formats.pdf) files.push({ path: formats.pdf, filename: r.filename.replace('.md', '.pdf') });
+              if (formats.docx) files.push({ path: formats.docx, filename: r.filename.replace('.md', '.docx') });
+              files.push({ path: fullPath, filename: r.filename });
+              (command as Record<string, unknown>)['_files'] = files;
+              results.push(`📦 Bundle: ${r.filename.replace('.md', '')} (${r.sizeKb} KB) → PDF + DOCX + MD`);
             }
             break;
           }
@@ -245,11 +251,10 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     this.chatHistory.push({ role: 'assistant', content: responseText });
     if (this.chatHistory.length > 200) this.chatHistory = this.chatHistory.slice(-200);
 
-    // Check if there's a file to send (bundle)
-    const bundlePath = (command as Record<string, unknown>)['_bundlePath'] as string | undefined;
-    const bundleFilename = (command as Record<string, unknown>)['_bundleFilename'] as string | undefined;
+    // Check if there are files to send (bundle etc)
+    const files = (command as Record<string, unknown>)['_files'] as Array<{ path: string; filename: string }> | undefined;
 
-    return { text: responseText, file: bundlePath ? { path: bundlePath, filename: bundleFilename! } : undefined };
+    return { text: responseText, files };
   }
 
   /** Classify message — chat/command vs ingest (for long content) */
@@ -579,15 +584,17 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     });
 
     // Send executeCommand result — text + optional file
-    const sendCommandResult = async (ctx: { reply: (text: string) => Promise<unknown>; replyWithDocument: (doc: { source: string; filename: string }, opts?: Record<string, unknown>) => Promise<unknown> }, result: { text: string; file?: { path: string; filename: string } }): Promise<void> => {
+    const sendCommandResult = async (ctx: { reply: (text: string) => Promise<unknown>; replyWithDocument: (doc: { source: string; filename: string }, opts?: Record<string, unknown>) => Promise<unknown> }, result: { text: string; files?: Array<{ path: string; filename: string }> }): Promise<void> => {
       await sendLong(ctx, result.text);
-      if (result.file) {
-        try {
-          await ctx.replyWithDocument(
-            { source: result.file.path, filename: result.file.filename },
-            { caption: '📄 Файл готов — загрузи в NotebookLM' }
-          );
-        } catch {}
+      if (result.files) {
+        for (const f of result.files) {
+          try {
+            await ctx.replyWithDocument(
+              { source: f.path, filename: f.filename },
+              { caption: f.filename.endsWith('.pdf') ? '📱 PDF → загрузи в NotebookLM' : f.filename.endsWith('.docx') ? '📄 DOCX' : '📝 MD' }
+            );
+          } catch {}
+        }
       }
     };
 
@@ -782,6 +789,22 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         ctx.reply(`❌ Error: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
     });
+
+    // Set bot commands menu
+    this.bot.telegram.setMyCommands([
+      { command: 'tasks', description: '📋 Активные задачи' },
+      { command: 'meetings', description: '🤝 Последние встречи' },
+      { command: 'projects', description: '📁 Список проектов' },
+      { command: 'brief', description: '🌅 Дневной брифинг' },
+      { command: 'bundle', description: '📦 Bundle для NotebookLM' },
+      { command: 'transcribe', description: '🎤 Транскрибация по ссылке' },
+      { command: 'add', description: '➕ Быстро добавить задачу' },
+      { command: 'search', description: '🔍 Поиск в vault' },
+      { command: 'all', description: '📊 Все задачи по статусам' },
+      { command: 'app', description: '📱 Открыть приложение' },
+      { command: 'cmd', description: '🤖 Выполнить команду' },
+      { command: 'start', description: '🚀 Справка' },
+    ]).catch(() => {});
 
     this.bot.launch().then(() => {
       console.log('[telegram] bot started');
