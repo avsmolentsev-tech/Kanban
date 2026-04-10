@@ -167,6 +167,8 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
     {"type": "create_project", "name": "string", "color": "#hex"},
     {"type": "create_idea", "title": "string", "body": "string?", "project_id": number|null, "category": "business|product|personal|growth"},
     {"type": "create_bundle", "project_name": "string (название проекта или 'все')"},
+    {"type": "create_goal", "title": "string", "description": "string?", "project_id": number|null, "target_value": number?, "unit": "string?"},
+    {"type": "update_goal", "goal_id": number, "current_value": number?, "status": "active|completed?"},
     {"type": "update_project", "project_id": number, "name": "string?", "color": "#hex?", "status": "string?"},
     {"type": "delete_project", "project_id": number},
     {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number]},
@@ -254,6 +256,22 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
             results.push({ type: 'create_idea', success: true, detail: `Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog` });
             void ideaId;
+            break;
+          }
+          case 'create_goal': {
+            db.prepare('INSERT INTO goals (title, description, type, project_id, target_value, unit) VALUES (?, ?, ?, ?, ?, ?)').run(
+              action['title'], (action['description'] as string) ?? '', 'goal',
+              action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%'
+            );
+            results.push({ type: 'create_goal', success: true, detail: `🎯 Цель "${action['title']}"` });
+            break;
+          }
+          case 'update_goal': {
+            const fields: string[] = []; const values: unknown[] = [];
+            if (action['current_value'] !== undefined) { fields.push('current_value = ?'); values.push(action['current_value']); }
+            if (action['status'] !== undefined) { fields.push('status = ?'); values.push(action['status']); }
+            if (fields.length > 0) db.prepare(`UPDATE goals SET ${fields.join(', ')} WHERE id = ?`).run(...values, action['goal_id']);
+            results.push({ type: 'update_goal', success: true, detail: `🎯 Цель #${action['goal_id']} обновлена` });
             break;
           }
           case 'create_bundle': {

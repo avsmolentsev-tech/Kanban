@@ -21,6 +21,8 @@ export class TelegramService {
     const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
     const tasks = db.prepare("SELECT id, title, status, project_id FROM tasks WHERE archived = 0").all() as Array<{ id: number; title: string; status: string; project_id: number | null }>;
     const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
+    let goals: Array<{ id: number; title: string; current_value: number; target_value: number; status: string }> = [];
+    try { goals = db.prepare("SELECT id, title, current_value, target_value, status FROM goals WHERE type = 'goal' AND status = 'active'").all() as typeof goals; } catch {}
 
     // Auto-detect if question is about meetings → include full content
     const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
@@ -49,6 +51,7 @@ export class TelegramService {
 Задачи: ${JSON.stringify(tasks.slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
 Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.preview || '').slice(0, 200) })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
+Цели (OKR): ${JSON.stringify(goals.map(g => ({ id: g.id, title: g.title, progress: `${g.current_value}/${g.target_value}`, status: g.status })))}
 ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕДНИХ ВСТРЕЧ ===\n${fullMeetingContent}\n=== КОНЕЦ ТРАНСКРИПЦИЙ ===\n\nОтвечай конкретно на основе содержимого транскрипций выше. Цитируй фрагменты когда уместно.` : ''}
 
 ДОСТУП К OBSIDIAN VAULT через инструменты:
@@ -91,6 +94,9 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     {"type": "create_project", "name": "string", "color": "#hex"},
     {"type": "create_idea", "title": "string", "body": "string?", "project_id": number|null, "category": "business|product|personal|growth"},
     {"type": "create_bundle", "project_name": "string (название проекта или 'все')"},
+    {"type": "create_goal", "title": "string", "description": "string?", "project_id": number|null, "target_value": number?, "unit": "string?", "due_date": "YYYY-MM-DD?"},
+    {"type": "create_key_result", "parent_id": number, "title": "string", "target_value": number?, "unit": "string?"},
+    {"type": "update_goal", "goal_id": number, "current_value": number?, "status": "active|completed?"},
     {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number], "summary_raw": "string?"},
     {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?, "person_ids": [number]?, "summary_raw": "string?"},
     {"type": "delete_meeting", "meeting_id": number}
@@ -182,6 +188,32 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
             );
             const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
             results.push(`💡 Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog`);
+            break;
+          }
+          case 'create_goal': {
+            const r = db.prepare('INSERT INTO goals (title, description, type, project_id, target_value, unit, due_date) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+              action['title'], (action['description'] as string) ?? '', 'goal',
+              action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%', action['due_date'] ?? null
+            );
+            results.push(`🎯 Цель "${action['title']}" создана`);
+            break;
+          }
+          case 'create_key_result': {
+            db.prepare('INSERT INTO goals (title, type, parent_id, target_value, unit) VALUES (?, ?, ?, ?, ?)').run(
+              action['title'], 'key_result', action['parent_id'], action['target_value'] ?? 100, (action['unit'] as string) ?? '%'
+            );
+            results.push(`📊 KR "${action['title']}" добавлен`);
+            break;
+          }
+          case 'update_goal': {
+            const fields: string[] = [];
+            const values: unknown[] = [];
+            if (action['current_value'] !== undefined) { fields.push('current_value = ?'); values.push(action['current_value']); }
+            if (action['status'] !== undefined) { fields.push('status = ?'); values.push(action['status']); }
+            if (fields.length > 0) {
+              db.prepare(`UPDATE goals SET ${fields.join(', ')} WHERE id = ?`).run(...values, action['goal_id']);
+            }
+            results.push(`🎯 Цель #${action['goal_id']} обновлена`);
             break;
           }
           case 'create_bundle': {
