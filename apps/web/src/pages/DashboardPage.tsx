@@ -182,7 +182,7 @@ export function DashboardPage() {
         </WidgetCard>
 
         {/* Project progress */}
-        <WidgetCard title="Прогресс по проектам" linkTo="/projects">
+        <WidgetCard title="Прогресс по проектам" linkTo="/timeline">
           {progress.length === 0 && (
             <p className="text-sm text-gray-400 dark:text-gray-500">Нет проектов</p>
           )}

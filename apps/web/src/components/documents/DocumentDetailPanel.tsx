@@ -161,6 +161,29 @@ export function DocumentDetailPanel({ document, projects, onClose, onUpdated, on
             />
           </div>
 
+          {/* Send to Obsidian */}
+          {!document.vault_path ? (
+            <button
+              onClick={async () => {
+                await apiPatch(`/documents/${document.id}`, { status: 'in_obsidian' });
+                onUpdated();
+              }}
+              className="w-full py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 flex items-center justify-center gap-2"
+            >
+              📤 Отправить в Obsidian
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <span>📄 В Obsidian:</span>
+              <a
+                href={`obsidian://open?vault=ObsidianVault&file=${encodeURIComponent(document.vault_path.replace('.md', ''))}`}
+                className="text-indigo-500 hover:text-indigo-700 underline truncate"
+              >
+                {document.vault_path}
+              </a>
+            </div>
+          )}
+
           {/* Attachments */}
           <div>
             <div className="flex items-center justify-between mb-2">
