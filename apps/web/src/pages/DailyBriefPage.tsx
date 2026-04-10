@@ -12,12 +12,16 @@ export function DailyBriefPage() {
 
   useEffect(() => { fetchTasks(); fetchProjects(); }, [fetchTasks, fetchProjects]);
 
-  const today = new Date().toISOString().split('T')[0]!;
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const weekEnd = new Date(now); weekEnd.setDate(now.getDate() + 7);
+  const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
   const projectMap = new Map(projects.map(p => [p.id, p]));
 
   // Categorize tasks
   const overdue = tasks.filter(t => !t.archived && t.due_date && t.due_date < today && t.status !== 'done' && t.status !== 'someday');
   const todayTasks = tasks.filter(t => !t.archived && t.due_date === today && t.status !== 'done' && t.status !== 'someday');
+  const weekTasks = tasks.filter(t => !t.archived && t.due_date && t.due_date > today && t.due_date <= weekEndStr && t.status !== 'done' && t.status !== 'someday');
   const inProgress = tasks.filter(t => !t.archived && t.status === 'in_progress');
   const highPriority = tasks.filter(t => !t.archived && t.priority >= 4 && t.status !== 'done' && t.status !== 'someday');
 
@@ -85,6 +89,11 @@ export function DailyBriefPage() {
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <h3 className="text-sm font-semibold text-gray-700 mb-3">В работе ({inProgress.length})</h3>
           <TaskList items={inProgress} emptyText="Нет задач в работе" />
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-blue-700 mb-3">На неделе ({weekTasks.length})</h3>
+          <TaskList items={weekTasks} emptyText="Нет задач на неделю" />
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl p-4">
