@@ -23,9 +23,9 @@ interface Props {
   onReorderProjects: (items: Array<{ id: number; order_index: number }>) => void;
 }
 
-function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskClick, onToggleDone, projectId, onRefresh }: {
+function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskClick, onToggleDone, projectId, onRefresh, selectedIds }: {
   droppableId: string; status: TaskStatus; tasks: Task[]; projects: Project[]; people: Person[];
-  onTaskClick: (t: Task) => void; onToggleDone: (id: number, newStatus: TaskStatus) => void; projectId: number | null; onRefresh: () => void;
+  onTaskClick: (t: Task, e: React.MouseEvent) => void; onToggleDone: (id: number, newStatus: TaskStatus) => void; projectId: number | null; onRefresh: () => void; selectedIds?: Set<number>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: droppableId });
   const pMap = new Map(projects.map((p) => [p.id, p]));
@@ -34,7 +34,13 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
   return (
     <div ref={setNodeRef} className={`flex flex-col w-64 min-w-[256px] bg-gray-100 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50' : ''}`}>
       <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
-        {tasks.map((t) => <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} onToggleDone={onToggleDone} dragMode="draggable" />)}
+        {tasks.map((t) => (
+          <div key={t.id} className={selectedIds?.has(t.id) ? 'ring-2 ring-indigo-500 rounded-lg' : ''}>
+            <TaskCard task={t} project={t.project_id ? pMap.get(t.project_id) : undefined}
+              onClick={(e?: React.MouseEvent) => onTaskClick(t, e ?? ({} as React.MouseEvent))}
+              onToggleDone={onToggleDone} dragMode="draggable" />
+          </div>
+        ))}
       </div>
       {adding ? (
         <div className="mt-2">
@@ -59,10 +65,29 @@ function SortableProjectRow({ id, children }: { id: string; children: (dragHandl
 
 export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone, onRefresh, onReorderProjects }: Props) {
   const [selected, setSelected] = useState<Task | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 8 } });
   const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } });
   const sensors = useSensors(mouseSensor, touchSensor);
   const pMap = new Map(projects.map((p) => [p.id, p]));
+
+  const handleCardClick = (task: Task, e: React.MouseEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      // Multi-select mode
+      e.preventDefault();
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(task.id)) next.delete(task.id); else next.add(task.id);
+        return next;
+      });
+    } else if (selectedIds.size > 0) {
+      // Clear selection on normal click
+      setSelectedIds(new Set());
+      setSelected(task);
+    } else {
+      setSelected(task);
+    }
+  };
 
   const tasksByProject = new Map<number | null, Task[]>();
   for (const t of tasks) {
@@ -101,19 +126,26 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
       // Format: {projectId}-{status} e.g. "1-todo", "none-backlog"
       const parts = overId.split('-');
       const status = parts.pop() as TaskStatus;
-      const targetProjectPart = parts.join('-'); // "1", "none", etc.
+      const targetProjectPart = parts.join('-');
       if (COLUMNS.includes(status)) {
-        const taskId = Number(active.id);
+        const draggedId = Number(active.id);
         const targetProjectId = targetProjectPart === 'none' ? null : Number(targetProjectPart);
-        const task = tasks.find((t) => t.id === taskId);
-        // Update project if moving to a different project swimlane
-        if (task && task.project_id !== targetProjectId) {
-          await tasksApi.update(taskId, { status, project_id: targetProjectId });
-          onRefresh();
-        } else {
-          const tasksInCol = tasks.filter((t) => t.status === status);
-          await onMoveTask(taskId, status, tasksInCol.length);
+
+        // Move all selected tasks (or just the dragged one)
+        const idsToMove = selectedIds.size > 0 && selectedIds.has(draggedId)
+          ? [...selectedIds]
+          : [draggedId];
+
+        for (const taskId of idsToMove) {
+          const task = tasks.find((t) => t.id === taskId);
+          if (task && task.project_id !== targetProjectId) {
+            await tasksApi.update(taskId, { status, project_id: targetProjectId });
+          } else {
+            await tasksApi.update(taskId, { status });
+          }
         }
+        setSelectedIds(new Set());
+        onRefresh();
       }
     }
   };
@@ -164,10 +196,11 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
                             tasks={pTasks.filter((t) => t.status === status)}
                             projects={projects}
                             people={people}
-                            onTaskClick={setSelected}
+                            onTaskClick={handleCardClick}
                             onToggleDone={onToggleDone}
                             projectId={project?.id ?? null}
                             onRefresh={onRefresh}
+                            selectedIds={selectedIds}
                           />
                         ))}
                       </div>
