@@ -797,16 +797,16 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     // Set bot commands menu
     this.bot.telegram.setMyCommands([
+      { command: 'app', description: '📱 Открыть приложение' },
       { command: 'tasks', description: '📋 Активные задачи' },
       { command: 'meetings', description: '🤝 Последние встречи' },
-      { command: 'projects', description: '📁 Список проектов' },
       { command: 'brief', description: '🌅 Дневной брифинг' },
       { command: 'bundle', description: '📦 Bundle для NotebookLM' },
       { command: 'transcribe', description: '🎤 Транскрибация по ссылке' },
+      { command: 'projects', description: '📁 Список проектов' },
       { command: 'add', description: '➕ Быстро добавить задачу' },
       { command: 'search', description: '🔍 Поиск в vault' },
       { command: 'all', description: '📊 Все задачи по статусам' },
-      { command: 'app', description: '📱 Открыть приложение' },
       { command: 'cmd', description: '🤖 Выполнить команду' },
       { command: 'start', description: '🚀 Справка' },
     ]).catch(() => {});
