@@ -10,12 +10,12 @@ const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'
 
 type ProjectStatus = 'active' | 'paused' | 'completed' | 'archived';
 
-const STAGES: ProjectStatus[] = ['active', 'paused', 'completed', 'archived'];
+const STAGES: ProjectStatus[] = ['active', 'completed', 'archived'];
 const STAGE_LABELS: Record<ProjectStatus, string> = {
   active: '🚀 Активные',
   paused: '⏸ На паузе',
-  completed: '✅ Завершены',
-  archived: '📦 Архив',
+  completed: '🔄 В работе',
+  archived: '✅ Завершены',
 };
 
 interface TaskStats {

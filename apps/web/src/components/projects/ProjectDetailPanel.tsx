@@ -5,8 +5,8 @@ import { apiGet } from '../../api/client';
 import type { Project, ProjectStatus } from '@pis/shared';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
-const STATUSES: ProjectStatus[] = ['active', 'paused', 'completed', 'archived'];
-const STATUS_LABELS: Record<string, string> = { active: '🚀 Активный', paused: '⏸ На паузе', completed: '✅ Завершён', archived: '📦 Архив' };
+const STATUSES: ProjectStatus[] = ['active', 'completed', 'archived'];
+const STATUS_LABELS: Record<string, string> = { active: '🚀 Активный', completed: '🔄 В работе', archived: '✅ Завершён' };
 
 interface ProjectDetail {
   tasks: Array<{ id: number; title: string; status: string; priority: number }>;
