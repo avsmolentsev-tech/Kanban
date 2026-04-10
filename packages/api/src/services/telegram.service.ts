@@ -118,7 +118,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       { role: 'user', content: text },
     ];
 
-    const model = 'o3';
+    const model = 'gpt-4.1';
 
     const result = await claude.chat(messages, systemPrompt, model, true, true);
 
