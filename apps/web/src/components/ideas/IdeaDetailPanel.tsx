@@ -108,17 +108,24 @@ export function IdeaDetailPanel({ idea, projects, onClose, onUpdated, onDeleted 
           </div>
 
           <div>
-            <div className="text-xs text-gray-500 mb-1">Проект</div>
-            <select
-              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 bg-white"
-              value={form.project_id ?? ''}
-              onChange={(e) => handleProjectChange(e.target.value)}
-            >
-              <option value="">Без проекта</option>
-              {projects.filter((p) => !p.archived).map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+            <div className="text-xs text-gray-500 mb-1.5">Проект</div>
+            <div className="flex flex-wrap gap-2">
+              {projects.filter((p) => !p.archived).map((p) => {
+                const active = form.project_id === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleProjectChange(active ? '' : String(p.id))}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${active ? 'border-transparent text-white' : 'border-gray-200 text-gray-600 bg-white hover:border-gray-300'}`}
+                    style={active ? { backgroundColor: p.color, borderColor: p.color } : {}}
+                  >
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: active ? 'rgba(255,255,255,0.7)' : p.color }} />
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="text-xs text-gray-400 pt-2">Создано: {idea.created_at.split('T')[0]}</div>
