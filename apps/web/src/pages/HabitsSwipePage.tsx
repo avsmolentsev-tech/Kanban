@@ -14,8 +14,27 @@ interface HabitStat {
   dates: string[];
 }
 
-const EMOJI_OPTIONS = ['✅', '💪', '📚', '🏃', '💧', '🧘', '💊', '🎯', '🌅', '✍️', '🎵', '🍎', '😴', '🚶', '🧠'];
-const COLOR_OPTIONS = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6'];
+const ICON_OPTIONS = [
+  { icon: '🧘', label: 'Медитация' },
+  { icon: '🏋️', label: 'Спорт' },
+  { icon: '📖', label: 'Чтение' },
+  { icon: '🏃', label: 'Бег' },
+  { icon: '💧', label: 'Вода' },
+  { icon: '😴', label: 'Сон' },
+  { icon: '🥗', label: 'Питание' },
+  { icon: '✍️', label: 'Письмо' },
+  { icon: '🎯', label: 'Фокус' },
+  { icon: '💊', label: 'Витамины' },
+  { icon: '🚶', label: 'Прогулка' },
+  { icon: '🧠', label: 'Учёба' },
+  { icon: '🎵', label: 'Музыка' },
+  { icon: '💪', label: 'Привычка' },
+  { icon: '🌅', label: 'Утро' },
+  { icon: '🙏', label: 'Благодарность' },
+  { icon: '📵', label: 'Без телефона' },
+  { icon: '🧹', label: 'Порядок' },
+];
+const COLOR_OPTIONS = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4'];
 
 export function HabitsSwipePage() {
   const [habits, setHabits] = useState<Habit[]>([]);
@@ -133,59 +152,96 @@ export function HabitsSwipePage() {
   if (!current && habits.length > 0) {
     const allDone = habits.length === doneToday.size;
     return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-        <div className="text-6xl mb-4">{allDone ? '🔥' : '👋'}</div>
-        <div className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">
-          {allDone ? 'Все привычки выполнены!' : 'Привычки просмотрены!'}
-        </div>
-        <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-          {doneToday.size} из {habits.length} выполнено сегодня
-        </div>
-        {habits.map(h => (
-          <div key={h.id} className="flex items-center gap-2 text-sm my-0.5">
-            <span>{doneToday.has(h.id) ? '✅' : '⬜'}</span>
-            <span>{h.icon} {h.title}</span>
-            {h.streak > 0 && <span className="text-orange-500">🔥{h.streak}</span>}
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-between px-4 pt-4 pb-2">
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">🔥 Привычки</h1>
+          <div className="flex gap-2">
+            <button onClick={() => setView('list')} className="text-xs px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg">Список</button>
+            <button onClick={() => setShowAdd(true)} className="text-xs px-3 py-1 bg-green-600 text-white rounded-lg">+ Новая</button>
           </div>
-        ))}
-        <button onClick={() => { setIndex(0); fetchData(); }}
-          className="mt-6 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
-          Обновить
-        </button>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+          <div className="text-6xl mb-4">{allDone ? '🔥' : '👋'}</div>
+          <div className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">
+            {allDone ? 'Все привычки выполнены!' : 'Привычки просмотрены!'}
+          </div>
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            {doneToday.size} из {habits.length} выполнено сегодня
+          </div>
+          <div className="space-y-2 mb-6 w-full max-w-xs">
+            {habits.map(h => (
+              <div key={h.id} onClick={() => toggleHabit(h.id)}
+                className={`flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-all ${doneToday.has(h.id) ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-50 dark:bg-gray-800'}`}>
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${doneToday.has(h.id) ? 'bg-green-500 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                  {doneToday.has(h.id) ? '✓' : ''}
+                </span>
+                <span className="text-sm">{h.icon} {h.title}</span>
+                {h.streak > 0 && <span className="text-xs text-orange-500 ml-auto">🔥{h.streak}</span>}
+              </div>
+            ))}
+          </div>
+          <button onClick={() => { setIndex(0); fetchData(); }}
+            className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
+            Обновить
+          </button>
+        </div>
+        {renderAddModal()}
       </div>
     );
   }
 
   const renderAddModal = () => showAdd ? (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setShowAdd(false)}>
-      <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
-        <h2 className="text-lg font-bold mb-3 text-gray-800 dark:text-gray-100">Новая привычка</h2>
-        <input autoFocus className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 mb-3"
-          placeholder="Например: Цигун" value={newTitle} onChange={e => setNewTitle(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && addHabit()} />
-        <div className="flex flex-wrap gap-2 mb-3">
-          {EMOJI_OPTIONS.map(em => (
-            <button key={em} onClick={() => setNewIcon(em)}
-              className={`w-9 h-9 text-lg rounded-lg flex items-center justify-center ${newIcon === em ? 'ring-2 ring-indigo-500 bg-indigo-100 dark:bg-indigo-900/50' : 'bg-gray-100 dark:bg-gray-700'}`}>
-              {em}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {COLOR_OPTIONS.map(c => (
-            <button key={c} onClick={() => setNewColor(c)}
-              className={`w-8 h-8 rounded-full ${newColor === c ? 'ring-2 ring-offset-2 ring-gray-400' : ''}`}
-              style={{ backgroundColor: c }} />
-          ))}
-        </div>
-        <div className="mb-4">
-          <div className="text-xs text-gray-500 mb-1">Напоминание (МСК)</div>
-          <input type="time" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
-            value={newRemind} onChange={e => setNewRemind(e.target.value)} />
-        </div>
-        <div className="flex gap-3">
-          <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm text-gray-600 dark:text-gray-400">Отмена</button>
-          <button onClick={addHabit} disabled={!newTitle.trim()} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">Создать</button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowAdd(false)}>
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-5 space-y-4">
+          <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">Новая привычка</h2>
+
+          <input autoFocus className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 text-base"
+            placeholder="Название привычки" value={newTitle} onChange={e => setNewTitle(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addHabit()} />
+
+          {/* Icons with labels */}
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Иконка</div>
+            <div className="grid grid-cols-3 gap-2">
+              {ICON_OPTIONS.map(({ icon, label }) => (
+                <button key={icon} onClick={() => { setNewIcon(icon); if (!newTitle) setNewTitle(label); }}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all ${
+                    newIcon === icon
+                      ? 'ring-2 ring-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
+                      : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
+                  }`}>
+                  <span className="text-xl">{icon}</span>
+                  <span className="text-gray-600 dark:text-gray-300 truncate">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Colors */}
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Цвет</div>
+            <div className="flex flex-wrap gap-3">
+              {COLOR_OPTIONS.map(c => (
+                <button key={c} onClick={() => setNewColor(c)}
+                  className={`w-9 h-9 rounded-full transition-all ${newColor === c ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-offset-gray-800 scale-110' : 'hover:scale-105'}`}
+                  style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </div>
+
+          {/* Reminder */}
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">⏰ Напоминание в Telegram (МСК)</div>
+            <input type="time" className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+              value={newRemind} onChange={e => setNewRemind(e.target.value)} />
+          </div>
+
+          {/* Buttons — prominent position */}
+          <div className="flex gap-3 pt-2 pb-2">
+            <button onClick={() => setShowAdd(false)} className="flex-1 py-3 text-sm text-gray-600 dark:text-gray-400 rounded-xl border border-gray-200 dark:border-gray-600">Отмена</button>
+            <button onClick={addHabit} disabled={!newTitle.trim()} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl text-sm font-semibold disabled:opacity-50">Создать</button>
+          </div>
         </div>
       </div>
     </div>
