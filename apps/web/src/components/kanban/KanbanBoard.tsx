@@ -35,9 +35,18 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
     <div ref={setNodeRef} className={`flex flex-col w-64 min-w-[256px] bg-gray-100 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50' : ''}`}>
       <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
         {tasks.map((t) => (
-          <div key={t.id} className={selectedIds?.has(t.id) ? 'ring-2 ring-indigo-500 rounded-lg' : ''}>
+          <div key={t.id}
+            className={selectedIds?.has(t.id) ? 'ring-2 ring-indigo-500 rounded-lg' : ''}
+            onClickCapture={(e) => {
+              if (e.ctrlKey || e.metaKey || (selectedIds && selectedIds.size > 0)) {
+                e.stopPropagation();
+                e.preventDefault();
+                onTaskClick(t, e);
+              }
+            }}
+          >
             <TaskCard task={t} project={t.project_id ? pMap.get(t.project_id) : undefined}
-              onClick={(e?: React.MouseEvent) => onTaskClick(t, e ?? ({} as React.MouseEvent))}
+              onClick={() => { if (!selectedIds || selectedIds.size === 0) onTaskClick(t, {} as React.MouseEvent); }}
               onToggleDone={onToggleDone} dragMode="draggable" />
           </div>
         ))}
