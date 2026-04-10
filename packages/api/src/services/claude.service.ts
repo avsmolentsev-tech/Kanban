@@ -38,11 +38,18 @@ export class ClaudeService {
       ...messages,
     ];
 
+    const selectedModel = model ?? 'gpt-4.1-mini';
+    const isO3 = selectedModel.startsWith('o3') || selectedModel.startsWith('o4');
     const requestOpts: Record<string, unknown> = {
-      model: model ?? 'gpt-4.1-mini',
-      max_tokens: 8192,
+      model: selectedModel,
       messages: chatMessages,
     };
+    // o3/o4 models use max_completion_tokens, others use max_tokens
+    if (isO3) {
+      requestOpts['max_completion_tokens'] = 8192;
+    } else {
+      requestOpts['max_tokens'] = 8192;
+    }
 
     if (useTools) {
       requestOpts['tools'] = toolDefinitions;
