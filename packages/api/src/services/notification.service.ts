@@ -19,6 +19,7 @@ export function startNotificationScheduler(): void {
     checkUpcomingMeetings();
     checkWeeklyReport();
     checkDailyDigest();
+    checkHabitReminders();
   }, 15 * 60 * 1000);
 
   setTimeout(checkOverdueTasks, 10000);
@@ -162,6 +163,28 @@ function checkDailyDigest(): void {
   } catch (err) {
     console.warn('[notifications] daily digest failed:', err);
   }
+}
+
+/** Habit reminders based on remind_time */
+function checkHabitReminders(): void {
+  try {
+    const now = moscowNow();
+    const hour = now.getUTCHours();
+    const minute = now.getUTCMinutes();
+    const today = moscowDateString();
+    const currentTime = `${String(hour).padStart(2, '0')}:${String(minute < 30 ? '00' : '30')}`;
+
+    const db = getDb();
+    const habits = db.prepare("SELECT id, title, icon, remind_time FROM habits WHERE archived = 0 AND remind_time IS NOT NULL").all() as Array<{ id: number; title: string; icon: string; remind_time: string }>;
+
+    for (const h of habits) {
+      if (h.remind_time !== currentTime) continue;
+      // Check if already done today
+      const log = db.prepare("SELECT id FROM habit_logs WHERE habit_id = ? AND date = ?").get(h.id, today);
+      if (log) continue;
+      telegramService.notify(`${h.icon} Напоминание: <b>${h.title}</b>\n\nОтметь в /habits или в приложении`);
+    }
+  } catch {}
 }
 
 /** Remind about meetings today (once per meeting) */

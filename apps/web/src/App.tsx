@@ -10,6 +10,7 @@ import { DocumentsPage } from './pages/DocumentsPage';
 import { DailyBriefPage } from './pages/DailyBriefPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { HabitsPage } from './pages/HabitsPage';
+import { HabitsSwipePage } from './pages/HabitsSwipePage';
 import { GoalsPage } from './pages/GoalsPage';
 import { MorePage } from './pages/MorePage';
 import { ChatPage } from './pages/ChatPage';
@@ -102,7 +103,7 @@ export default function App() {
               <Route path="/brief" element={<DailyBriefPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/ideas" element={<IdeasPage />} />
-              <Route path="/habits" element={<HabitsPage />} />
+              <Route path="/habits" element={useMobileLayout ? <HabitsSwipePage /> : <HabitsPage />} />
               <Route path="/goals" element={<GoalsPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/chat" element={<ChatPage />} />
