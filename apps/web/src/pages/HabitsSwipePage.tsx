@@ -96,9 +96,7 @@ export function HabitsSwipePage() {
   };
 
   const pending = habits.filter(h => !doneToday.has(h.id));
-  // Reset index if out of bounds
-  const safeIndex = Math.min(index, Math.max(0, pending.length - 1));
-  const current = pending.length > 0 ? pending[safeIndex] : undefined;
+  const current = pending[0] ?? undefined;
 
   // List view
   if (view === 'list') {
@@ -150,9 +148,7 @@ export function HabitsSwipePage() {
           setDoneToday(prev => new Set([...prev, current.id]));
         } catch {}
       }
-      // Don't increment index since pending array shrinks when habit is done
-      // For skip (left swipe), move to next
-      if (direction === 'left') setIndex(i => i + 1);
+      // No index management needed — pending[0] always shows next undone
       setOffset({ x: 0, y: 0 });
       setAnimating(false);
     }, 250);
@@ -160,9 +156,9 @@ export function HabitsSwipePage() {
 
   // All done!
   if (!current && habits.length > 0) {
-    const allDone = habits.length === doneToday.size;
+    const allDone = doneToday.size >= habits.length;
     return (
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full pb-20">
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">🔥 Привычки</h1>
           <div className="flex gap-2">
@@ -296,7 +292,7 @@ export function HabitsSwipePage() {
       {/* Counter */}
       <div className="text-center mb-4">
         <div className="text-xs text-gray-400 dark:text-gray-500">
-          Привычка {index + 1} из {pending.length} | Выполнено: {doneToday.size}/{habits.length}
+          Осталось: {pending.length} | Выполнено: {doneToday.size}/{habits.length}
         </div>
         <div className="mt-2 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div className="h-full bg-orange-500 transition-all" style={{ width: `${(doneToday.size / habits.length) * 100}%` }} />
