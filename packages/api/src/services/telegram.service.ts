@@ -264,7 +264,21 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
   }
 
   /** Transcribe audio via Whisper API */
+  /** Transcribe audio — tries local whisper.cpp first (free), falls back to OpenAI API */
   private async transcribeAudio(buffer: Buffer, filename: string): Promise<string> {
+    // Try local whisper.cpp first (FREE)
+    try {
+      const { isLocalWhisperAvailable, transcribeLocal } = require('./whisper-local.service');
+      if (isLocalWhisperAvailable()) {
+        console.log('[whisper] using local whisper.cpp');
+        return transcribeLocal(buffer, filename);
+      }
+    } catch (err) {
+      console.warn('[whisper] local failed, falling back to OpenAI:', err instanceof Error ? err.message : err);
+    }
+
+    // Fallback to OpenAI Whisper API ($$$)
+    console.log('[whisper] using OpenAI API');
     const openai = new OpenAI({ apiKey: config.openaiApiKey });
     const file = new File([buffer], filename, { type: 'audio/ogg' });
     const result = await openai.audio.transcriptions.create({
