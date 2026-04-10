@@ -54,7 +54,11 @@ export class TelegramService {
 Цели и ключевые результаты (OKR):
 ${goals.map(g => `  ${g.type === 'goal' ? '🎯' : '  📊'} #${g.id} ${g.title} (${g.current_value}/${g.target_value} ${g.unit})${g.parent_id ? ` [KR цели #${g.parent_id}]` : ''}`).join('\n')}
 
-ВАЖНО: Когда пользователь просит обновить прогресс/процент/статус ключевого результата (KR) — используй update_goal с goal_id = id этого KR и current_value = новое значение. НЕ путай с задачами (tasks)! Ключевые результаты — это записи в таблице goals с type='key_result'.
+🚨 КРИТИЧЕСКИ ВАЖНО про цели и KR:
+- Ключевые результаты (KR) — это НЕ задачи! Они в отдельной таблице goals.
+- Чтобы обновить прогресс KR → action type="update_goal", goal_id=id этого KR, current_value=новое число
+- НИКОГДА не используй update_task или move_task для KR
+- Пример: если KR #2 "Провести партнёрскую сессию" нужно поставить 1% → {"type":"update_goal","goal_id":2,"current_value":1}
 ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕДНИХ ВСТРЕЧ ===\n${fullMeetingContent}\n=== КОНЕЦ ТРАНСКРИПЦИЙ ===\n\nОтвечай конкретно на основе содержимого транскрипций выше. Цитируй фрагменты когда уместно.` : ''}
 
 ДОСТУП К OBSIDIAN VAULT через инструменты:
@@ -282,6 +286,11 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       } catch (err) {
         results.push(`❌ ${err instanceof Error ? err.message : 'Ошибка'}`);
       }
+    }
+
+    // Log actions for debugging
+    if (command.actions.length > 0) {
+      console.log(`[bot] actions: ${JSON.stringify(command.actions.map(a => ({ type: a['type'], ...a })))}`);
     }
 
     const responseText = command.response + (results.length > 0 ? '\n\n' + results.join('\n') : '');
