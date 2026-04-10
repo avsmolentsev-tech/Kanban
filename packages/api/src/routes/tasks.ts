@@ -12,6 +12,7 @@ export const tasksRouter = Router();
 
 const CreateSchema = z.object({
   project_id: z.number().int().optional(),
+  parent_id: z.number().int().nullable().optional(),
   title: z.string().min(1),
   description: z.string().optional().default(''),
   status: z.enum(['backlog', 'todo', 'in_progress', 'done', 'someday']).optional().default('backlog'),
@@ -32,6 +33,7 @@ const UpdateSchema = z.object({
   start_date: z.string().nullable().optional(),
   archived: z.boolean().optional(),
   project_id: z.number().int().nullable().optional(),
+  parent_id: z.number().int().nullable().optional(),
   person_ids: z.array(z.number().int()).optional(),
 });
 
@@ -51,7 +53,21 @@ function enrichTasksWithPeople(tasks: Record<string, unknown>[]): Record<string,
     if (!byTask.has(r.task_id)) byTask.set(r.task_id, []);
     byTask.get(r.task_id)!.push({ id: r.id, name: r.name });
   }
-  return tasks.map((t) => ({ ...t, people: byTask.get(t['id'] as number) ?? [] }));
+  // Fetch subtasks
+  const subtasks = getDb()
+    .prepare(`SELECT id, title, status, priority FROM tasks WHERE parent_id IN (${taskIds.map(() => '?').join(',')}) AND archived = 0 ORDER BY created_at`)
+    .all(...taskIds) as Array<{ id: number; title: string; status: string; priority: number; parent_id?: number }>;
+  const subByParent = new Map<number, Array<{ id: number; title: string; status: string }>>();
+  for (const s of subtasks) {
+    const pid = (s as Record<string, unknown>)['parent_id'] as number;
+    if (!subByParent.has(pid)) subByParent.set(pid, []);
+    subByParent.get(pid)!.push({ id: s.id, title: s.title, status: s.status });
+  }
+  return tasks.map((t) => ({
+    ...t,
+    people: byTask.get(t['id'] as number) ?? [],
+    subtasks: subByParent.get(t['id'] as number) ?? [],
+  }));
 }
 
 function setTaskPeople(taskId: number, personIds: number[]) {
@@ -86,8 +102,8 @@ tasksRouter.get('/', (req: Request, res: Response) => {
 tasksRouter.post('/', async (req: Request, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const { project_id, title, description, status, priority, urgency, due_date, start_date, person_ids } = parsed.data;
-  const result = getDb().prepare('INSERT INTO tasks (project_id, title, description, status, priority, urgency, due_date, start_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(project_id ?? null, title, description, status, priority, urgency, due_date ?? null, start_date ?? null);
+  const { project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, person_ids } = parsed.data;
+  const result = getDb().prepare('INSERT INTO tasks (project_id, parent_id, title, description, status, priority, urgency, due_date, start_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(project_id ?? null, parent_id ?? null, title, description, status, priority, urgency, due_date ?? null, start_date ?? null);
   const taskId = result.lastInsertRowid as number;
 
   // Auto-add self if no people specified

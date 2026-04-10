@@ -219,6 +219,27 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             </div>
           )}
 
+          {/* Subtasks */}
+          <div>
+            <div className="text-xs text-gray-500 mb-2">Подзадачи</div>
+            {((task as unknown as Record<string, unknown>)['subtasks'] as Array<{ id: number; title: string; status: string }> ?? []).map(sub => (
+              <div key={sub.id} className="flex items-center gap-2 py-1">
+                <button
+                  onClick={async () => {
+                    const next = sub.status === 'done' ? 'todo' : 'done';
+                    await tasksApi.update(sub.id, { status: next });
+                    onUpdated();
+                  }}
+                  className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[10px] ${sub.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300'}`}
+                >
+                  {sub.status === 'done' ? '✓' : ''}
+                </button>
+                <span className={`text-sm ${sub.status === 'done' ? 'line-through text-gray-400' : 'text-gray-700'}`}>{sub.title}</span>
+              </div>
+            ))}
+            <SubtaskInput taskId={task.id} projectId={task.project_id} onCreated={onUpdated} />
+          </div>
+
           <div className="text-xs text-gray-400 pt-2">Создано: {task.created_at}</div>
 
           {onDeleted && (
@@ -238,6 +259,41 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
         </div>
       )}
     </SlidePanel>
+  );
+}
+
+function SubtaskInput({ taskId, projectId, onCreated }: { taskId: number; projectId: number | null; onCreated: () => void }) {
+  const [title, setTitle] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const submit = async () => {
+    if (!title.trim()) return;
+    await tasksApi.create({ title: title.trim(), parent_id: taskId, project_id: projectId ?? undefined, status: 'todo', priority: 3 });
+    setTitle('');
+    setAdding(false);
+    onCreated();
+  };
+
+  if (!adding) {
+    return (
+      <button onClick={() => setAdding(true)} className="text-xs text-indigo-500 hover:text-indigo-700 mt-1">
+        + Подзадача
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex gap-2 mt-1">
+      <input
+        autoFocus
+        className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-300"
+        placeholder="Название подзадачи"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false); }}
+      />
+      <button onClick={submit} disabled={!title.trim()} className="text-xs bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 disabled:opacity-50">+</button>
+    </div>
   );
 }
 

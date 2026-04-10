@@ -106,6 +106,12 @@ export function initDb(): void {
 
   // People: ASAP flag
   try { _db.exec("ALTER TABLE people ADD COLUMN meet_asap INTEGER NOT NULL DEFAULT 0"); } catch {}
+
+  // Documents: status column
+  try { _db.exec("ALTER TABLE documents ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'"); } catch {}
+
+  // Tasks: parent_id for subtasks
+  try { _db.exec("ALTER TABLE tasks ADD COLUMN parent_id INTEGER REFERENCES tasks(id)"); } catch {}
 }
 
 export function initTestDb(): void {
@@ -170,6 +176,12 @@ export function initTestDb(): void {
 
   // People: ASAP flag
   try { _db.exec("ALTER TABLE people ADD COLUMN meet_asap INTEGER NOT NULL DEFAULT 0"); } catch {}
+
+  // Documents: status column
+  try { _db.exec("ALTER TABLE documents ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'"); } catch {}
+
+  // Tasks: parent_id for subtasks
+  try { _db.exec("ALTER TABLE tasks ADD COLUMN parent_id INTEGER REFERENCES tasks(id)"); } catch {}
 }
 
 export function closeDb(): void {

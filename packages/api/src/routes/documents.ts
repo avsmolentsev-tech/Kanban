@@ -6,12 +6,15 @@ import { searchService } from '../services/search.service';
 
 export const documentsRouter = Router();
 
+const DOC_STATUSES = ['draft', 'active', 'in_obsidian', 'archive'] as const;
+
 const CreateSchema = z.object({
   title: z.string().min(1),
   body: z.string().optional().default(''),
   project_id: z.number().int().nullable().optional(),
   category: z.enum(['note', 'reference', 'template', 'archive']).optional().default('note'),
   vault_path: z.string().nullable().optional(),
+  status: z.enum(DOC_STATUSES).optional().default('draft'),
 });
 
 const UpdateSchema = z.object({
@@ -20,6 +23,7 @@ const UpdateSchema = z.object({
   project_id: z.number().int().nullable().optional(),
   category: z.enum(['note', 'reference', 'template', 'archive']).optional(),
   vault_path: z.string().nullable().optional(),
+  status: z.enum(DOC_STATUSES).optional(),
 });
 
 documentsRouter.get('/', (req: Request, res: Response) => {
