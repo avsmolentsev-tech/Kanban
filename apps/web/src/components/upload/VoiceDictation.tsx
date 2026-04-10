@@ -88,7 +88,7 @@ export function VoiceDictation({ onTranscript }: Props) {
   };
 
   if (!supported) {
-    return <div className="text-xs text-gray-400">Voice dictation not supported in this browser</div>;
+    return <div className="text-xs text-gray-400">Голосовой ввод не поддерживается в этом браузере</div>;
   }
 
   return (
@@ -109,10 +109,10 @@ export function VoiceDictation({ onTranscript }: Props) {
         </button>
         <div>
           <div className="text-sm font-medium text-gray-700">
-            {recording ? 'Recording...' : 'Voice Dictation'}
+            {recording ? 'Запись...' : 'Голосовой ввод'}
           </div>
           <div className="text-xs text-gray-400">
-            {recording ? 'Click to stop' : 'Click microphone to start'}
+            {recording ? 'Нажмите, чтобы остановить' : 'Нажмите на микрофон, чтобы начать'}
           </div>
         </div>
         <select
@@ -121,8 +121,8 @@ export function VoiceDictation({ onTranscript }: Props) {
           onChange={(e) => setLang(e.target.value)}
           disabled={recording}
         >
-          <option value="ru-RU">Russian</option>
-          <option value="en-US">English</option>
+          <option value="ru-RU">Русский</option>
+          <option value="en-US">Английский</option>
         </select>
       </div>
 
@@ -139,13 +139,13 @@ export function VoiceDictation({ onTranscript }: Props) {
               onClick={() => setTranscript('')}
               className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1"
             >
-              Clear
+              Очистить
             </button>
             <button
               onClick={handleSend}
               className="px-4 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
             >
-              Send to Inbox
+              Отправить во Входящие
             </button>
           </div>
         </div>

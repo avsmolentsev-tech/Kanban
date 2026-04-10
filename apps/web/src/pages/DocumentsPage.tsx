@@ -68,7 +68,7 @@ function DraggableDocumentCard({
       <button
         onClick={onDelete}
         className="absolute top-2 right-2 text-gray-300 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Delete"
+        title="Удалить"
       >
         ✕
       </button>
@@ -108,11 +108,11 @@ function DocumentDropZone({
             style={{ backgroundColor: project?.color ?? '#9ca3af' }}
           />
           <span className="text-sm font-semibold text-gray-700 truncate">
-            {project?.name ?? 'No project'}
+            {project?.name ?? 'Без проекта'}
           </span>
         </div>
         <div className="text-xs text-gray-400 mt-1 ml-5">
-          {groupDocs.length} doc{groupDocs.length !== 1 ? 's' : ''}
+          {groupDocs.length} док.
         </div>
       </div>
       <div
@@ -133,7 +133,7 @@ function DocumentDropZone({
           />
         ))}
         {groupDocs.length === 0 && (
-          <div className="text-gray-300 text-xs self-center">Drop here</div>
+          <div className="text-gray-300 text-xs self-center">Перетащи сюда</div>
         )}
       </div>
     </div>
@@ -245,7 +245,7 @@ export function DocumentsPage() {
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-gray-800">Documents</h1>
+        <h1 className="text-xl font-bold text-gray-800">Документы</h1>
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
           {!adding && (
@@ -253,7 +253,7 @@ export function DocumentsPage() {
               onClick={() => setAdding(true)}
               className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 flex-shrink-0"
             >
-              + New document
+              + Новый документ
             </button>
           )}
         </div>
@@ -264,7 +264,7 @@ export function DocumentsPage() {
           <input
             autoFocus
             className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-            placeholder="Document title *"
+            placeholder="Название документа *"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             onKeyDown={(e) => {
@@ -274,13 +274,13 @@ export function DocumentsPage() {
           />
           <textarea
             className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 resize-none"
-            placeholder="Body..."
+            placeholder="Содержание..."
             rows={3}
             value={newBody}
             onChange={(e) => setNewBody(e.target.value)}
           />
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-500 mr-1">Category:</span>
+            <span className="text-xs text-gray-500 mr-1">Категория:</span>
             {CATEGORIES.map((c) => (
               <button
                 key={c}
@@ -299,7 +299,7 @@ export function DocumentsPage() {
             value={newProjectId}
             onChange={(e) => setNewProjectId(e.target.value !== '' ? Number(e.target.value) : '')}
           >
-            <option value="">No project</option>
+            <option value="">Без проекта</option>
             {activeProjects.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
@@ -309,21 +309,21 @@ export function DocumentsPage() {
               onClick={() => setAdding(false)}
               className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5"
             >
-              Cancel
+              Отмена
             </button>
             <button
               onClick={submit}
               disabled={!newTitle.trim() || submitting}
               className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
             >
-              {submitting ? '...' : 'Add document'}
+              {submitting ? '...' : 'Добавить документ'}
             </button>
           </div>
         </div>
       )}
 
       {documents.length === 0 && !adding && (
-        <div className="text-gray-400 text-sm">No documents yet</div>
+        <div className="text-gray-400 text-sm">Нет документов</div>
       )}
 
       <DndContext

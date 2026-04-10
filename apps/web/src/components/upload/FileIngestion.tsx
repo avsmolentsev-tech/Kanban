@@ -23,7 +23,7 @@ export function FileIngestion({ onComplete, projects, selectedProjectId, onProje
     try {
       const r = await ingestApi.uploadFile(file, selectedProjectId ?? undefined);
       setResult(r); onComplete?.(r);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Upload failed'); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка загрузки'); }
     finally { setLoading(false); }
   };
 
@@ -33,7 +33,7 @@ export function FileIngestion({ onComplete, projects, selectedProjectId, onProje
     try {
       const r = await ingestApi.ingestUrl(url.trim(), selectedProjectId ?? undefined);
       setResult(r); setUrl(''); onComplete?.(r);
-    } catch (e) { setError(e instanceof Error ? e.message : 'URL extraction failed'); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка извлечения URL'); }
     finally { setLoading(false); }
   };
 
@@ -43,7 +43,7 @@ export function FileIngestion({ onComplete, projects, selectedProjectId, onProje
     try {
       const r = await ingestApi.pasteText(text, selectedProjectId ?? undefined);
       setResult(r); setText(''); onComplete?.(r);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Ingest failed'); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка обработки'); }
     finally { setLoading(false); }
   };
 
@@ -51,13 +51,13 @@ export function FileIngestion({ onComplete, projects, selectedProjectId, onProje
     <div className="space-y-4">
       {projects && projects.length > 0 && (
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Project (optional)</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Проект (необязательно)</label>
           <select
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-indigo-300"
             value={selectedProjectId ?? ''}
             onChange={(e) => onProjectChange?.(e.target.value ? Number(e.target.value) : null)}
           >
-            <option value="">No project</option>
+            <option value="">Без проекта</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
@@ -69,14 +69,14 @@ export function FileIngestion({ onComplete, projects, selectedProjectId, onProje
         onClick={() => fileRef.current?.click()}
         className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${dragging ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300 hover:border-gray-400'}`}>
         <input ref={fileRef} type="file" className="hidden" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.mp3,.wav,.m4a,.ogg" onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }} />
-        <div className="text-gray-500 text-sm">{loading ? 'Processing...' : 'Drop a file here or click to upload'}</div>
-        <div className="text-gray-400 text-xs mt-1">Supported: .txt, .md, .pdf, .docx, .png, .jpg, .jpeg, .mp3, .wav, .m4a, .ogg</div>
+        <div className="text-gray-500 text-sm">{loading ? 'Обработка...' : 'Перетащите файл сюда или нажмите для загрузки'}</div>
+        <div className="text-gray-400 text-xs mt-1">Поддерживаются: .txt, .md, .pdf, .docx, .png, .jpg, .jpeg, .mp3, .wav, .m4a, .ogg</div>
       </div>
       {/* URL input */}
       <div className="flex gap-2">
         <input
           className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-300"
-          placeholder="Paste URL to extract content..."
+          placeholder="Вставьте URL для извлечения содержимого..."
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') processUrl(); }}
@@ -86,20 +86,20 @@ export function FileIngestion({ onComplete, projects, selectedProjectId, onProje
           disabled={!url.trim() || loading}
           className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Extract
+          Извлечь
         </button>
       </div>
       <div>
-        <textarea className="w-full border border-gray-200 rounded-lg p-3 text-sm resize-none focus:outline-none focus:border-indigo-300" rows={4} placeholder="Or paste text here..." value={text} onChange={(e) => setText(e.target.value)} />
+        <textarea className="w-full border border-gray-200 rounded-lg p-3 text-sm resize-none focus:outline-none focus:border-indigo-300" rows={4} placeholder="Или вставьте текст сюда..." value={text} onChange={(e) => setText(e.target.value)} />
         <button onClick={processText} disabled={!text.trim() || loading} className="mt-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
-          {loading ? 'Processing...' : 'Process text'}
+          {loading ? 'Обработка...' : 'Обработать текст'}
         </button>
       </div>
       {result && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
-          <div className="font-medium text-green-800 mb-1">Detected: <span className="capitalize">{result.detected_type}</span></div>
+          <div className="font-medium text-green-800 mb-1">Определено: <span className="capitalize">{result.detected_type}</span></div>
           <div className="text-green-700">{result.summary}</div>
-          {result.created_records.map((r) => <div key={`${r.type}-${r.id}`} className="text-xs text-green-600 mt-1">Created {r.type}: {r.title}</div>)}
+          {result.created_records.map((r) => <div key={`${r.type}-${r.id}`} className="text-xs text-green-600 mt-1">Создано {r.type}: {r.title}</div>)}
         </div>
       )}
       {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{error}</div>}

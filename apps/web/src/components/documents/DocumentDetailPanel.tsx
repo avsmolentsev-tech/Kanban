@@ -68,7 +68,7 @@ export function DocumentDetailPanel({ document, projects, onClose, onUpdated }: 
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="text-xs text-gray-500 mb-1">Category</div>
+              <div className="text-xs text-gray-500 mb-1">Категория</div>
               <select
                 className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 bg-white"
                 value={form.category ?? 'note'}
@@ -80,13 +80,13 @@ export function DocumentDetailPanel({ document, projects, onClose, onUpdated }: 
               </select>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-1">Project</div>
+              <div className="text-xs text-gray-500 mb-1">Проект</div>
               <select
                 className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 bg-white"
                 value={form.project_id ?? ''}
                 onChange={(e) => handleSelectChange('project_id', e.target.value)}
               >
-                <option value="">No project</option>
+                <option value="">Без проекта</option>
                 {projects.filter((p) => !p.archived).map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
@@ -95,7 +95,7 @@ export function DocumentDetailPanel({ document, projects, onClose, onUpdated }: 
           </div>
 
           <div>
-            <div className="text-xs text-gray-500 mb-1">Body</div>
+            <div className="text-xs text-gray-500 mb-1">Содержание</div>
             <textarea
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-none"
               rows={8}
@@ -106,8 +106,8 @@ export function DocumentDetailPanel({ document, projects, onClose, onUpdated }: 
           </div>
 
           <div className="text-xs text-gray-400 pt-2">
-            <div>Created: {document.created_at}</div>
-            <div>Updated: {document.updated_at}</div>
+            <div>Создано: {document.created_at}</div>
+            <div>Обновлено: {document.updated_at}</div>
           </div>
         </div>
       )}

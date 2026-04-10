@@ -110,7 +110,7 @@ export function TimelinePage() {
   return (
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Timeline</h1>
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Таймлайн</h1>
         <ProjectFilter projects={projects} />
       </div>
       <div className="flex-1 overflow-auto">

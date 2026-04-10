@@ -84,18 +84,18 @@ export function InboxPage() {
     <div className="flex h-full overflow-hidden">
       {/* Left: main content */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 min-w-0">
-        <h1 className="text-xl font-bold text-gray-800">Inbox</h1>
+        <h1 className="text-xl font-bold text-gray-800">Входящие</h1>
 
         {/* Project selector (shared) */}
         {projects.length > 0 && (
           <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-gray-600 whitespace-nowrap">Active project:</label>
+            <label className="text-sm font-medium text-gray-600 whitespace-nowrap">Активный проект:</label>
             <select
               className="flex-1 max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-indigo-300"
               value={selectedProjectId ?? ''}
               onChange={(e) => setSelectedProjectId(e.target.value ? Number(e.target.value) : null)}
             >
-              <option value="">No project</option>
+              <option value="">Без проекта</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -105,7 +105,7 @@ export function InboxPage() {
 
         {/* Upload section */}
         <div className="bg-white border border-gray-200 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Upload / Paste</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-4">Загрузка / Вставка</h2>
           <FileIngestion
             onComplete={handleComplete}
             projects={projects}
@@ -116,17 +116,17 @@ export function InboxPage() {
 
         {/* Voice Dictation section */}
         <div className="bg-white border border-gray-200 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Voice Dictation</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-4">Голосовой ввод</h2>
           <VoiceDictation onTranscript={handleVoiceTranscript} />
         </div>
 
         {/* Recent inbox items */}
         <div className="bg-white border border-gray-200 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Recent Inbox Items</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">Недавние элементы</h2>
           {loadingRecent ? (
-            <div className="text-sm text-gray-400">Loading...</div>
+            <div className="text-sm text-gray-400">Загрузка...</div>
           ) : recentItems.length === 0 ? (
-            <div className="text-sm text-gray-400">No items yet.</div>
+            <div className="text-sm text-gray-400">Пока ничего нет.</div>
           ) : (
             <ul className="divide-y divide-gray-100">
               {recentItems.map((item) => (

@@ -78,7 +78,7 @@ export function IdeaDetailPanel({ idea, projects, onClose, onUpdated, onDeleted 
           </div>
 
           <div>
-            <div className="text-xs text-gray-500 mb-1">Description</div>
+            <div className="text-xs text-gray-500 mb-1">Описание</div>
             <textarea
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-none"
               rows={5}
@@ -89,7 +89,7 @@ export function IdeaDetailPanel({ idea, projects, onClose, onUpdated, onDeleted 
           </div>
 
           <div>
-            <div className="text-xs text-gray-500 mb-1.5">Category</div>
+            <div className="text-xs text-gray-500 mb-1.5">Категория</div>
             <div className="flex flex-wrap gap-2">
               {CATEGORIES.map((c) => (
                 <button
@@ -108,13 +108,13 @@ export function IdeaDetailPanel({ idea, projects, onClose, onUpdated, onDeleted 
           </div>
 
           <div>
-            <div className="text-xs text-gray-500 mb-1">Project</div>
+            <div className="text-xs text-gray-500 mb-1">Проект</div>
             <select
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 bg-white"
               value={form.project_id ?? ''}
               onChange={(e) => handleProjectChange(e.target.value)}
             >
-              <option value="">No project</option>
+              <option value="">Без проекта</option>
               {projects.filter((p) => !p.archived).map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}

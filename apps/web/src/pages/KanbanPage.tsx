@@ -29,7 +29,7 @@ export function KanbanPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b bg-white">
-        <h1 className="text-xl font-bold text-gray-800">Kanban</h1>
+        <h1 className="text-xl font-bold text-gray-800">Kanban-доска</h1>
         <ProjectFilter projects={projects} />
       </div>
       <div className="flex-1 overflow-auto">

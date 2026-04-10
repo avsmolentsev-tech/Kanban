@@ -43,12 +43,12 @@ export function ProjectsPage() {
       {adding && (
         <div className="bg-white rounded-xl border border-indigo-200 shadow-lg p-4 mb-6 max-w-md space-y-3">
           <input autoFocus className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-            placeholder="Project name..." value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="Название проекта..." value={name} onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false); }} />
           <input className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-            placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} />
+            placeholder="Описание (необязательно)" value={description} onChange={(e) => setDescription(e.target.value)} />
           <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500 mr-2">Color:</span>
+            <span className="text-xs text-gray-500 mr-2">Цвет:</span>
             {COLORS.map((c) => (
               <button key={c} onClick={() => setColor(c)}
                 className={`w-6 h-6 rounded-full border-2 transition-all ${color === c ? 'border-gray-800 scale-110' : 'border-transparent'}`}
@@ -56,16 +56,16 @@ export function ProjectsPage() {
             ))}
           </div>
           <div className="flex justify-end gap-2">
-            <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">Cancel</button>
+            <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">Отмена</button>
             <button onClick={submit} disabled={!name.trim() || submitting}
               className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-              {submitting ? '...' : 'Create'}
+              {submitting ? '...' : 'Создать'}
             </button>
           </div>
         </div>
       )}
 
-      {loading && <div className="text-gray-400 text-sm">Loading...</div>}
+      {loading && <div className="text-gray-400 text-sm">Загрузка...</div>}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {projects.map((p) => (
           <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-4 cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all" onClick={() => setSelected(p)}>

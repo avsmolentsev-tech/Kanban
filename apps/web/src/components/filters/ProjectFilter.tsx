@@ -13,7 +13,7 @@ export function ProjectFilter({ projects }: Props) {
       <button
         onClick={selectAll}
         className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${selectedProjectIds === null ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'}`}
-      >All</button>
+      >Все</button>
       {projects.map((p) => {
         const active = selectedProjectIds === null || selectedProjectIds.has(p.id);
         const isFiltered = selectedProjectIds !== null;

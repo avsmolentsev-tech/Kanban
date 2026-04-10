@@ -40,14 +40,14 @@ export function AddProjectForm({ onCreated }: Props) {
       <input
         autoFocus
         className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
-        placeholder="Project name..."
+        placeholder="Название проекта..."
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') { setOpen(false); setName(''); } }}
         disabled={loading}
       />
       <div className="flex items-center gap-1">
-        <span className="text-xs text-gray-500 mr-1">Color:</span>
+        <span className="text-xs text-gray-500 mr-1">Цвет:</span>
         {COLORS.map((c) => (
           <button key={c} onClick={() => setColor(c)}
             className={`w-5 h-5 rounded-full border-2 transition-all ${color === c ? 'border-gray-800 scale-110' : 'border-transparent'}`}
@@ -55,10 +55,10 @@ export function AddProjectForm({ onCreated }: Props) {
         ))}
       </div>
       <div className="flex justify-end gap-2">
-        <button onClick={() => { setOpen(false); setName(''); }} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1">Cancel</button>
+        <button onClick={() => { setOpen(false); setName(''); }} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1">Отмена</button>
         <button onClick={submit} disabled={!name.trim() || loading}
           className="text-xs bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700 disabled:opacity-50">
-          {loading ? '...' : 'Create'}
+          {loading ? '...' : 'Создать'}
         </button>
       </div>
     </div>

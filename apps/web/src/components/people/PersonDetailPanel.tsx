@@ -61,19 +61,19 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDele
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Company" value={form.company ?? ''} onChange={(v) => handleChange('company', v)} onBlur={() => handleBlur('company')} />
-            <Field label="Role" value={form.role ?? ''} onChange={(v) => handleChange('role', v)} onBlur={() => handleBlur('role')} />
+            <Field label="Компания" value={form.company ?? ''} onChange={(v) => handleChange('company', v)} onBlur={() => handleBlur('company')} />
+            <Field label="Роль" value={form.role ?? ''} onChange={(v) => handleChange('role', v)} onBlur={() => handleBlur('role')} />
           </div>
 
           <div className="grid grid-cols-1 gap-3">
             <Field label="Email" value={form.email ?? ''} onChange={(v) => handleChange('email', v)} onBlur={() => handleBlur('email')} />
             <Field label="Telegram" value={form.telegram ?? ''} onChange={(v) => handleChange('telegram', v)} onBlur={() => handleBlur('telegram')} />
-            <Field label="Phone" value={form.phone ?? ''} onChange={(v) => handleChange('phone', v)} onBlur={() => handleBlur('phone')} />
+            <Field label="Телефон" value={form.phone ?? ''} onChange={(v) => handleChange('phone', v)} onBlur={() => handleBlur('phone')} />
           </div>
 
           {activeProjects.length > 0 && (
             <div>
-              <div className="text-xs text-gray-500 mb-1.5">Projects</div>
+              <div className="text-xs text-gray-500 mb-1.5">Проекты</div>
               <div className="flex flex-wrap gap-2">
                 {activeProjects.map(p => {
                   const active = projectIds.includes(p.id);
@@ -95,7 +95,7 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDele
           )}
 
           <div>
-            <div className="text-xs text-gray-500 mb-1">Notes</div>
+            <div className="text-xs text-gray-500 mb-1">Заметки</div>
             <textarea className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-none"
               rows={4} value={form.notes ?? ''} onChange={(e) => handleChange('notes', e.target.value)} onBlur={() => handleBlur('notes')} />
           </div>

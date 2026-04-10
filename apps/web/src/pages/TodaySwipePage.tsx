@@ -135,7 +135,7 @@ export function TodaySwipePage() {
             className="absolute top-6 left-6 px-4 py-2 border-4 border-green-500 rounded-xl text-green-500 font-bold text-2xl rotate-[-20deg] pointer-events-none"
             style={{ opacity: doneOpacity }}
           >
-            DONE ✓
+            ГОТОВО ✓
           </div>
 
           {/* Skip stamp */}
@@ -143,7 +143,7 @@ export function TodaySwipePage() {
             className="absolute top-6 right-6 px-4 py-2 border-4 border-gray-400 rounded-xl text-gray-400 font-bold text-2xl rotate-[20deg] pointer-events-none"
             style={{ opacity: skipOpacity }}
           >
-            SKIP
+            ДАЛЬШЕ
           </div>
 
           {/* Project badge */}

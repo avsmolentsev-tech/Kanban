@@ -22,15 +22,15 @@ import { useTasksStore } from './store/tasks.store';
 import { useProjectsStore } from './store/projects.store';
 
 const desktopNav = [
-  { to: '/', label: 'Kanban' },
-  { to: '/timeline', label: 'Timeline' },
-  { to: '/projects', label: 'Projects' },
-  { to: '/meetings', label: 'Meetings' },
-  { to: '/people', label: 'People' },
-  { to: '/brief', label: 'Daily Brief' },
-  { to: '/calendar', label: 'Calendar' },
-  { to: '/ideas', label: 'Ideas' },
-  { to: '/documents', label: 'Documents' },
+  { to: '/', label: 'Kanban-доска' },
+  { to: '/timeline', label: 'Таймлайн' },
+  { to: '/projects', label: 'Проекты' },
+  { to: '/meetings', label: 'Встречи' },
+  { to: '/people', label: 'Люди' },
+  { to: '/brief', label: 'Дневной брифинг' },
+  { to: '/calendar', label: 'Календарь' },
+  { to: '/ideas', label: 'Идеи' },
+  { to: '/documents', label: 'Документы' },
   { to: '/chat', label: 'Чат' },
   { to: '/dashboard', label: 'Дашборд' },
 ];

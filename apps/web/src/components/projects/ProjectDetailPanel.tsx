@@ -62,7 +62,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
           </div>
 
           <div>
-            <div className="text-xs text-gray-500 mb-1">Description</div>
+            <div className="text-xs text-gray-500 mb-1">Описание</div>
             <textarea
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-none"
               rows={3}
@@ -73,7 +73,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
           </div>
 
           <div>
-            <div className="text-xs text-gray-500 mb-1.5">Status</div>
+            <div className="text-xs text-gray-500 mb-1.5">Статус</div>
             <div className="flex flex-wrap gap-2">
               {STATUSES.map((s) => (
                 <button
@@ -91,7 +91,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
           </div>
 
           <div>
-            <div className="text-xs text-gray-500 mb-1.5">Color</div>
+            <div className="text-xs text-gray-500 mb-1.5">Цвет</div>
             <div className="flex items-center gap-1.5 flex-wrap">
               {COLORS.map((c) => (
                 <button

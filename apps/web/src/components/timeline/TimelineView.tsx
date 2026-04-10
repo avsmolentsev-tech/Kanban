@@ -12,10 +12,10 @@ export type TimePeriod = 'today' | 'week' | 'month' | 'year';
 export { classifyTask };
 
 const PERIOD_LABELS: Record<TimePeriod, string> = {
-  today: 'Today',
-  week: 'This Week',
-  month: 'This Month',
-  year: 'This Year',
+  today: 'Сегодня',
+  week: 'На неделе',
+  month: 'В этом месяце',
+  year: 'В этом году',
 };
 
 const PERIODS: TimePeriod[] = ['today', 'week', 'month', 'year'];
@@ -75,7 +75,7 @@ function TimelineColumn({ period, tasks, projects, onTaskClick, onToggleDone, pr
         {tasks.map((t) => (
           <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} onToggleDone={onToggleDone} dragMode="draggable" />
         ))}
-        {tasks.length === 0 && !adding && <div className="text-gray-300 text-xs text-center py-4">Drop here</div>}
+        {tasks.length === 0 && !adding && <div className="text-gray-300 text-xs text-center py-4">Перетащи сюда</div>}
       </div>
       {adding ? (
         <div className="mt-2">
@@ -83,7 +83,7 @@ function TimelineColumn({ period, tasks, projects, onTaskClick, onToggleDone, pr
             onCreated={() => { setAdding(false); onRefresh(); }} onCancel={() => setAdding(false)} />
         </div>
       ) : (
-        <button onClick={() => setAdding(true)} className="mt-2 text-xs text-gray-400 hover:text-indigo-600 transition-colors self-center">+ Add</button>
+        <button onClick={() => setAdding(true)} className="mt-2 text-xs text-gray-400 hover:text-indigo-600 transition-colors self-center">+ Добавить</button>
       )}
     </div>
   );
@@ -136,7 +136,7 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
       <div className="sticky top-0 z-30 flex bg-gray-50 border-b border-gray-200 py-2">
         {/* Corner cell — sticky both top and left */}
         <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-gray-50 pl-4" />
-        <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-purple-600 text-center">Backlog</div>
+        <div className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-purple-600 text-center">Бэклог</div>
         {PERIODS.map((p) => (
           <div key={p} className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-500 text-center">
             {PERIOD_LABELS[p]}

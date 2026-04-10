@@ -16,9 +16,9 @@ export interface FilterConfig {
 }
 
 export const FILTER_CONFIG: FilterConfig[] = [
-  { key: 'project', label: 'Project', type: 'select', getOptions: ({ projects }) => projects.map((p) => ({ label: p.name, value: p.id })) },
-  { key: 'person', label: 'Person', type: 'select', getOptions: ({ people }) => people.map((p) => ({ label: p.name, value: p.id })) },
-  { key: 'dueDateFrom', label: 'Due from', type: 'date' },
-  { key: 'dueDateTo', label: 'Due to', type: 'date' },
-  { key: 'showArchived', label: 'Show archived', type: 'boolean' },
+  { key: 'project', label: 'Проект', type: 'select', getOptions: ({ projects }) => projects.map((p) => ({ label: p.name, value: p.id })) },
+  { key: 'person', label: 'Человек', type: 'select', getOptions: ({ people }) => people.map((p) => ({ label: p.name, value: p.id })) },
+  { key: 'dueDateFrom', label: 'Дедлайн от', type: 'date' },
+  { key: 'dueDateTo', label: 'Дедлайн до', type: 'date' },
+  { key: 'showArchived', label: 'Показать архив', type: 'boolean' },
 ];

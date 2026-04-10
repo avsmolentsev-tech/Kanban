@@ -77,7 +77,7 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
         {regularPeople.map((p) => (
           <DraggablePersonCard key={`${projectId}-${p.id}`} person={p} project={project} onClick={() => onClickPerson(p)} />
         ))}
-        {regularPeople.length === 0 && <div className="text-gray-300 text-xs self-center">Drop here</div>}
+        {regularPeople.length === 0 && <div className="text-gray-300 text-xs self-center">Перетащи сюда</div>}
       </div>
     </div>
   );
@@ -224,13 +224,13 @@ export function PeoplePage() {
       {adding && (
         <div className="bg-white rounded-xl border border-indigo-200 shadow-lg p-4 mb-6 max-w-md space-y-3">
           <input autoFocus className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-            placeholder="Full name *" value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="ФИО *" value={name} onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false); }} />
           <div className="grid grid-cols-2 gap-3">
             <input className="text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-              placeholder="Company" value={company} onChange={(e) => setCompany(e.target.value)} />
+              placeholder="Компания" value={company} onChange={(e) => setCompany(e.target.value)} />
             <input className="text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-              placeholder="Role" value={role} onChange={(e) => setRole(e.target.value)} />
+              placeholder="Роль" value={role} onChange={(e) => setRole(e.target.value)} />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <input className="text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
@@ -238,13 +238,13 @@ export function PeoplePage() {
             <input className="text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
               placeholder="Telegram" value={telegram} onChange={(e) => setTelegram(e.target.value)} />
             <input className="text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-              placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              placeholder="Телефон" value={phone} onChange={(e) => setPhone(e.target.value)} />
           </div>
           <textarea className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 resize-none"
-            placeholder="Notes / description" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+            placeholder="Заметки / описание" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           {activeProjects.length > 0 && (
             <div>
-              <div className="text-xs text-gray-500 mb-1.5">Projects</div>
+              <div className="text-xs text-gray-500 mb-1.5">Проекты</div>
               <div className="flex flex-wrap gap-2">
                 {activeProjects.map(p => (
                   <button
@@ -262,16 +262,16 @@ export function PeoplePage() {
             </div>
           )}
           <div className="flex justify-end gap-2">
-            <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">Cancel</button>
+            <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">Отмена</button>
             <button onClick={submit} disabled={!name.trim() || submitting}
               className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-              {submitting ? '...' : 'Add person'}
+              {submitting ? '...' : 'Добавить контакт'}
             </button>
           </div>
         </div>
       )}
 
-      {people.length === 0 && <div className="text-gray-400 text-sm">No people yet</div>}
+      {people.length === 0 && <div className="text-gray-400 text-sm">Нет контактов</div>}
 
       <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={(e) => setDraggingPerson(people.find((p) => p.id === Number(e.active.id)) ?? null)} onDragEnd={handleDragEnd}>
         {/* Sticky header with columns */}

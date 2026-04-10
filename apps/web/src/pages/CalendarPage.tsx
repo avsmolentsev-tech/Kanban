@@ -24,7 +24,7 @@ function formatDate(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 export function CalendarPage() {
   const { tasks, fetchTasks } = useTasksStore();
@@ -71,12 +71,12 @@ export function CalendarPage() {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 pt-4 pb-2 bg-white border-b">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-gray-800">Calendar</h1>
+          <h1 className="text-xl font-bold text-gray-800">Календарь</h1>
           <div className="flex items-center gap-1">
             <button onClick={prevMonth} className="w-7 h-7 rounded hover:bg-gray-100 text-gray-500 text-sm">←</button>
             <span className="text-sm font-medium text-gray-700 capitalize w-40 text-center">{monthName}</span>
             <button onClick={nextMonth} className="w-7 h-7 rounded hover:bg-gray-100 text-gray-500 text-sm">→</button>
-            <button onClick={goToday} className="text-xs text-indigo-600 hover:text-indigo-800 ml-2">Today</button>
+            <button onClick={goToday} className="text-xs text-indigo-600 hover:text-indigo-800 ml-2">Сегодня</button>
           </div>
         </div>
         <ProjectFilter projects={projects} />
@@ -118,7 +118,7 @@ export function CalendarPage() {
                     );
                   })}
                   {dayTasks.length > 4 && (
-                    <div className="text-[10px] text-gray-400 px-1">+{dayTasks.length - 4} more</div>
+                    <div className="text-[10px] text-gray-400 px-1">+{dayTasks.length - 4} ещё</div>
                   )}
                 </div>
               </div>

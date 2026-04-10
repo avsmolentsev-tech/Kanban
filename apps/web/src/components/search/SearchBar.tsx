@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { searchApi, type SearchHit } from '../../api/search.api';
 
 const TYPE_LABELS: Record<string, string> = {
-  task: 'Tasks',
-  meeting: 'Meetings',
-  idea: 'Ideas',
-  document: 'Documents',
-  person: 'People',
-  vault: 'Vault',
+  task: 'Задачи',
+  meeting: 'Встречи',
+  idea: 'Идеи',
+  document: 'Документы',
+  person: 'Люди',
+  vault: 'Хранилище',
 };
 
 const TYPE_ROUTES: Record<string, string> = {
@@ -74,11 +74,11 @@ export function SearchBar() {
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="flex items-center gap-2 text-gray-400 hover:text-gray-600 transition-colors" title="Search (Ctrl+K)">
+      <button onClick={() => setOpen(true)} className="flex items-center gap-2 text-gray-400 hover:text-gray-600 transition-colors" title="Поиск (Ctrl+K)">
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
-        <span className="text-xs hidden lg:inline">Search</span>
+        <span className="text-xs hidden lg:inline">Поиск</span>
         <kbd className="hidden lg:inline text-[10px] bg-gray-100 border border-gray-200 rounded px-1 py-0.5 text-gray-400">Ctrl+K</kbd>
       </button>
     );
@@ -100,7 +100,7 @@ export function SearchBar() {
             <input
               ref={inputRef}
               className="flex-1 text-sm outline-none"
-              placeholder="Search tasks, meetings, ideas, people..."
+              placeholder="Поиск задач, встреч, идей, людей..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -131,7 +131,7 @@ export function SearchBar() {
           )}
 
           {query.trim() && !loading && results.length === 0 && (
-            <div className="px-4 py-6 text-sm text-gray-400 text-center">No results</div>
+            <div className="px-4 py-6 text-sm text-gray-400 text-center">Ничего не найдено</div>
           )}
         </div>
       </div>

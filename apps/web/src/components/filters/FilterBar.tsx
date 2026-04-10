@@ -34,7 +34,7 @@ export function FilterBar({ value, onChange, projects, people }: FilterBarProps)
         return null;
       })}
       {Object.values(value).some(Boolean) && (
-        <button className="text-xs text-gray-400 hover:text-gray-600" onClick={() => onChange({})}>Clear</button>
+        <button className="text-xs text-gray-400 hover:text-gray-600" onClick={() => onChange({})}>Сбросить</button>
       )}
     </div>
   );

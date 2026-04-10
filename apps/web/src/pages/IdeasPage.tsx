@@ -21,7 +21,7 @@ type IdeaStatus = Idea['status'];
 
 const STATUSES: IdeaStatus[] = ['backlog', 'in_obsidian', 'completed', 'garbage'];
 const STATUS_LABELS: Record<IdeaStatus, string> = {
-  backlog: 'Backlog',
+  backlog: 'Бэклог',
   in_obsidian: 'В Obsidian',
   completed: 'Выполнено',
   garbage: 'Мусор',

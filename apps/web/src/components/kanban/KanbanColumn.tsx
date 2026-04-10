@@ -24,7 +24,7 @@ export function KanbanColumn({ status, droppableId, tasks, projects, onTaskClick
           <h3 className="text-sm font-semibold text-gray-700">
             {status.replace('_', ' ')} <span className="ml-2 text-xs text-gray-400 font-normal">{tasks.length}</span>
           </h3>
-          <button onClick={() => onAddTask(status)} className="text-gray-400 hover:text-indigo-600 text-lg leading-none" title="Add task">+</button>
+          <button onClick={() => onAddTask(status)} className="text-gray-400 hover:text-indigo-600 text-lg leading-none" title="Добавить задачу">+</button>
         </div>
       )}
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
