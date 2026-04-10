@@ -9,6 +9,8 @@ import { IdeasPage } from './pages/IdeasPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { DailyBriefPage } from './pages/DailyBriefPage';
 import { CalendarPage } from './pages/CalendarPage';
+import { HabitsPage } from './pages/HabitsPage';
+import { GoalsPage } from './pages/GoalsPage';
 import { MorePage } from './pages/MorePage';
 import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -17,6 +19,7 @@ import { SearchBar } from './components/search/SearchBar';
 import { MobileNav } from './components/layout/MobileNav';
 import { SettingsMenu } from './components/layout/SettingsMenu';
 import { VoiceCommandButton } from './components/voice/VoiceCommandButton';
+import { PomodoroTimer } from './components/pomodoro/PomodoroTimer';
 import { isTelegramWebApp, initTelegramApp } from './lib/telegram';
 import { useTasksStore } from './store/tasks.store';
 import { useProjectsStore } from './store/projects.store';
@@ -30,8 +33,10 @@ const desktopNav = [
   { to: '/brief', label: 'Дневной брифинг' },
   { to: '/calendar', label: 'Календарь' },
   { to: '/ideas', label: 'Идеи' },
+  { to: '/habits', label: 'Привычки' },
   { to: '/documents', label: 'Документы' },
   { to: '/chat', label: 'Чат' },
+  { to: '/goals', label: 'Цели' },
   { to: '/dashboard', label: 'Дашборд' },
 ];
 
@@ -97,6 +102,8 @@ export default function App() {
               <Route path="/brief" element={<DailyBriefPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/ideas" element={<IdeasPage />} />
+              <Route path="/habits" element={<HabitsPage />} />
+              <Route path="/goals" element={<GoalsPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
@@ -110,6 +117,7 @@ export default function App() {
 
         {/* Voice command FAB */}
         <VoiceCommandButton onActionDone={refreshAll} />
+        <PomodoroTimer />
       </div>
     </BrowserRouter>
   );

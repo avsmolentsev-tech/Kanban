@@ -8,6 +8,8 @@ const items = [
   { to: '/meetings', label: 'Встречи', icon: '🤝' },
   { to: '/people', label: 'Люди', icon: '👥' },
   { to: '/ideas', label: 'Идеи', icon: '💡' },
+  { to: '/habits', label: 'Привычки', icon: '🔥' },
+  { to: '/goals', label: 'Цели', icon: '🎯' },
   { to: '/documents', label: 'Документы', icon: '📄' },
   { to: '/dashboard', label: 'Дашборд', icon: '📊' },
   { to: '/chat', label: 'Чат', icon: '💬' },

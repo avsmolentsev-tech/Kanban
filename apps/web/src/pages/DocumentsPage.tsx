@@ -21,6 +21,21 @@ import type { Project } from '@pis/shared';
 const CATEGORIES = ['note', 'reference', 'template', 'archive'] as const;
 type Category = typeof CATEGORIES[number];
 
+const DOC_STATUSES = ['draft', 'active', 'in_obsidian', 'archive'] as const;
+type DocStatus = typeof DOC_STATUSES[number];
+const STATUS_LABELS: Record<DocStatus, string> = {
+  draft: 'Черновики',
+  active: 'Активные',
+  in_obsidian: 'В Obsidian',
+  archive: 'Архив',
+};
+const STATUS_COLORS: Record<DocStatus, string> = {
+  draft: 'text-gray-500',
+  active: 'text-indigo-600',
+  in_obsidian: 'text-green-600',
+  archive: 'text-gray-400',
+};
+
 const CAT_COLORS: Record<Category, string> = {
   note: '#6366f1',
   reference: '#10b981',
@@ -79,6 +94,24 @@ function DraggableDocumentCard({
       <div className="flex items-center gap-2 mt-2">
         <CategoryBadge category={doc.category} />
         <span className="text-[10px] text-gray-400 ml-auto">{doc.updated_at.split('T')[0]}</span>
+      </div>
+    </div>
+  );
+}
+
+function DocStatusColumn({ droppableId, docs, onClickDoc, onDeleteDoc }: {
+  droppableId: string; docs: Document[]; onClickDoc: (d: Document) => void; onDeleteDoc: (id: number) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: droppableId });
+  return (
+    <div ref={setNodeRef}
+      className={`flex flex-col w-56 min-w-[224px] bg-gray-100 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50' : ''}`}>
+      <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
+        {docs.map(d => (
+          <DraggableDocCard key={d.id} doc={d} onClick={() => onClickDoc(d)}
+            onDelete={(e) => { e.stopPropagation(); onDeleteDoc(d.id); }} />
+        ))}
+        {docs.length === 0 && <div className="text-gray-300 text-xs text-center py-4">—</div>}
       </div>
     </div>
   );
@@ -199,53 +232,64 @@ export function DocumentsPage() {
     if (!over) return;
     const activeId = String(active.id);
     const overId = String(over.id);
-    if (!activeId.startsWith('doc-') || !overId.startsWith('doc-zone-')) return;
+    if (!activeId.startsWith('doc-')) return;
     const docId = Number(activeId.replace('doc-', ''));
-    const targetStr = overId.replace('doc-zone-', '');
-    const targetPid = targetStr === 'none' ? null : Number(targetStr);
-    const doc = documents.find((d) => d.id === docId);
-    if (!doc) return;
-    const currentPid = doc.project_id ?? null;
-    if (currentPid === targetPid) return;
-    await apiPatch(`/documents/${docId}`, { project_id: targetPid });
-    load();
+
+    // Format: doc-zone-{projectId}-{status} or doc-zone-{projectId}
+    if (overId.startsWith('doc-zone-')) {
+      const parts = overId.replace('doc-zone-', '').split('-');
+      // Check if last part is a status
+      const statuses = ['draft', 'active', 'in_obsidian', 'archive'];
+      const lastPart = parts[parts.length - 1];
+      if (lastPart && statuses.includes(lastPart)) {
+        const status = parts.pop()!;
+        const targetPid = parts.join('-') === 'none' ? null : Number(parts.join('-'));
+        const updates: Record<string, unknown> = {};
+        const doc = documents.find(d => d.id === docId);
+        if (!doc) return;
+        if (doc.project_id !== targetPid) updates['project_id'] = targetPid;
+        if ((doc as unknown as Record<string, unknown>)['status'] !== status) updates['status'] = status;
+        if (Object.keys(updates).length > 0) {
+          await apiPatch(`/documents/${docId}`, updates);
+          load();
+        }
+      } else {
+        const targetPid = parts.join('-') === 'none' ? null : Number(parts.join('-'));
+        await apiPatch(`/documents/${docId}`, { project_id: targetPid });
+        load();
+      }
+    }
   };
 
   // Group by project
   const projectMap = new Map<number, Project>(projects.map((p) => [p.id, p]));
-
-  const groupMap = new Map<number | null, Document[]>();
-  for (const doc of documents) {
-    const pid = doc.project_id ?? null;
-    if (!groupMap.has(pid)) groupMap.set(pid, []);
-    groupMap.get(pid)!.push(doc);
-  }
-
-  const grouped: Array<{ project: Project | null; docs: Document[] }> = [];
-  for (const [pid, groupDocs] of groupMap.entries()) {
-    grouped.push({
-      project: pid !== null ? (projectMap.get(pid) ?? null) : null,
-      docs: groupDocs,
-    });
-  }
-
-  grouped.sort((a, b) => {
-    if (a.project === null) return 1;
-    if (b.project === null) return -1;
-    return (a.project.order_index ?? 0) - (b.project.order_index ?? 0);
-  });
-
-  const filteredGrouped =
-    filterProjectIds === null
-      ? grouped
-      : grouped.filter((g) => g.project !== null && filterProjectIds.has(g.project.id));
-
   const activeProjects = projects.filter((p) => !p.archived);
 
+  // Filter
+  const filtered = filterProjectIds === null
+    ? documents
+    : documents.filter(d => d.project_id !== null && filterProjectIds.has(d.project_id));
+
+  // Group by project → status
+  const byProject = new Map<number | null, Document[]>();
+  for (const d of filtered) {
+    const key = d.project_id;
+    if (!byProject.has(key)) byProject.set(key, []);
+    byProject.get(key)!.push(d);
+  }
+
+  const rows: Array<{ project: Project | null; docs: Document[] }> = [];
+  for (const p of activeProjects) {
+    const ds = byProject.get(p.id);
+    rows.push({ project: p, docs: ds ?? [] });
+  }
+  const unassigned = byProject.get(null);
+  if (unassigned && unassigned.length > 0) rows.push({ project: null, docs: unassigned });
+
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-gray-800">Документы</h1>
+    <div className="flex flex-col h-full">
+      <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Документы</h1>
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
           {!adding && (
@@ -322,10 +366,6 @@ export function DocumentsPage() {
         </div>
       )}
 
-      {documents.length === 0 && !adding && (
-        <div className="text-gray-400 text-sm">Нет документов</div>
-      )}
-
       <DndContext
         sensors={sensors}
         collisionDetection={rectIntersection}
@@ -336,18 +376,49 @@ export function DocumentsPage() {
         }
         onDragEnd={handleDragEnd}
       >
-        <div className="space-y-4">
-          {filteredGrouped.map(({ project, docs }) => (
-            <DocumentDropZone
-              key={project?.id ?? 'unassigned'}
-              projectId={project?.id ?? null}
-              project={project}
-              groupDocs={docs}
-              onClickDoc={setSelected}
-              onDeleteDoc={handleDelete}
-            />
+        {/* Sticky header */}
+        <div className="sticky top-0 z-30 flex bg-gray-50 border-b border-gray-200 py-2">
+          <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-gray-50 pl-4" />
+          {DOC_STATUSES.map(s => (
+            <div key={s} className={`w-56 min-w-[224px] mx-1.5 text-sm font-semibold text-center ${STATUS_COLORS[s]}`}>
+              {STATUS_LABELS[s]}
+            </div>
           ))}
         </div>
+
+        <div className="p-4 pt-2">
+        {rows.map(({ project, docs: rowDocs }) => {
+          const grouped: Record<string, Document[]> = { draft: [], active: [], in_obsidian: [], archive: [] };
+          for (const d of rowDocs) {
+            const st = ((d as unknown as Record<string, unknown>)['status'] as string) ?? 'draft';
+            (grouped[st] ?? grouped['draft']).push(d);
+          }
+
+          return (
+            <div key={project?.id ?? 'none'} className="flex mb-4">
+              <div className="sticky left-0 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-gray-50 border-r border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                  <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'Без проекта'}</span>
+                </div>
+                <div className="text-xs text-gray-400 mt-1 ml-5">{rowDocs.length} док.</div>
+              </div>
+              <div className="flex gap-3">
+                {DOC_STATUSES.map(status => {
+                  const zoneId = `doc-zone-${project?.id ?? 'none'}-${status}`;
+                  return (
+                    <DocStatusColumn key={zoneId} droppableId={zoneId} docs={grouped[status] ?? []}
+                      onClickDoc={setSelected} onDeleteDoc={handleDelete} />
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {rows.length === 0 && <div className="text-gray-400 text-sm text-center py-8">Нет документов</div>}
+        </div>
+
         <DragOverlay>
           {draggingDoc && (
             <div className="bg-white rounded-xl border-2 border-indigo-400 shadow-xl p-4 w-64 opacity-90">

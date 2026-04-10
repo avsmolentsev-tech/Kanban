@@ -9,6 +9,8 @@ import { ideasRouter } from './ideas';
 import { documentsRouter } from './documents';
 import { searchRouter } from './search';
 import { claudeNotesRouter } from './claude-notes';
+import { habitsRouter } from './habits';
+import { goalsRouter } from './goals';
 
 export const router = Router();
 
@@ -22,3 +24,5 @@ router.use('/ideas', ideasRouter);
 router.use('/documents', documentsRouter);
 router.use('/search', searchRouter);
 router.use('/claude-notes', claudeNotesRouter);
+router.use('/habits', habitsRouter);
+router.use('/goals', goalsRouter);

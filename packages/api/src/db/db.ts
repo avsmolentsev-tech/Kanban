@@ -129,6 +129,50 @@ export function initDb(): void {
       )
     `);
   } catch {}
+
+  // Habits tracker
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS habits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        icon TEXT NOT NULL DEFAULT '✅',
+        color TEXT NOT NULL DEFAULT '#6366f1',
+        frequency TEXT NOT NULL DEFAULT 'daily',
+        archived INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS habit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        habit_id INTEGER NOT NULL REFERENCES habits(id),
+        date TEXT NOT NULL,
+        completed INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(habit_id, date)
+      )
+    `);
+  } catch {}
+
+  // Goals / OKR table
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS goals (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        title         TEXT NOT NULL,
+        description   TEXT NOT NULL DEFAULT '',
+        type          TEXT NOT NULL DEFAULT 'goal',
+        parent_id     INTEGER REFERENCES goals(id),
+        project_id    INTEGER REFERENCES projects(id),
+        target_value  REAL,
+        current_value REAL NOT NULL DEFAULT 0,
+        unit          TEXT NOT NULL DEFAULT '%',
+        due_date      TEXT,
+        status        TEXT NOT NULL DEFAULT 'active',
+        created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
 }
 
 export function initTestDb(): void {
@@ -212,6 +256,50 @@ export function initTestDb(): void {
         original_name TEXT NOT NULL,
         size          INTEGER NOT NULL DEFAULT 0,
         mime_type     TEXT NOT NULL DEFAULT '',
+        created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
+
+  // Habits tracker
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS habits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        icon TEXT NOT NULL DEFAULT '✅',
+        color TEXT NOT NULL DEFAULT '#6366f1',
+        frequency TEXT NOT NULL DEFAULT 'daily',
+        archived INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS habit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        habit_id INTEGER NOT NULL REFERENCES habits(id),
+        date TEXT NOT NULL,
+        completed INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(habit_id, date)
+      )
+    `);
+  } catch {}
+
+  // Goals / OKR table
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS goals (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        title         TEXT NOT NULL,
+        description   TEXT NOT NULL DEFAULT '',
+        type          TEXT NOT NULL DEFAULT 'goal',
+        parent_id     INTEGER REFERENCES goals(id),
+        project_id    INTEGER REFERENCES projects(id),
+        target_value  REAL,
+        current_value REAL NOT NULL DEFAULT 0,
+        unit          TEXT NOT NULL DEFAULT '%',
+        due_date      TEXT,
+        status        TEXT NOT NULL DEFAULT 'active',
         created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
       )
     `);

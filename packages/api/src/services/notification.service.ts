@@ -9,6 +9,8 @@ import { config } from '../config';
 let lastMorningBrief = '';
 let lastWeeklyReport = '';
 
+let lastDailyDigest = '';
+
 export function startNotificationScheduler(): void {
   // Check every 15 minutes
   setInterval(() => {
@@ -16,6 +18,7 @@ export function startNotificationScheduler(): void {
     checkMorningBrief();
     checkUpcomingMeetings();
     checkWeeklyReport();
+    checkDailyDigest();
   }, 15 * 60 * 1000);
 
   setTimeout(checkOverdueTasks, 10000);
@@ -112,6 +115,52 @@ function checkWeeklyReport(): void {
     }
   } catch (err) {
     console.warn('[notifications] weekly report failed:', err);
+  }
+}
+
+/** Evening daily digest at 21:00 MSK — what was done + what's left */
+function checkDailyDigest(): void {
+  const now = moscowNow();
+  const hour = now.getUTCHours();
+  const today = moscowDateString();
+  if (hour !== 21) return;
+  if (lastDailyDigest === today) return;
+  lastDailyDigest = today;
+
+  try {
+    const db = getDb();
+    const done = db.prepare("SELECT title FROM tasks WHERE status = 'done' AND updated_at LIKE ? AND archived = 0").all(`${today}%`) as Array<{ title: string }>;
+    const inProgress = db.prepare("SELECT title, priority FROM tasks WHERE status = 'in_progress' AND archived = 0 ORDER BY priority DESC LIMIT 5").all() as Array<{ title: string; priority: number }>;
+    const overdue = db.prepare("SELECT title, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < ? LIMIT 5").all(today) as Array<{ title: string; due_date: string }>;
+    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
+    const tomorrowTasks = db.prepare("SELECT title FROM tasks WHERE due_date = ? AND archived = 0 AND status != 'done'").all(tomorrow) as Array<{ title: string }>;
+    const tomorrowMeetings = db.prepare("SELECT title FROM meetings WHERE date = ?").all(tomorrow) as Array<{ title: string }>;
+
+    let msg = `🌙 <b>Итоги дня</b>\n\n`;
+
+    if (done.length > 0) {
+      msg += `✅ Сделано сегодня (${done.length}):\n${done.map(t => `  • ${t.title}`).join('\n')}\n\n`;
+    } else {
+      msg += `📋 Задач завершено: 0\n\n`;
+    }
+
+    if (inProgress.length > 0) {
+      msg += `🔄 В работе:\n${inProgress.map(t => `  • ${t.title} ${'⭐'.repeat(t.priority)}`).join('\n')}\n\n`;
+    }
+
+    if (overdue.length > 0) {
+      msg += `⚠️ Просрочено:\n${overdue.map(t => `  • ${t.title} (${t.due_date})`).join('\n')}\n\n`;
+    }
+
+    if (tomorrowTasks.length > 0 || tomorrowMeetings.length > 0) {
+      msg += `📅 Завтра:\n`;
+      for (const m of tomorrowMeetings) msg += `  🤝 ${m.title}\n`;
+      for (const t of tomorrowTasks) msg += `  📋 ${t.title}\n`;
+    }
+
+    telegramService.notify(msg);
+  } catch (err) {
+    console.warn('[notifications] daily digest failed:', err);
   }
 }
 
