@@ -1,8 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import * as fs from 'fs';
+import * as path from 'path';
+import multer from 'multer';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
+import { config } from '../config';
+
+const attachDir = path.join(config.vaultPath, 'Attachments');
+if (!fs.existsSync(attachDir)) fs.mkdirSync(attachDir, { recursive: true });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 export const documentsRouter = Router();
 
@@ -71,6 +79,48 @@ documentsRouter.patch('/:id', (req: Request, res: Response) => {
 });
 
 documentsRouter.delete('/:id', (req: Request, res: Response) => {
-  getDb().prepare('DELETE FROM documents WHERE id = ?').run(Number(req.params['id']));
+  const id = Number(req.params['id']);
+  // Delete attachments
+  const atts = getDb().prepare('SELECT filename FROM attachments WHERE document_id = ?').all(id) as Array<{ filename: string }>;
+  for (const a of atts) { try { fs.unlinkSync(path.join(attachDir, a.filename)); } catch {} }
+  getDb().prepare('DELETE FROM attachments WHERE document_id = ?').run(id);
+  getDb().prepare('DELETE FROM documents WHERE id = ?').run(id);
   res.json(ok({ deleted: true }));
+});
+
+// Attachments
+documentsRouter.post('/:id/attachments', upload.single('file'), (req: Request, res: Response) => {
+  const docId = Number(req.params['id']);
+  if (!req.file) { res.status(400).json(fail('Файл не предоставлен')); return; }
+
+  const ext = path.extname(req.file.originalname);
+  const filename = `${docId}-${Date.now()}${ext}`;
+  fs.writeFileSync(path.join(attachDir, filename), req.file.buffer);
+
+  const result = getDb().prepare('INSERT INTO attachments (document_id, filename, original_name, size, mime_type) VALUES (?, ?, ?, ?, ?)').run(
+    docId, filename, req.file.originalname, req.file.size, req.file.mimetype
+  );
+  const attachment = getDb().prepare('SELECT * FROM attachments WHERE id = ?').get(result.lastInsertRowid);
+  res.status(201).json(ok(attachment));
+});
+
+documentsRouter.get('/:id/attachments', (req: Request, res: Response) => {
+  const atts = getDb().prepare('SELECT * FROM attachments WHERE document_id = ? ORDER BY created_at DESC').all(Number(req.params['id']));
+  res.json(ok(atts));
+});
+
+documentsRouter.delete('/attachments/:attId', (req: Request, res: Response) => {
+  const att = getDb().prepare('SELECT * FROM attachments WHERE id = ?').get(Number(req.params['attId'])) as { filename: string } | undefined;
+  if (att) {
+    try { fs.unlinkSync(path.join(attachDir, att.filename)); } catch {}
+    getDb().prepare('DELETE FROM attachments WHERE id = ?').run(Number(req.params['attId']));
+  }
+  res.json(ok({ deleted: true }));
+});
+
+// Serve attachment files
+documentsRouter.get('/attachments/file/:filename', (req: Request, res: Response) => {
+  const filePath = path.join(attachDir, req.params['filename']!);
+  if (!fs.existsSync(filePath)) { res.status(404).json(fail('Файл не найден')); return; }
+  res.sendFile(filePath);
 });

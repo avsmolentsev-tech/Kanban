@@ -89,7 +89,7 @@ export function getSelfPersonId(): number | null {
 }
 
 tasksRouter.get('/', (req: Request, res: Response) => {
-  let query = 'SELECT * FROM tasks WHERE archived = 0';
+  let query = 'SELECT * FROM tasks WHERE archived = 0 AND parent_id IS NULL';
   const params: unknown[] = [];
   if (req.query['project']) { query += ' AND project_id = ?'; params.push(Number(req.query['project'])); }
   if (req.query['status']) { query += ' AND status = ?'; params.push(req.query['status']); }

@@ -112,6 +112,23 @@ export function initDb(): void {
 
   // Tasks: parent_id for subtasks
   try { _db.exec("ALTER TABLE tasks ADD COLUMN parent_id INTEGER REFERENCES tasks(id)"); } catch {}
+
+  // Attachments table
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS attachments (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_id   INTEGER REFERENCES documents(id),
+        task_id       INTEGER REFERENCES tasks(id),
+        meeting_id    INTEGER REFERENCES meetings(id),
+        filename      TEXT NOT NULL,
+        original_name TEXT NOT NULL,
+        size          INTEGER NOT NULL DEFAULT 0,
+        mime_type     TEXT NOT NULL DEFAULT '',
+        created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
 }
 
 export function initTestDb(): void {
@@ -182,6 +199,23 @@ export function initTestDb(): void {
 
   // Tasks: parent_id for subtasks
   try { _db.exec("ALTER TABLE tasks ADD COLUMN parent_id INTEGER REFERENCES tasks(id)"); } catch {}
+
+  // Attachments table
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS attachments (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_id   INTEGER REFERENCES documents(id),
+        task_id       INTEGER REFERENCES tasks(id),
+        meeting_id    INTEGER REFERENCES meetings(id),
+        filename      TEXT NOT NULL,
+        original_name TEXT NOT NULL,
+        size          INTEGER NOT NULL DEFAULT 0,
+        mime_type     TEXT NOT NULL DEFAULT '',
+        created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
 }
 
 export function closeDb(): void {

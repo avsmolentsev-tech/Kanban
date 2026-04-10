@@ -368,6 +368,7 @@ export function DocumentsPage() {
           load();
           setSelected((prev) => (prev ? { ...prev } : null));
         }}
+        onDeleted={() => { setSelected(null); load(); }}
       />
     </div>
   );
