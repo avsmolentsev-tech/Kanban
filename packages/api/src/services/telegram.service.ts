@@ -103,7 +103,12 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       { role: 'user', content: text },
     ];
 
-    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1', true, true);
+    // Smart model selection: questions/analytics → o3 (smarter), commands → gpt-4.1 (faster)
+    const questionPatterns = /\?|что |как |почему |зачем |когда |какие |какой |какая |расскажи|объясни|проанализируй|сравни|помоги|посоветуй|подскажи|предложи|обсуд|думаешь|считаешь|вывод|итог|резюм|стратег|оцени/i;
+    const isQuestion = questionPatterns.test(text);
+    const model = isQuestion ? 'o3' : 'gpt-4.1';
+
+    const result = await claude.chat(messages, systemPrompt, model, true, true);
 
     let command: { actions: Array<Record<string, unknown>>; response: string };
     try {
