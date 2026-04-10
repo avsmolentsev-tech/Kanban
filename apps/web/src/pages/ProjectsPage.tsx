@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { DndContext, rectIntersection, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable, useDraggable, DragOverlay } from '@dnd-kit/core';
+import { DndContext, rectIntersection, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable, DragOverlay } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useProjectsStore } from '../store';
 import { projectsApi } from '../api/projects.api';
 import { apiGet } from '../api/client';
@@ -25,8 +27,8 @@ interface TaskStats {
 }
 
 function DraggableProjectCard({ project, stats, onClick }: { project: Project; stats?: TaskStats; onClick: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: `proj-${project.id}` });
-  const style = { transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined, opacity: isDragging ? 0.4 : 1 };
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `proj-${project.id}` });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
 
   const progress = stats && stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
 
@@ -66,12 +68,14 @@ function StageColumn({ stage, projects, statsMap, onClickProject }: {
   return (
     <div ref={setNodeRef}
       className={`flex flex-col w-64 min-w-[256px] bg-gray-100 dark:bg-gray-800/50 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
-      <div className="flex flex-col gap-3 flex-1 min-h-[80px]">
-        {projects.map(p => (
-          <DraggableProjectCard key={p.id} project={p} stats={statsMap.get(p.id)} onClick={() => onClickProject(p)} />
-        ))}
-        {projects.length === 0 && <div className="text-gray-300 dark:text-gray-600 text-xs text-center py-4">—</div>}
-      </div>
+      <SortableContext items={projects.map(p => `proj-${p.id}`)} strategy={verticalListSortingStrategy}>
+        <div className="flex flex-col gap-3 flex-1 min-h-[80px]">
+          {projects.map(p => (
+            <DraggableProjectCard key={p.id} project={p} stats={statsMap.get(p.id)} onClick={() => onClickProject(p)} />
+          ))}
+          {projects.length === 0 && <div className="text-gray-300 dark:text-gray-600 text-xs text-center py-4">—</div>}
+        </div>
+      </SortableContext>
     </div>
   );
 }
@@ -127,12 +131,45 @@ export function ProjectsPage() {
     setDragging(null);
     const { active, over } = e;
     if (!over) return;
-    const projId = Number(String(active.id).replace('proj-', ''));
-    const stage = String(over.id).replace('stage-', '') as ProjectStatus;
-    const project = projects.find(p => p.id === projId);
-    if (!project || project.status === stage) return;
-    await projectsApi.update(projId, { status: stage });
-    fetchProjects();
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const projId = Number(activeId.replace('proj-', ''));
+
+    // Dropped on a stage column
+    if (overId.startsWith('stage-')) {
+      const stage = overId.replace('stage-', '') as ProjectStatus;
+      const project = projects.find(p => p.id === projId);
+      if (!project || project.status === stage) return;
+      await projectsApi.update(projId, { status: stage });
+      fetchProjects();
+      return;
+    }
+
+    // Dropped on another project card (reorder within same column)
+    if (overId.startsWith('proj-')) {
+      const overProjId = Number(overId.replace('proj-', ''));
+      if (projId === overProjId) return;
+      const activeProj = projects.find(p => p.id === projId);
+      const overProj = projects.find(p => p.id === overProjId);
+      if (!activeProj || !overProj) return;
+
+      // If different status → move to that status
+      if (activeProj.status !== overProj.status) {
+        await projectsApi.update(projId, { status: overProj.status as ProjectStatus });
+        fetchProjects();
+        return;
+      }
+
+      // Same status → reorder
+      const sameStatus = projects.filter(p => p.status === activeProj.status);
+      const fromIdx = sameStatus.findIndex(p => p.id === projId);
+      const toIdx = sameStatus.findIndex(p => p.id === overProjId);
+      if (fromIdx === -1 || toIdx === -1) return;
+      const reordered = arrayMove(sameStatus, fromIdx, toIdx);
+      const items = reordered.map((p, i) => ({ id: p.id, order_index: i }));
+      await projectsApi.reorder(items);
+      fetchProjects();
+    }
   };
 
   // Group by status
