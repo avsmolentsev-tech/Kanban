@@ -49,19 +49,25 @@ export function HabitsSwipePage() {
   const [swipeStart, setSwipeStart] = useState<{ x: number; y: number } | null>(null);
   const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [animating, setAnimating] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [h, s] = await Promise.all([
-        apiGet<Habit[]>('/habits'),
-        apiGet<HabitStat[]>('/habits/stats'),
-      ]);
+      setError(null);
+      const h = await apiGet<Habit[]>('/habits');
       setHabits(h);
-      const done = new Set<number>();
-      for (const st of s) { if (st.dates.includes(today)) done.add(st.id); }
-      setDoneToday(done);
-    } catch {}
+      try {
+        const s = await apiGet<HabitStat[]>('/habits/stats');
+        const done = new Set<number>();
+        for (const st of s) { if (st.dates && st.dates.includes(today)) done.add(st.id); }
+        setDoneToday(done);
+      } catch {}
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка загрузки');
+    }
   }, [today]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -246,6 +252,16 @@ export function HabitsSwipePage() {
       </div>
     </div>
   ) : null;
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+        <div className="text-3xl mb-4">⚠️</div>
+        <div className="text-sm text-red-500 mb-4">{error}</div>
+        <button onClick={fetchData} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">Повторить</button>
+      </div>
+    );
+  }
 
   if (habits.length === 0) {
     return (
