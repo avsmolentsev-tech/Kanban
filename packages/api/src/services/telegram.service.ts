@@ -100,6 +100,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     {"type": "update_task", "task_id": number, "title": "string?", "priority": number?, "due_date": "YYYY-MM-DD?", "project_id": number?, "person_ids": [number]?},
     {"type": "create_project", "name": "string", "color": "#hex"},
     {"type": "create_idea", "title": "string", "body": "string?", "project_id": number|null, "category": "business|product|personal|growth"},
+    {"type": "create_habit", "title": "string", "icon": "emoji", "remind_time": "HH:MM или null"},
+    {"type": "log_habit", "habit_title": "string (нечёткое совпадение)"},
     {"type": "create_bundle", "project_name": "string (название проекта или 'все')"},
     {"type": "create_goal", "title": "string", "description": "string?", "project_id": number|null, "target_value": number?, "unit": "string?", "due_date": "YYYY-MM-DD?"},
     {"type": "create_key_result", "parent_id": number, "title": "string", "target_value": number?, "unit": "string?"},
@@ -195,6 +197,31 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
             );
             const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
             results.push(`💡 Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog`);
+            break;
+          }
+          case 'create_habit': {
+            db.prepare('INSERT INTO habits (title, icon, remind_time) VALUES (?, ?, ?)').run(
+              action['title'], (action['icon'] as string) ?? '✅', action['remind_time'] ?? null
+            );
+            results.push(`🔥 Привычка "${action['title']}" создана${action['remind_time'] ? ` (⏰ ${action['remind_time']})` : ''}`);
+            break;
+          }
+          case 'log_habit': {
+            const title = (action['habit_title'] as string).toLowerCase();
+            const habit = db.prepare("SELECT id, title FROM habits WHERE archived = 0").all() as Array<{ id: number; title: string }>;
+            const match = habit.find(h => h.title.toLowerCase().includes(title) || title.includes(h.title.toLowerCase()));
+            if (match) {
+              const today = moscowDateString();
+              const existing = db.prepare("SELECT id FROM habit_logs WHERE habit_id = ? AND date = ?").get(match.id, today);
+              if (existing) {
+                results.push(`✅ "${match.title}" уже отмечена сегодня`);
+              } else {
+                db.prepare("INSERT INTO habit_logs (habit_id, date) VALUES (?, ?)").run(match.id, today);
+                results.push(`✅ "${match.title}" отмечена!`);
+              }
+            } else {
+              results.push(`❌ Привычка "${action['habit_title']}" не найдена`);
+            }
             break;
           }
           case 'create_goal': {

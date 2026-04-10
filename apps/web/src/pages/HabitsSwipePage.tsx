@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { apiGet, apiPost } from '../api/client';
+import { apiGet, apiPost, apiDelete } from '../api/client';
 
 interface Habit {
   id: number;
@@ -14,10 +14,19 @@ interface HabitStat {
   dates: string[];
 }
 
+const EMOJI_OPTIONS = ['✅', '💪', '📚', '🏃', '💧', '🧘', '💊', '🎯', '🌅', '✍️', '🎵', '🍎', '😴', '🚶', '🧠'];
+const COLOR_OPTIONS = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6'];
+
 export function HabitsSwipePage() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [doneToday, setDoneToday] = useState<Set<number>>(new Set());
   const [index, setIndex] = useState(0);
+  const [view, setView] = useState<'swipe' | 'list'>('swipe');
+  const [showAdd, setShowAdd] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newIcon, setNewIcon] = useState('✅');
+  const [newColor, setNewColor] = useState('#6366f1');
+  const [newRemind, setNewRemind] = useState('');
   const [swipeStart, setSwipeStart] = useState<{ x: number; y: number } | null>(null);
   const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [animating, setAnimating] = useState(false);
@@ -38,9 +47,69 @@ export function HabitsSwipePage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Filter: only habits not yet done today
+  const addHabit = async () => {
+    if (!newTitle.trim()) return;
+    await apiPost('/habits', { title: newTitle.trim(), icon: newIcon, color: newColor, remind_time: newRemind || null });
+    setNewTitle(''); setNewIcon('✅'); setNewColor('#6366f1'); setNewRemind(''); setShowAdd(false);
+    fetchData();
+  };
+
+  const deleteHabit = async (id: number) => {
+    await apiDelete(`/habits/${id}`);
+    fetchData();
+  };
+
+  const toggleHabit = async (id: number) => {
+    await apiPost(`/habits/${id}/log`, { date: today });
+    setDoneToday(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    const updated = await apiGet<Habit[]>('/habits');
+    setHabits(updated);
+  };
+
   const pending = habits.filter(h => !doneToday.has(h.id));
   const current = pending[index];
+
+  // List view
+  if (view === 'list') {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">🔥 Привычки</h1>
+          <div className="flex gap-2">
+            <button onClick={() => setView('swipe')} className="text-xs px-3 py-1 bg-indigo-600 text-white rounded-lg">Карточки</button>
+            <button onClick={() => setShowAdd(true)} className="text-xs px-3 py-1 bg-green-600 text-white rounded-lg">+ Новая</button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto p-4 space-y-2">
+          {habits.map(h => {
+            const done = doneToday.has(h.id);
+            return (
+              <div key={h.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 ${done ? 'border-green-400 bg-green-50 dark:bg-green-900/20' : 'border-gray-200 dark:border-gray-700'}`}>
+                <button onClick={() => toggleHabit(h.id)}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 ${done ? 'bg-green-500 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                  {done ? '✓' : h.icon}
+                </button>
+                <div className="flex-1">
+                  <div className={`font-medium ${done ? 'line-through text-green-700 dark:text-green-300' : 'text-gray-800 dark:text-gray-100'}`}>{h.title}</div>
+                  {(h as unknown as Record<string, unknown>)['remind_time'] && (
+                    <div className="text-[10px] text-gray-400">⏰ {String((h as unknown as Record<string, unknown>)['remind_time'])}</div>
+                  )}
+                </div>
+                {h.streak > 0 && <span className="text-sm text-orange-500">🔥{h.streak}</span>}
+                <button onClick={() => { if (confirm('Удалить?')) deleteHabit(h.id); }} className="text-xs text-red-400 hover:text-red-600">✕</button>
+              </div>
+            );
+          })}
+          {habits.length === 0 && <div className="text-center text-gray-400 py-8">Нет привычек</div>}
+        </div>
+        {renderAddModal()}
+      </div>
+    );
+  }
 
   const handleSwipe = async (direction: 'left' | 'right') => {
     if (!current || animating) return;
@@ -87,12 +156,48 @@ export function HabitsSwipePage() {
     );
   }
 
+  const renderAddModal = () => showAdd ? (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setShowAdd(false)}>
+      <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <h2 className="text-lg font-bold mb-3 text-gray-800 dark:text-gray-100">Новая привычка</h2>
+        <input autoFocus className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 mb-3"
+          placeholder="Например: Цигун" value={newTitle} onChange={e => setNewTitle(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && addHabit()} />
+        <div className="flex flex-wrap gap-2 mb-3">
+          {EMOJI_OPTIONS.map(em => (
+            <button key={em} onClick={() => setNewIcon(em)}
+              className={`w-9 h-9 text-lg rounded-lg flex items-center justify-center ${newIcon === em ? 'ring-2 ring-indigo-500 bg-indigo-100 dark:bg-indigo-900/50' : 'bg-gray-100 dark:bg-gray-700'}`}>
+              {em}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {COLOR_OPTIONS.map(c => (
+            <button key={c} onClick={() => setNewColor(c)}
+              className={`w-8 h-8 rounded-full ${newColor === c ? 'ring-2 ring-offset-2 ring-gray-400' : ''}`}
+              style={{ backgroundColor: c }} />
+          ))}
+        </div>
+        <div className="mb-4">
+          <div className="text-xs text-gray-500 mb-1">Напоминание (МСК)</div>
+          <input type="time" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+            value={newRemind} onChange={e => setNewRemind(e.target.value)} />
+        </div>
+        <div className="flex gap-3">
+          <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm text-gray-600 dark:text-gray-400">Отмена</button>
+          <button onClick={addHabit} disabled={!newTitle.trim()} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">Создать</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (habits.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
         <div className="text-5xl mb-4">🔥</div>
         <div className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">Нет привычек</div>
-        <div className="text-sm text-gray-400">Добавь в Ещё → Привычки</div>
+        <button onClick={() => setShowAdd(true)} className="mt-3 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">+ Добавить привычку</button>
+        {renderAddModal()}
       </div>
     );
   }
@@ -103,6 +208,15 @@ export function HabitsSwipePage() {
 
   return (
     <div className="flex flex-col h-full p-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">🔥 Привычки</h1>
+        <div className="flex gap-2">
+          <button onClick={() => setView('list')} className="text-xs px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg">Список</button>
+          <button onClick={() => setShowAdd(true)} className="text-xs px-3 py-1 bg-green-600 text-white rounded-lg">+ Новая</button>
+        </div>
+      </div>
+
       {/* Counter */}
       <div className="text-center mb-4">
         <div className="text-xs text-gray-400 dark:text-gray-500">
@@ -187,6 +301,8 @@ export function HabitsSwipePage() {
       <div className="text-center text-xs text-gray-400 dark:text-gray-500 mt-2">
         Свайп вправо → выполнено, влево → пропустить
       </div>
+
+      {renderAddModal()}
     </div>
   );
 }
