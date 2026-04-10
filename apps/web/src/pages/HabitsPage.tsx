@@ -218,6 +218,49 @@ export function HabitsPage() {
         </div>
       ) : (
         <div className="space-y-6">
+          {/* Today's checklist — big buttons for mobile */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">Сегодня</div>
+            <div className="space-y-2">
+              {habits.map((habit) => {
+                const isLogged = logMap[habit.id]?.has(today);
+                return (
+                  <button
+                    key={habit.id}
+                    onClick={() => toggleLog(habit.id, today)}
+                    className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all active:scale-[0.98] ${
+                      isLogged
+                        ? 'border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20'
+                        : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30'
+                    }`}
+                  >
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 ${
+                      isLogged ? 'bg-green-500 text-white' : 'bg-gray-200 dark:bg-gray-700'
+                    }`}>
+                      {isLogged ? '✓' : habit.icon}
+                    </div>
+                    <div className="flex-1 text-left">
+                      <div className={`font-medium ${isLogged ? 'text-green-700 dark:text-green-300 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
+                        {habit.title}
+                      </div>
+                    </div>
+                    {habit.streak > 0 && (
+                      <span className="text-sm text-orange-500 font-medium">
+                        🔥 {habit.streak}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {habits.length > 0 && (
+              <div className="mt-3 text-center text-xs text-gray-400">
+                {habits.filter(h => logMap[h.id]?.has(today)).length} из {habits.length} выполнено
+              </div>
+            )}
+          </div>
+
+          {/* Grid per habit — scrollable on mobile */}
           {habits.map((habit) => (
             <div
               key={habit.id}
