@@ -27,6 +27,79 @@ interface HabitStat {
   dates: string[];
 }
 
+function SwipeableHabitCard({ habit, isLogged, onToggle }: { habit: Habit; isLogged: boolean; onToggle: () => void }) {
+  const [swipeX, setSwipeX] = useState(0);
+  const [startX, setStartX] = useState<number | null>(null);
+  const [swiped, setSwiped] = useState(false);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isLogged) return;
+    setStartX(e.touches[0]!.clientX);
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (startX === null || isLogged) return;
+    const dx = e.touches[0]!.clientX - startX;
+    if (dx > 0) setSwipeX(dx);
+  };
+  const handleTouchEnd = () => {
+    if (swipeX > 100 && !isLogged) {
+      setSwiped(true);
+      onToggle();
+      setTimeout(() => { setSwiped(false); setSwipeX(0); }, 300);
+    } else {
+      setSwipeX(0);
+    }
+    setStartX(null);
+  };
+
+  const doneOpacity = Math.min(1, swipeX / 80);
+
+  return (
+    <div
+      className={`relative overflow-hidden rounded-xl border-2 transition-all ${
+        isLogged
+          ? 'border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20'
+          : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30'
+      }`}
+    >
+      {/* Green background behind swipe */}
+      {!isLogged && (
+        <div className="absolute inset-y-0 left-0 w-full bg-green-500 flex items-center pl-4 text-white font-bold"
+          style={{ opacity: doneOpacity * 0.3 }}>
+          ✓ Готово
+        </div>
+      )}
+      <div
+        className="relative flex items-center gap-3 p-3 cursor-pointer active:scale-[0.98]"
+        style={{
+          transform: `translateX(${swipeX}px)`,
+          transition: swipeX === 0 ? 'transform 0.2s ease-out' : 'none',
+        }}
+        onClick={() => onToggle()}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 transition-colors ${
+          isLogged ? 'bg-green-500 text-white' : 'bg-gray-200 dark:bg-gray-700'
+        }`}>
+          {isLogged ? '✓' : habit.icon}
+        </div>
+        <div className="flex-1 text-left">
+          <div className={`font-medium ${isLogged ? 'text-green-700 dark:text-green-300 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
+            {habit.title}
+          </div>
+        </div>
+        {habit.streak > 0 && (
+          <span className="text-sm text-orange-500 font-medium">
+            🔥 {habit.streak}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const EMOJI_OPTIONS = ['✅', '💪', '📚', '🏃', '💧', '🧘', '💊', '🎯', '🌅', '✍️', '🎵', '🍎', '😴', '🚶', '🧠'];
 const COLOR_OPTIONS = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
@@ -218,38 +291,19 @@ export function HabitsPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Today's checklist — big buttons for mobile */}
+          {/* Today's checklist — swipeable cards */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
             <div className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">Сегодня</div>
             <div className="space-y-2">
               {habits.map((habit) => {
                 const isLogged = logMap[habit.id]?.has(today);
                 return (
-                  <button
+                  <SwipeableHabitCard
                     key={habit.id}
-                    onClick={() => toggleLog(habit.id, today)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all active:scale-[0.98] ${
-                      isLogged
-                        ? 'border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20'
-                        : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30'
-                    }`}
-                  >
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 ${
-                      isLogged ? 'bg-green-500 text-white' : 'bg-gray-200 dark:bg-gray-700'
-                    }`}>
-                      {isLogged ? '✓' : habit.icon}
-                    </div>
-                    <div className="flex-1 text-left">
-                      <div className={`font-medium ${isLogged ? 'text-green-700 dark:text-green-300 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
-                        {habit.title}
-                      </div>
-                    </div>
-                    {habit.streak > 0 && (
-                      <span className="text-sm text-orange-500 font-medium">
-                        🔥 {habit.streak}
-                      </span>
-                    )}
-                  </button>
+                    habit={habit}
+                    isLogged={isLogged}
+                    onToggle={() => toggleLog(habit.id, today)}
+                  />
                 );
               })}
             </div>

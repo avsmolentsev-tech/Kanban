@@ -511,6 +511,36 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       }
     });
 
+    // /habits — today's habits
+    this.bot.command('habits', async (ctx) => {
+      try {
+        const habitsData = await apiGet<Array<{ id: number; title: string; icon: string; streak: number }>>('/habits');
+        const statsData = await apiGet<Array<{ id: number; dates: string[] }>>('/habits/stats');
+        const todayStr = moscowDateString();
+        const doneToday = new Set<number>();
+        for (const s of statsData) {
+          if (s.dates.includes(todayStr)) doneToday.add(s.id);
+        }
+        if (habitsData.length === 0) { ctx.reply('🔥 Нет привычек. Добавь в /app → Привычки'); return; }
+        const lines = habitsData.map(h => {
+          const done = doneToday.has(h.id);
+          return `${done ? '✅' : '⬜'} ${h.icon} ${h.title}${h.streak > 0 ? ` 🔥${h.streak}` : ''}`;
+        });
+        const doneCount = habitsData.filter(h => doneToday.has(h.id)).length;
+        ctx.reply(`🔥 Привычки на сегодня (${doneCount}/${habitsData.length}):\n\n${lines.join('\n')}\n\nОтметить: "отметь привычку Медитация"`);
+      } catch {
+        // Fallback if apiGet not available internally
+        const db = getDb();
+        const habits = db.prepare("SELECT id, title, icon, streak FROM habits WHERE archived = 0").all() as Array<{ id: number; title: string; icon: string; streak: number }>;
+        if (habits.length === 0) { ctx.reply('🔥 Нет привычек'); return; }
+        const today = moscowDateString();
+        const logs = db.prepare("SELECT habit_id FROM habit_logs WHERE date = ?").all(today) as Array<{ habit_id: number }>;
+        const doneSet = new Set(logs.map(l => l.habit_id));
+        const lines = habits.map(h => `${doneSet.has(h.id) ? '✅' : '⬜'} ${h.icon} ${h.title}${h.streak > 0 ? ` 🔥${h.streak}` : ''}`);
+        ctx.reply(`🔥 Привычки (${logs.length}/${habits.length}):\n\n${lines.join('\n')}`);
+      }
+    });
+
     this.bot.command('meetings', (ctx) => {
       const db = getDb();
       const meetings = db.prepare("SELECT m.title, m.date, p.name as project_name FROM meetings m LEFT JOIN projects p ON m.project_id = p.id ORDER BY m.date DESC LIMIT 10").all() as Array<{ title: string; date: string; project_name: string | null }>;
@@ -843,6 +873,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     this.bot.telegram.setMyCommands([
       { command: 'app', description: '📱 Открыть приложение' },
       { command: 'tasks', description: '📋 Активные задачи' },
+      { command: 'habits', description: '🔥 Привычки на сегодня' },
       { command: 'meetings', description: '🤝 Последние встречи' },
       { command: 'brief', description: '🌅 Дневной брифинг' },
       { command: 'bundle', description: '📦 Bundle для NotebookLM' },
