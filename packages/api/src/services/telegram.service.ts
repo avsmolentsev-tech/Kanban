@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { Telegraf, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { config } from '../config';
@@ -13,7 +14,7 @@ export class TelegramService {
   private chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
   /** Execute a command via AI — same as web voice commands */
-  private async executeCommand(text: string): Promise<string> {
+  private async executeCommand(text: string): Promise<{ text: string; file?: { path: string; filename: string } }> {
     const db = getDb();
     const claude = new ClaudeService();
     const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
@@ -184,7 +185,10 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
               results.push(`❌ Проект "${pname}" не найден`);
             } else {
               const r = generateBundle(match);
-              results.push(`📦 Bundle создан: ${r.vaultPath} (${r.sizeKb} KB, встреч: ${r.sections.meetings}, задач: ${r.sections.tasks}, идей: ${r.sections.ideas})`);
+              // Store for sending file after response
+              (command as Record<string, unknown>)['_bundlePath'] = path.join(config.vaultPath, r.vaultPath);
+              (command as Record<string, unknown>)['_bundleFilename'] = r.filename;
+              results.push(`📦 Bundle: ${r.filename} (${r.sizeKb} KB, встреч: ${r.sections.meetings}, задач: ${r.sections.tasks})`);
             }
             break;
           }
@@ -240,7 +244,11 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     this.chatHistory.push({ role: 'assistant', content: responseText });
     if (this.chatHistory.length > 200) this.chatHistory = this.chatHistory.slice(-200);
 
-    return responseText;
+    // Check if there's a file to send (bundle)
+    const bundlePath = (command as Record<string, unknown>)['_bundlePath'] as string | undefined;
+    const bundleFilename = (command as Record<string, unknown>)['_bundleFilename'] as string | undefined;
+
+    return { text: responseText, file: bundlePath ? { path: bundlePath, filename: bundleFilename! } : undefined };
   }
 
   /** Classify message — chat/command vs ingest (for long content) */
@@ -319,7 +327,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       if (!text) { ctx.reply('Формат: /cmd создай задачу купить молоко'); return; }
       try {
         const response = await this.executeCommand(text);
-        ctx.reply(response);
+          await sendCommandResult(ctx, response);
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
@@ -327,29 +335,29 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     // /meetings — list recent meetings
     // /bundle — generate NotebookLM bundle for project
-    this.bot.command('bundle', (ctx) => {
+    // /bundle — generate and SEND NotebookLM bundle file
+    this.bot.command('bundle', async (ctx) => {
       const text = ctx.message.text.replace(/^\/bundle\s*/, '').trim();
       if (!text) {
         ctx.reply('Формат:\n/bundle <название проекта>\n/bundle все\n\nПримеры:\n/bundle Атланты\n/bundle Robots');
         return;
       }
       try {
+        ctx.reply('📦 Собираю bundle...');
         const match = findProjectByName(text);
         if (match === null) {
           ctx.reply(`❌ Проект "${text}" не найден`);
           return;
         }
         const result = generateBundle(match);
-        ctx.reply(
-          `📦 Bundle создан!\n\n` +
-          `📄 Файл: ${result.vaultPath}\n` +
-          `📊 Размер: ${result.sizeKb} KB\n` +
-          `📅 Встреч: ${result.sections.meetings}\n` +
-          `✅ Задач: ${result.sections.tasks}\n` +
-          `💡 Идей: ${result.sections.ideas}\n` +
-          `📄 Документов: ${result.sections.documents}\n` +
-          `👥 Людей: ${result.sections.people}\n\n` +
-          `Файл появится в Obsidian через 5 минут (Git sync).\nЗагрузи его в NotebookLM → получишь подкаст и mind map.`
+        const fullPath = path.join(config.vaultPath, result.vaultPath);
+
+        // Send file to user
+        await ctx.replyWithDocument(
+          { source: fullPath, filename: result.filename },
+          {
+            caption: `📦 Bundle: ${result.filename}\n📊 ${result.sizeKb} KB | Встреч: ${result.sections.meetings} | Задач: ${result.sections.tasks} | Идей: ${result.sections.ideas} | Людей: ${result.sections.people}\n\nЗагрузи в NotebookLM → подкаст, mind map`
+          }
         );
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'unknown'}`);
@@ -477,6 +485,19 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       ctx.reply(`🔍 Результаты:\n\n${lines.join('\n')}`);
     });
 
+    // Send executeCommand result — text + optional file
+    const sendCommandResult = async (ctx: { reply: (text: string) => Promise<unknown>; replyWithDocument: (doc: { source: string; filename: string }, opts?: Record<string, unknown>) => Promise<unknown> }, result: { text: string; file?: { path: string; filename: string } }): Promise<void> => {
+      await sendLong(ctx, result.text);
+      if (result.file) {
+        try {
+          await ctx.replyWithDocument(
+            { source: result.file.path, filename: result.file.filename },
+            { caption: '📄 Файл готов — загрузи в NotebookLM' }
+          );
+        } catch {}
+      }
+    };
+
     // Split long message into chunks for Telegram (max 4096 chars)
     const sendLong = async (ctx: { reply: (text: string) => Promise<unknown> }, text: string): Promise<void> => {
       const CHUNK = 4000;
@@ -542,7 +563,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         const intent = await this.classifyMessage(text);
         if (intent === 'command' || intent === 'chat') {
           const response = await this.executeCommand(text);
-          ctx.reply(response);
+          await sendCommandResult(ctx, response);
         } else {
           const ingestService = new IngestService();
           const result = await ingestService.ingestText(text);
@@ -583,7 +604,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         const intent = await this.classifyMessage(transcript);
         if (intent === 'command' || intent === 'chat') {
           const cmdResponse = await this.executeCommand(transcript);
-          ctx.reply(cmdResponse);
+            await sendCommandResult(ctx, cmdResponse);
         } else {
           const ingestService = new IngestService();
           const result = await ingestService.ingestText(transcript);
