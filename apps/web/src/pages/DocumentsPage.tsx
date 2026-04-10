@@ -108,7 +108,7 @@ function DocStatusColumn({ droppableId, docs, onClickDoc, onDeleteDoc }: {
       className={`flex flex-col w-56 min-w-[224px] bg-gray-100 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50' : ''}`}>
       <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
         {docs.map(d => (
-          <DraggableDocCard key={d.id} doc={d} onClick={() => onClickDoc(d)}
+          <DraggableDocumentCard key={d.id} doc={d} onClick={() => onClickDoc(d)}
             onDelete={(e) => { e.stopPropagation(); onDeleteDoc(d.id); }} />
         ))}
         {docs.length === 0 && <div className="text-gray-300 text-xs text-center py-4">—</div>}
