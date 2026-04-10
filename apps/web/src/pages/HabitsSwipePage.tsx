@@ -30,6 +30,64 @@ const ICON_OPTIONS = [
 ];
 const COLOR_OPTIONS = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6'];
 
+function SwipeHabitCard({ habit, done, onToggle }: { habit: Habit; done: boolean; onToggle: () => void }) {
+  const [sx, setSx] = useState(0);
+  const [startX, setStartX] = useState<number | null>(null);
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl">
+      {/* Green background revealed on swipe */}
+      {!done && sx > 20 && (
+        <div className="absolute inset-0 bg-green-500 flex items-center pl-5 text-white font-bold text-sm rounded-2xl"
+          style={{ opacity: Math.min(1, sx / 80) }}>
+          ✓ Готово
+        </div>
+      )}
+      <div
+        className={`relative flex items-center gap-3 p-4 border-2 cursor-pointer transition-colors active:scale-[0.97] ${
+          done
+            ? 'border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20'
+            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
+        }`}
+        style={{
+          transform: `translateX(${sx}px)`,
+          transition: sx === 0 ? 'transform 0.2s ease-out' : 'none',
+          borderRadius: '1rem',
+        }}
+        onClick={() => onToggle()}
+        onTouchStart={(e) => { if (!done) setStartX(e.touches[0]!.clientX); }}
+        onTouchMove={(e) => {
+          if (startX === null || done) return;
+          const dx = e.touches[0]!.clientX - startX;
+          if (dx > 0) setSx(dx);
+        }}
+        onTouchEnd={() => {
+          if (sx > 80 && !done) onToggle();
+          setSx(0);
+          setStartX(null);
+        }}
+      >
+        <div
+          className={`w-12 h-12 rounded-full flex items-center justify-center text-xl flex-shrink-0 ${
+            done ? 'bg-green-500 text-white' : ''
+          }`}
+          style={!done ? { backgroundColor: habit.color + '22', color: habit.color } : undefined}
+        >
+          {done ? '✓' : habit.icon}
+        </div>
+        <div className="flex-1">
+          <div className={`font-semibold ${done ? 'line-through text-green-700 dark:text-green-300' : 'text-gray-800 dark:text-gray-100'}`}>
+            {habit.title}
+          </div>
+        </div>
+        {habit.streak > 0 && (
+          <span className="text-sm text-orange-500 font-bold">🔥 {habit.streak}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function getToday(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -114,37 +172,9 @@ export function HabitsSwipePage() {
           </div>
         )}
 
-        {habits.map(h => {
-          const done = doneIds.has(h.id);
-          return (
-            <div
-              key={h.id}
-              onClick={() => toggle(h.id)}
-              className={`flex items-center gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all active:scale-[0.97] ${
-                done
-                  ? 'border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20'
-                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
-              }`}
-            >
-              <div
-                className={`w-12 h-12 rounded-full flex items-center justify-center text-xl flex-shrink-0 transition-colors ${
-                  done ? 'bg-green-500 text-white' : ''
-                }`}
-                style={!done ? { backgroundColor: h.color + '22', color: h.color } : undefined}
-              >
-                {done ? '✓' : h.icon}
-              </div>
-              <div className="flex-1">
-                <div className={`font-semibold ${done ? 'line-through text-green-700 dark:text-green-300' : 'text-gray-800 dark:text-gray-100'}`}>
-                  {h.title}
-                </div>
-              </div>
-              {h.streak > 0 && (
-                <span className="text-sm text-orange-500 font-bold">🔥 {h.streak}</span>
-              )}
-            </div>
-          );
-        })}
+        {habits.map(h => (
+          <SwipeHabitCard key={h.id} habit={h} done={doneIds.has(h.id)} onToggle={() => toggle(h.id)} />
+        ))}
 
         {doneCount === habits.length && habits.length > 0 && (
           <div className="text-center py-8">
