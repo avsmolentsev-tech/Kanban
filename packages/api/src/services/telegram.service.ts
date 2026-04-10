@@ -21,8 +21,8 @@ export class TelegramService {
     const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
     const tasks = db.prepare("SELECT id, title, status, project_id FROM tasks WHERE archived = 0").all() as Array<{ id: number; title: string; status: string; project_id: number | null }>;
     const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
-    let goals: Array<{ id: number; title: string; current_value: number; target_value: number; status: string }> = [];
-    try { goals = db.prepare("SELECT id, title, current_value, target_value, status FROM goals WHERE type = 'goal' AND status = 'active'").all() as typeof goals; } catch {}
+    let goals: Array<{ id: number; title: string; type: string; parent_id: number | null; current_value: number; target_value: number; unit: string; status: string }> = [];
+    try { goals = db.prepare("SELECT id, title, type, parent_id, current_value, target_value, unit, status FROM goals WHERE status = 'active' ORDER BY type, parent_id").all() as typeof goals; } catch {}
 
     // Auto-detect if question is about meetings → include full content
     const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
@@ -51,7 +51,10 @@ export class TelegramService {
 Задачи: ${JSON.stringify(tasks.slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
 Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.preview || '').slice(0, 200) })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
-Цели (OKR): ${JSON.stringify(goals.map(g => ({ id: g.id, title: g.title, progress: `${g.current_value}/${g.target_value}`, status: g.status })))}
+Цели и ключевые результаты (OKR):
+${goals.map(g => `  ${g.type === 'goal' ? '🎯' : '  📊'} #${g.id} ${g.title} (${g.current_value}/${g.target_value} ${g.unit})${g.parent_id ? ` [KR цели #${g.parent_id}]` : ''}`).join('\n')}
+
+ВАЖНО: Когда пользователь просит обновить прогресс/процент/статус ключевого результата (KR) — используй update_goal с goal_id = id этого KR и current_value = новое значение. НЕ путай с задачами (tasks)! Ключевые результаты — это записи в таблице goals с type='key_result'.
 ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕДНИХ ВСТРЕЧ ===\n${fullMeetingContent}\n=== КОНЕЦ ТРАНСКРИПЦИЙ ===\n\nОтвечай конкретно на основе содержимого транскрипций выше. Цитируй фрагменты когда уместно.` : ''}
 
 ДОСТУП К OBSIDIAN VAULT через инструменты:
