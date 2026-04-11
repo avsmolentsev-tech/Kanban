@@ -9,6 +9,7 @@ import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
 import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { SavedFilters, applyFilterCriteria, type SavedFilter } from '../components/filters/SavedFilters';
 import type { Task, Person, TaskStatus } from '@pis/shared';
+import { useLangStore } from '../store/lang.store';
 
 function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -35,6 +36,7 @@ function computeDueDate(period: TimePeriod | 'none'): string | null {
 }
 
 export function TimelinePage() {
+  const { t } = useLangStore();
   const { tasks, fetchTasks } = useTasksStore();
   const { projects, fetchProjects, reorderProjects } = useProjectsStore();
   const [selected, setSelected] = useState<Task | null>(null);
@@ -115,7 +117,7 @@ export function TimelinePage() {
   return (
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Таймлайн</h1>
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('Таймлайн', 'Timeline')}</h1>
         <div className="flex items-center gap-3">
           <SavedFilters active={activeFilter?.id ?? null} onApply={setActiveFilter} />
           <ProjectFilter projects={projects} />

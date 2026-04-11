@@ -7,6 +7,7 @@ import { projectsApi } from '../api/projects.api';
 import { apiGet } from '../api/client';
 import { ProjectDetailPanel } from '../components/projects/ProjectDetailPanel';
 import type { Project } from '@pis/shared';
+import { useLangStore } from '../store/lang.store';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 
@@ -81,6 +82,7 @@ function StageColumn({ stage, projects, statsMap, onClickProject }: {
 }
 
 export function ProjectsPage() {
+  const { t } = useLangStore();
   const { projects, loading, fetchProjects } = useProjectsStore();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
@@ -181,10 +183,10 @@ export function ProjectsPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-6 py-4 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Проекты</h1>
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('Проекты', 'Projects')}</h1>
         {!adding && (
           <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
-            + Новый проект
+            {t('+ Новый проект', '+ New Project')}
           </button>
         )}
       </div>
@@ -206,10 +208,10 @@ export function ProjectsPage() {
               ))}
             </div>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">Отмена</button>
+              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">{t('Отмена', 'Cancel')}</button>
               <button onClick={submit} disabled={!name.trim() || submitting}
                 className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                {submitting ? '...' : 'Создать'}
+                {submitting ? '...' : t('Создать', 'Create')}
               </button>
             </div>
           </div>

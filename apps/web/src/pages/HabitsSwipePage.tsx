@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../api/client';
+import { useLangStore } from '../store/lang.store';
 
 interface Habit {
   id: number;
@@ -108,6 +109,7 @@ function SwipeHabitCard({ habit, done, logDates, onToggle, onEdit }: {
 }
 
 export function HabitsSwipePage() {
+  const { t } = useLangStore();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [doneIds, setDoneIds] = useState<Set<number>>(new Set());
   const [logMap, setLogMap] = useState<Record<number, Set<string>>>({});
@@ -189,7 +191,7 @@ export function HabitsSwipePage() {
     <div className="flex flex-col h-full pb-20">
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
         <div>
-          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">🔥 Привычки</h1>
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('🔥 Привычки', '🔥 Habits')}</h1>
           {habits.length > 0 && <div className="text-xs text-gray-400 mt-0.5">{doneCount} из {habits.length} сегодня</div>}
         </div>
         <button onClick={openCreate} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm">+ Новая</button>
@@ -280,9 +282,9 @@ export function HabitsSwipePage() {
                 {editHabit && (
                   <button onClick={() => remove(editHabit.id)} className="py-3 px-4 text-sm text-red-500 border border-red-200 rounded-xl">Удалить</button>
                 )}
-                <button onClick={() => setShowModal(false)} className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-400">Отмена</button>
+                <button onClick={() => setShowModal(false)} className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-400">{t('Отмена', 'Cancel')}</button>
                 <button onClick={save} disabled={!title.trim()} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl text-sm font-semibold disabled:opacity-50">
-                  {editHabit ? 'Сохранить' : 'Создать'}
+                  {editHabit ? t('Сохранить', 'Save') : t('Создать', 'Create')}
                 </button>
               </div>
             </div>

@@ -5,6 +5,7 @@ import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { useFiltersStore } from '../store';
 import { peopleApi } from '../api/people.api';
 import type { Task, Person } from '@pis/shared';
+import { useLangStore } from '../store/lang.store';
 
 function getDaysInMonth(year: number, month: number): Date[] {
   const days: Date[] = [];
@@ -27,6 +28,7 @@ function formatDate(d: Date): string {
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 export function CalendarPage() {
+  const { t } = useLangStore();
   const { tasks, fetchTasks } = useTasksStore();
   const { projects, fetchProjects } = useProjectsStore();
   const { selectedProjectIds } = useFiltersStore();
@@ -71,7 +73,7 @@ export function CalendarPage() {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 pt-4 pb-2 bg-white border-b">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-gray-800">Календарь</h1>
+          <h1 className="text-xl font-bold text-gray-800">{t('Календарь', 'Calendar')}</h1>
           <div className="flex items-center gap-1">
             <button onClick={prevMonth} className="w-7 h-7 rounded hover:bg-gray-100 text-gray-500 text-sm">←</button>
             <span className="text-sm font-medium text-gray-700 capitalize w-40 text-center">{monthName}</span>

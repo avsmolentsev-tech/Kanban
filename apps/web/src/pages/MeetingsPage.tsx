@@ -6,6 +6,7 @@ import { MeetingDetailPanel } from '../components/meetings/MeetingDetailPanel';
 import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { useFiltersStore } from '../store';
 import type { Meeting, Project } from '@pis/shared';
+import { useLangStore } from '../store/lang.store';
 
 type TimePeriod = 'today' | 'week' | 'month' | 'year';
 
@@ -80,6 +81,7 @@ function MeetingColumn({ label, meetings, projectMap, onClickMeeting }: {
 }
 
 export function MeetingsPage() {
+  const { t } = useLangStore();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const { selectedProjectIds } = useFiltersStore();
@@ -175,12 +177,12 @@ export function MeetingsPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Встречи</h1>
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('Встречи', 'Meetings')}</h1>
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
           {!adding && (
             <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
-              + Встреча
+              {t('+ Встреча', '+ Meeting')}
             </button>
           )}
         </div>
@@ -208,10 +210,10 @@ export function MeetingsPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">Отмена</button>
+              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">{t('Отмена', 'Cancel')}</button>
               <button onClick={submit} disabled={!newTitle.trim() || submitting}
                 className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                {submitting ? '...' : 'Добавить'}
+                {submitting ? '...' : t('Создать', 'Create')}
               </button>
             </div>
           </div>

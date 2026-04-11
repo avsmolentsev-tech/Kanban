@@ -1,14 +1,17 @@
 import { NavLink } from 'react-router-dom';
+import { useLangStore } from '../../store/lang.store';
 
-const tabs = [
-  { to: '/timeline', label: 'Таймлайн', icon: '📊' },
-  { to: '/habits', label: 'Привычки', icon: '🔥' },
-  { to: '/projects', label: 'Проекты', icon: '📁' },
-  { to: '/chat', label: 'Чат', icon: '💬' },
-  { to: '/more', label: 'Ещё', icon: '☰' },
+const getTabs = (t: (ru: string, en: string) => string) => [
+  { to: '/timeline', label: t('Таймлайн', 'Timeline'), icon: '📊' },
+  { to: '/habits', label: t('Привычки', 'Habits'), icon: '🔥' },
+  { to: '/projects', label: t('Проекты', 'Projects'), icon: '📁' },
+  { to: '/chat', label: t('Чат', 'Chat'), icon: '💬' },
+  { to: '/more', label: t('Ещё', 'More'), icon: '☰' },
 ];
 
 export function MobileNav() {
+  const { t } = useLangStore();
+  const tabs = getTabs(t);
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex z-50 safe-bottom">
       {tabs.map(({ to, label, icon }) => (

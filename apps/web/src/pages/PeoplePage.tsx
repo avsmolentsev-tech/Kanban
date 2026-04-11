@@ -7,6 +7,7 @@ import { PersonDetailPanel } from '../components/people/PersonDetailPanel';
 import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { useFiltersStore } from '../store';
 import type { Person, Project } from '@pis/shared';
+import { useLangStore } from '../store/lang.store';
 
 function DraggablePersonCard({ person, project, onClick }: { person: Person; project: Project | null; onClick: () => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: person.id });
@@ -84,6 +85,7 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
 }
 
 export function PeoplePage() {
+  const { t } = useLangStore();
   const [people, setPeople] = useState<Person[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const { selectedProjectIds: filterProjectIds } = useFiltersStore();
@@ -212,7 +214,7 @@ export function PeoplePage() {
   return (
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-6 py-4 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Люди</h1>
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('Люди', 'People')}</h1>
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
           {!adding && (
@@ -265,7 +267,7 @@ export function PeoplePage() {
             </div>
           )}
           <div className="flex justify-end gap-2">
-            <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">Отмена</button>
+            <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">{t('Отмена', 'Cancel')}</button>
             <button onClick={submit} disabled={!name.trim() || submitting}
               className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
               {submitting ? '...' : 'Добавить контакт'}

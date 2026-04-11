@@ -28,24 +28,25 @@ import { isTelegramWebApp, initTelegramApp } from './lib/telegram';
 import { useHotkeys } from './lib/hotkeys';
 import { useTasksStore } from './store/tasks.store';
 import { useProjectsStore } from './store/projects.store';
+import { useLangStore } from './store/lang.store';
 
-const desktopNav = [
-  { to: '/', label: 'Kanban-доска' },
-  { to: '/timeline', label: 'Таймлайн' },
-  { to: '/projects', label: 'Проекты' },
-  { to: '/meetings', label: 'Встречи' },
-  { to: '/people', label: 'Люди' },
-  { to: '/brief', label: 'Дневной брифинг' },
-  { to: '/calendar', label: 'Календарь' },
-  { to: '/ideas', label: 'Идеи' },
-  { to: '/habits', label: 'Привычки' },
-  { to: '/documents', label: 'Документы' },
-  { to: '/chat', label: 'Чат' },
-  { to: '/goals', label: 'Цели' },
-  { to: '/journal', label: 'Ежедневник' },
-  { to: '/dashboard', label: 'Дашборд' },
-  { to: '/stats', label: 'Статистика' },
-  { to: '/gantt', label: 'Гант' },
+const getDesktopNav = (t: (ru: string, en: string) => string) => [
+  { to: '/', label: t('Kanban-доска', 'Kanban Board') },
+  { to: '/timeline', label: t('Таймлайн', 'Timeline') },
+  { to: '/projects', label: t('Проекты', 'Projects') },
+  { to: '/meetings', label: t('Встречи', 'Meetings') },
+  { to: '/people', label: t('Люди', 'People') },
+  { to: '/brief', label: t('Дневной брифинг', 'Daily Brief') },
+  { to: '/calendar', label: t('Календарь', 'Calendar') },
+  { to: '/ideas', label: t('Идеи', 'Ideas') },
+  { to: '/habits', label: t('Привычки', 'Habits') },
+  { to: '/documents', label: t('Документы', 'Documents') },
+  { to: '/chat', label: t('Чат', 'Chat') },
+  { to: '/goals', label: t('Цели', 'Goals') },
+  { to: '/journal', label: t('Ежедневник', 'Journal') },
+  { to: '/dashboard', label: t('Дашборд', 'Dashboard') },
+  { to: '/stats', label: t('Статистика', 'Statistics') },
+  { to: '/gantt', label: t('Гант', 'Gantt') },
 ];
 
 function HotkeyProvider() {
@@ -78,6 +79,9 @@ export default function App() {
   }, []);
 
   const useMobileLayout = isTg || isMobile;
+
+  const { t } = useLangStore();
+  const desktopNav = getDesktopNav(t);
 
   const fetchTasks = useTasksStore((s) => s.fetchTasks);
   const fetchProjects = useProjectsStore((s) => s.fetchProjects);

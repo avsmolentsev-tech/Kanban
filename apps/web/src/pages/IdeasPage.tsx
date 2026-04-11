@@ -5,6 +5,7 @@ import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { useFiltersStore, useProjectsStore } from '../store';
 import { IdeaDetailPanel } from '../components/ideas/IdeaDetailPanel';
 import type { Project } from '@pis/shared';
+import { useLangStore } from '../store/lang.store';
 
 interface Idea {
   id: number;
@@ -71,6 +72,7 @@ function IdeaColumn({ projectId, status, ideas, projects, onClickIdea }: {
 }
 
 export function IdeasPage() {
+  const { t } = useLangStore();
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const { projects, fetchProjects } = useProjectsStore();
   const { selectedProjectIds } = useFiltersStore();
@@ -155,7 +157,7 @@ export function IdeasPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Идеи</h1>
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('Идеи', 'Ideas')}</h1>
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
           {!adding && (
@@ -178,7 +180,7 @@ export function IdeasPage() {
               {activeProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">Отмена</button>
+              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">{t('Отмена', 'Cancel')}</button>
               <button onClick={submit} disabled={!newTitle.trim()}
                 className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
                 Добавить

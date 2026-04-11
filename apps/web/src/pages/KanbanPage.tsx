@@ -6,8 +6,10 @@ import { SavedFilters, applyFilterCriteria, type SavedFilter } from '../componen
 import type { Person, TaskStatus } from '@pis/shared';
 import { peopleApi } from '../api/people.api';
 import { tasksApi } from '../api/tasks.api';
+import { useLangStore } from '../store/lang.store';
 
 export function KanbanPage() {
+  const { t } = useLangStore();
   const { tasks, fetchTasks, moveTask } = useTasksStore();
   const { projects, fetchProjects, reorderProjects } = useProjectsStore();
   const { selectedProjectIds } = useFiltersStore();
@@ -32,7 +34,7 @@ export function KanbanPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b bg-white">
-        <h1 className="text-xl font-bold text-gray-800">Kanban-доска</h1>
+        <h1 className="text-xl font-bold text-gray-800">{t('Kanban-доска', 'Kanban Board')}</h1>
         <div className="flex items-center gap-3">
           <SavedFilters active={activeFilter?.id ?? null} onApply={setActiveFilter} />
           <ProjectFilter projects={projects} />
