@@ -44,7 +44,7 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
 
   return (
     <div className="flex">
-      <div className="sticky left-0 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-gray-50 border-r border-gray-100">
+      <div className="sticky left-0 top-12 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-gray-50 border-r border-gray-100 self-start">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
           <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'Без проекта'}</span>
