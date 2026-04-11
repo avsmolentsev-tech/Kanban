@@ -12,6 +12,7 @@ import { CalendarPage } from './pages/CalendarPage';
 import { HabitsPage } from './pages/HabitsPage';
 import { HabitsSwipePage } from './pages/HabitsSwipePage';
 import { GoalsPage } from './pages/GoalsPage';
+import { JournalPage } from './pages/JournalPage';
 import { MorePage } from './pages/MorePage';
 import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -38,6 +39,7 @@ const desktopNav = [
   { to: '/documents', label: 'Документы' },
   { to: '/chat', label: 'Чат' },
   { to: '/goals', label: 'Цели' },
+  { to: '/journal', label: 'Ежедневник' },
   { to: '/dashboard', label: 'Дашборд' },
 ];
 
@@ -105,6 +107,7 @@ export default function App() {
               <Route path="/ideas" element={<IdeasPage />} />
               <Route path="/habits" element={useMobileLayout ? <HabitsSwipePage /> : <HabitsPage />} />
               <Route path="/goals" element={<GoalsPage />} />
+              <Route path="/journal" element={<JournalPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />

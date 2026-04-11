@@ -11,6 +11,7 @@ import { searchRouter } from './search';
 import { claudeNotesRouter } from './claude-notes';
 import { habitsRouter } from './habits';
 import { goalsRouter } from './goals';
+import { journalRouter } from './journal';
 
 export const router = Router();
 
@@ -26,3 +27,4 @@ router.use('/search', searchRouter);
 router.use('/claude-notes', claudeNotesRouter);
 router.use('/habits', habitsRouter);
 router.use('/goals', goalsRouter);
+router.use('/journal', journalRouter);

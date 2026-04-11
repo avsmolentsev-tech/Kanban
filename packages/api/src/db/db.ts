@@ -173,6 +173,34 @@ export function initDb(): void {
       )
     `);
   } catch {}
+
+  // Task comments
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS task_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id),
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
+
+  // Journal / daily notes
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS journal (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL UNIQUE,
+        focus TEXT NOT NULL DEFAULT '',
+        gratitude TEXT NOT NULL DEFAULT '',
+        notes TEXT NOT NULL DEFAULT '',
+        results TEXT NOT NULL DEFAULT '',
+        mood INTEGER NOT NULL DEFAULT 3,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
 }
 
 export function initTestDb(): void {
@@ -301,6 +329,34 @@ export function initTestDb(): void {
         due_date      TEXT,
         status        TEXT NOT NULL DEFAULT 'active',
         created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
+
+  // Task comments
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS task_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id),
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
+
+  // Journal / daily notes
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS journal (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL UNIQUE,
+        focus TEXT NOT NULL DEFAULT '',
+        gratitude TEXT NOT NULL DEFAULT '',
+        notes TEXT NOT NULL DEFAULT '',
+        results TEXT NOT NULL DEFAULT '',
+        mood INTEGER NOT NULL DEFAULT 3,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
       )
     `);
   } catch {}

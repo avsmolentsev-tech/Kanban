@@ -12,6 +12,7 @@ const items = [
   { to: '/goals', label: 'Цели', icon: '🎯' },
   { to: '/documents', label: 'Документы', icon: '📄' },
   { to: '/dashboard', label: 'Дашборд', icon: '📊' },
+  { to: '/journal', label: 'Ежедневник', icon: '📓' },
   { to: '/chat', label: 'Чат', icon: '💬' },
 ];
 

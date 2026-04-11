@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { SlidePanel } from '../ui/SlidePanel';
 import type { Task, Project, Person, TaskStatus } from '@pis/shared';
 import { tasksApi } from '../../api/tasks.api';
+import { apiGet, apiPost, apiDelete } from '../../api/client';
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'backlog', label: 'Бэклог' },
@@ -42,6 +43,8 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
   });
   const [saving, setSaving] = useState(false);
   const [assignedIdsLocal, setAssignedIdsLocal] = useState<number[]>([]);
+  const [comments, setComments] = useState<Array<{id: number; text: string; created_at: string}>>([]);
+  const [commentText, setCommentText] = useState('');
 
   useEffect(() => {
     if (task) {
@@ -55,8 +58,23 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
         project_id: task.project_id,
       });
       setAssignedIdsLocal((task.people ?? []).map((p) => p.id));
+      apiGet<Array<{id: number; text: string; created_at: string}>>(`/tasks/${task.id}/comments`).then(setComments).catch(() => {});
+      setCommentText('');
     }
   }, [task]);
+
+  const addComment = async () => {
+    if (!task || !commentText.trim()) return;
+    const comment = await apiPost<{id: number; text: string; created_at: string}>(`/tasks/${task.id}/comments`, { text: commentText.trim() });
+    setComments((prev) => [comment, ...prev]);
+    setCommentText('');
+  };
+
+  const deleteComment = async (commentId: number) => {
+    if (!task) return;
+    await apiDelete(`/tasks/${task.id}/comments/${commentId}`);
+    setComments((prev) => prev.filter((c) => c.id !== commentId));
+  };
 
   const assignedIds = new Set(assignedIdsLocal);
 
@@ -218,6 +236,26 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
               </div>
             </div>
           )}
+
+          {/* Comments */}
+          <div>
+            <div className="text-xs text-gray-500 mb-2">Комментарии</div>
+            {comments.map(c => (
+              <div key={c.id} className="text-sm bg-gray-50 dark:bg-gray-900 rounded-lg p-2 mb-1.5 group">
+                <div className="text-gray-700 dark:text-gray-200">{c.text}</div>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-[10px] text-gray-400">{c.created_at.split('T')[0]}</span>
+                  <button onClick={() => deleteComment(c.id)} className="text-[10px] text-red-400 opacity-0 group-hover:opacity-100">удалить</button>
+                </div>
+              </div>
+            ))}
+            <div className="flex gap-2 mt-2">
+              <input className="flex-1 text-sm border border-gray-200 dark:border-gray-600 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 bg-white dark:bg-gray-700"
+                placeholder="Комментарий..." value={commentText} onChange={e => setCommentText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && commentText.trim()) addComment(); }} />
+              <button onClick={addComment} disabled={!commentText.trim()} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700 disabled:opacity-50">→</button>
+            </div>
+          </div>
 
           {/* Subtasks */}
           <div>

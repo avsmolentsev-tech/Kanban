@@ -126,13 +126,16 @@ export function PeoplePage() {
   const projectMap = new Map<number, Project>(projects.map(p => [p.id, p]));
   const grouped: Array<{ project: Project | null; people: Person[] }> = [];
 
-  // Build group map
+  // Build group map — normalise unknown project IDs to null so that
+  // all people without a valid project end up in a single "Без проекта" group.
   const groupMap = new Map<number | null, Person[]>();
   for (const person of people) {
     const ids = person.project_ids && person.project_ids.length > 0
       ? person.project_ids
       : [null];
-    for (const pid of ids) {
+    for (const rawPid of ids) {
+      // Treat unknown / deleted project IDs the same as "no project"
+      const pid = rawPid !== null && projectMap.has(rawPid) ? rawPid : null;
       if (!groupMap.has(pid)) groupMap.set(pid, []);
       groupMap.get(pid)!.push(person);
     }

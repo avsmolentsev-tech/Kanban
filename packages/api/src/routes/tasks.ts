@@ -189,3 +189,22 @@ tasksRouter.delete('/:id', (req: Request, res: Response) => {
   try { if (task?.vault_path) obsidian.deleteFile(task.vault_path); } catch {}
   res.json(ok({ archived: true }));
 });
+
+// Task comments
+tasksRouter.get('/:id/comments', (req: Request, res: Response) => {
+  const comments = getDb().prepare('SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at DESC').all(Number(req.params['id']));
+  res.json(ok(comments));
+});
+
+tasksRouter.post('/:id/comments', (req: Request, res: Response) => {
+  const { text } = req.body;
+  if (!text || typeof text !== 'string') { res.status(400).json(fail('Text required')); return; }
+  const result = getDb().prepare('INSERT INTO task_comments (task_id, text) VALUES (?, ?)').run(Number(req.params['id']), text.trim());
+  const comment = getDb().prepare('SELECT * FROM task_comments WHERE id = ?').get(result.lastInsertRowid);
+  res.json(ok(comment));
+});
+
+tasksRouter.delete('/:id/comments/:commentId', (req: Request, res: Response) => {
+  getDb().prepare('DELETE FROM task_comments WHERE id = ? AND task_id = ?').run(Number(req.params['commentId']), Number(req.params['id']));
+  res.json(ok({ deleted: true }));
+});
