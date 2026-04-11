@@ -3,6 +3,7 @@ import { SlidePanel } from '../ui/SlidePanel';
 import { meetingsApi } from '../../api/meetings.api';
 import { apiPost } from '../../api/client';
 import type { Meeting, Project } from '@pis/shared';
+import { useLangStore } from '../../store/lang.store';
 
 interface Props {
   meeting: Meeting | null;
@@ -20,6 +21,7 @@ interface ChatMessage {
 }
 
 export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDeleted, onTranscribe, transcribing }: Props) {
+  const { t } = useLangStore();
   const [form, setForm] = useState<Partial<Meeting>>({});
   const [projectIds, setProjectIds] = useState<number[]>([]);
   const [tab, setTab] = useState<'details' | 'chat'>('details');
@@ -77,7 +79,10 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
         ? projects.find((p) => p.id === meeting.project_id)?.name ?? ''
         : '';
 
-      const context = `Контекст встречи:\nНазвание: ${meeting.title}\nДата: ${meeting.date}\nПроект: ${projectName || 'не указан'}\n\nСодержание встречи:\n${form.summary_raw || '(пусто)'}\n\nОтвечай на русском. Если пользователь просит выделить задачи, договорённости, ключевые моменты — делай это по содержанию встречи.`;
+      const context = t(
+        `Контекст встречи:\nНазвание: ${meeting.title}\nДата: ${meeting.date}\nПроект: ${projectName || 'не указан'}\n\nСодержание встречи:\n${form.summary_raw || '(пусто)'}\n\nОтвечай на русском. Если пользователь просит выделить задачи, договорённости, ключевые моменты — делай это по содержанию встречи.`,
+        `Meeting context:\nTitle: ${meeting.title}\nDate: ${meeting.date}\nProject: ${projectName || 'not specified'}\n\nMeeting content:\n${form.summary_raw || '(empty)'}\n\nReply in English. If the user asks to highlight tasks, agreements, or key points — extract them from the meeting content.`
+      );
 
       const data = await apiPost<{ reply: string }>('/ai/chat', {
         messages: [...chatMessages, userMsg],
@@ -85,7 +90,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
       });
       setChatMessages((prev) => [...prev, { role: 'assistant', content: data.reply }]);
     } catch (err) {
-      setChatMessages((prev) => [...prev, { role: 'assistant', content: `Ошибка: ${err instanceof Error ? err.message : 'unknown'}` }]);
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: t(`Ошибка: ${err instanceof Error ? err.message : 'unknown'}`, `Error: ${err instanceof Error ? err.message : 'unknown'}`) }]);
     } finally {
       setChatLoading(false);
     }
@@ -103,7 +108,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                 tab === 'details' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              Детали
+              {t('Детали', 'Details')}
             </button>
             <button
               onClick={() => setTab('chat')}
@@ -111,7 +116,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                 tab === 'chat' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              Обсудить с AI
+              {t('Обсудить с AI', 'Discuss with AI')}
             </button>
           </div>
 
@@ -127,13 +132,13 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
               </div>
 
               <div>
-                <div className="text-xs text-gray-500 mb-1">Дата</div>
+                <div className="text-xs text-gray-500 mb-1">{t('Дата', 'Date')}</div>
                 <input type="date" className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
                   value={form.date ?? ''} onChange={(e) => handleChange('date', e.target.value)} onBlur={() => handleBlur('date')} />
               </div>
 
               <div>
-                <div className="text-xs text-gray-500 mb-1.5">Проекты (можно несколько)</div>
+                <div className="text-xs text-gray-500 mb-1.5">{t('Проекты (можно несколько)', 'Projects (multiple allowed)')}</div>
                 <div className="flex flex-wrap gap-2">
                   {projects.filter((p) => !p.archived).map((p) => {
                     const active = projectIds.includes(p.id);
@@ -150,7 +155,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                           } catch (err) {
                             // Revert on error
                             setProjectIds(projectIds);
-                            alert('Ошибка: ' + (err instanceof Error ? err.message : 'unknown'));
+                            alert(t('Ошибка: ', 'Error: ') + (err instanceof Error ? err.message : 'unknown'));
                           }
                         }}
                         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${active ? 'border-transparent text-white' : 'border-gray-200 text-gray-600 bg-white hover:border-gray-300'}`}
@@ -171,18 +176,18 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                     <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
                     <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
                   </svg>
-                  {transcribing ? 'Транскрибирую...' : 'Загрузить запись встречи'}
+                  {transcribing ? t('Транскрибирую...', 'Transcribing...') : t('Загрузить запись встречи', 'Upload meeting recording')}
                 </button>
               )}
 
               <div>
-                <div className="text-xs text-gray-500 mb-1">Содержание / транскрипция</div>
+                <div className="text-xs text-gray-500 mb-1">{t('Содержание / транскрипция', 'Content / transcription')}</div>
                 <textarea className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-y"
                   rows={12} value={form.summary_raw ?? ''} onChange={(e) => handleChange('summary_raw', e.target.value)}
-                  onBlur={() => handleBlur('summary_raw')} placeholder="Текст встречи, заметки, транскрипция..." />
+                  onBlur={() => handleBlur('summary_raw')} placeholder={t('Текст встречи, заметки, транскрипция...', 'Meeting text, notes, transcription...')} />
               </div>
 
-              {(meeting as unknown as Record<string, unknown>)['vault_path'] && (
+              {!!(meeting as unknown as Record<string, unknown>)['vault_path'] && (
                 <div className="text-xs text-gray-400 flex items-center gap-1">
                   <span>Obsidian:</span>
                   <a href={`obsidian://open?vault=ObsidianVault&file=${encodeURIComponent(String((meeting as unknown as Record<string, unknown>)['vault_path']).replace('.md', ''))}`}
@@ -192,12 +197,12 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                 </div>
               )}
 
-              <div className="text-xs text-gray-400">Создано: {meeting.created_at}</div>
+              <div className="text-xs text-gray-400">{t('Создано: ', 'Created: ')}{meeting.created_at}</div>
 
               {onDeleted && (
-                <button onClick={async () => { if (confirm('Удалить встречу?')) { await meetingsApi.delete(meeting.id); onDeleted(); onClose(); } }}
+                <button onClick={async () => { if (confirm(t('Удалить встречу?', 'Delete meeting?'))) { await meetingsApi.delete(meeting.id); onDeleted(); onClose(); } }}
                   className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors">
-                  Удалить встречу
+                  {t('Удалить встречу', 'Delete meeting')}
                 </button>
               )}
             </div>
@@ -209,11 +214,11 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
               <div className="flex-1 overflow-auto space-y-3 mb-3">
                 {chatMessages.length === 0 && (
                   <div className="text-sm text-gray-400 space-y-2 p-3 bg-gray-50 rounded-lg">
-                    <div className="font-medium text-gray-500">Спроси что угодно о встрече:</div>
-                    <div>• «Выдели ключевые договорённости»</div>
-                    <div>• «Какие задачи нужно создать?»</div>
-                    <div>• «Кратко резюмируй встречу»</div>
-                    <div>• «Что обсуждали по срокам?»</div>
+                    <div className="font-medium text-gray-500">{t('Спроси что угодно о встрече:', 'Ask anything about the meeting:')}</div>
+                    <div>• {t('«Выдели ключевые договорённости»', '"Highlight key agreements"')}</div>
+                    <div>• {t('«Какие задачи нужно создать?»', '"What tasks should be created?"')}</div>
+                    <div>• {t('«Кратко резюмируй встречу»', '"Briefly summarize the meeting"')}</div>
+                    <div>• {t('«Что обсуждали по срокам?»', '"What was discussed about deadlines?"')}</div>
                   </div>
                 )}
                 {chatMessages.map((msg, i) => (
@@ -222,12 +227,12 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                       ? 'bg-indigo-50 text-indigo-800 ml-8'
                       : 'bg-gray-50 text-gray-700 mr-8'
                   }`}>
-                    <div className="text-xs font-medium mb-1 text-gray-400">{msg.role === 'user' ? 'Вы' : 'AI'}</div>
+                    <div className="text-xs font-medium mb-1 text-gray-400">{msg.role === 'user' ? t('Вы', 'You') : 'AI'}</div>
                     <div className="whitespace-pre-wrap">{msg.content}</div>
                   </div>
                 ))}
                 {chatLoading && (
-                  <div className="text-sm text-gray-400 px-3 py-2">Думаю...</div>
+                  <div className="text-sm text-gray-400 px-3 py-2">{t('Думаю...', 'Thinking...')}</div>
                 )}
                 <div ref={chatEndRef} />
               </div>
@@ -236,7 +241,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
               <div className="flex gap-2">
                 <input
                   className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-300"
-                  placeholder="Спросите о встрече..."
+                  placeholder={t('Спросите о встрече...', 'Ask about the meeting...')}
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } }}

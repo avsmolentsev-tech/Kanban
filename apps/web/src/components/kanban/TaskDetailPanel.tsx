@@ -3,27 +3,13 @@ import { SlidePanel } from '../ui/SlidePanel';
 import type { Task, Project, Person, TaskStatus } from '@pis/shared';
 import { tasksApi } from '../../api/tasks.api';
 import { apiGet, apiPost, apiDelete } from '../../api/client';
-
-const RECURRENCE_OPTIONS: { value: string | null; label: string }[] = [
-  { value: null, label: 'Нет' },
-  { value: 'daily', label: 'Ежедневно' },
-  { value: 'weekly', label: 'Еженедельно' },
-  { value: 'monthly', label: 'Ежемесячно' },
-];
+import { useLangStore } from '../../store/lang.store';
 
 interface Tag {
   id: number;
   name: string;
   color: string;
 }
-
-const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
-  { value: 'backlog', label: 'Бэклог' },
-  { value: 'todo', label: 'К выполнению' },
-  { value: 'in_progress', label: 'В работе' },
-  { value: 'done', label: 'Готово' },
-  { value: 'someday', label: 'Когда-нибудь' },
-];
 
 interface Props {
   task: Task | null;
@@ -46,6 +32,23 @@ type FormState = {
 };
 
 export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, onDeleted }: Props) {
+  const { t } = useLangStore();
+
+  const RECURRENCE_OPTIONS: { value: string | null; label: string }[] = [
+    { value: null, label: t('Нет', 'None') },
+    { value: 'daily', label: t('Ежедневно', 'Daily') },
+    { value: 'weekly', label: t('Еженедельно', 'Weekly') },
+    { value: 'monthly', label: t('Ежемесячно', 'Monthly') },
+  ];
+
+  const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
+    { value: 'backlog', label: t('Бэклог', 'Backlog') },
+    { value: 'todo', label: t('К выполнению', 'To Do') },
+    { value: 'in_progress', label: t('В работе', 'In Progress') },
+    { value: 'done', label: t('Готово', 'Done') },
+    { value: 'someday', label: t('Когда-нибудь', 'Someday') },
+  ];
+
   const [form, setForm] = useState<FormState>({
     title: '',
     description: '',
@@ -149,7 +152,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
       onUpdated();
     } catch (err) {
       setAssignedIdsLocal(assignedIdsLocal); // revert on error
-      alert('Ошибка: ' + (err instanceof Error ? err.message : 'unknown'));
+      alert(t('Ошибка: ', 'Error: ') + (err instanceof Error ? err.message : 'unknown'));
     } finally {
       setSaving(false);
     }
@@ -172,7 +175,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Status */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Статус</div>
+            <div className="text-xs text-gray-500 mb-1">{t('Статус', 'Status')}</div>
             <select
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
               value={form.status}
@@ -187,14 +190,14 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Project */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Проект</div>
+            <div className="text-xs text-gray-500 mb-1">{t('Проект', 'Project')}</div>
             <select
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
               value={form.project_id ?? ''}
               onChange={(e) => handleSelectChange('project_id', e.target.value === '' ? null : Number(e.target.value))}
               disabled={saving}
             >
-              <option value="">Без проекта</option>
+              <option value="">{t('Без проекта', 'No project')}</option>
               {activeProjects.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -203,7 +206,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Tags */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Метки</div>
+            <div className="text-xs text-gray-500 mb-1">{t('Метки', 'Tags')}</div>
             <div className="flex flex-wrap gap-1.5 mb-2">
               {taskTags.map((tag) => (
                 <span key={tag.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-white"
@@ -236,7 +239,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             {showTagInput ? (
               <div className="flex gap-1.5">
                 <input autoFocus className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-300"
-                  placeholder="Название метки" value={newTagName} onChange={(e) => setNewTagName(e.target.value)}
+                  placeholder={t('Название метки', 'Tag name')} value={newTagName} onChange={(e) => setNewTagName(e.target.value)}
                   onKeyDown={async (e) => {
                     if (e.key === 'Enter' && newTagName.trim()) {
                       const tag = await apiPost<Tag>('/tags', { name: newTagName.trim() });
@@ -249,19 +252,19 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
                     }
                     if (e.key === 'Escape') { setShowTagInput(false); setNewTagName(''); }
                   }} />
-                <button onClick={() => { setShowTagInput(false); setNewTagName(''); }} className="text-xs text-gray-400 hover:text-gray-600">Отмена</button>
+                <button onClick={() => { setShowTagInput(false); setNewTagName(''); }} className="text-xs text-gray-400 hover:text-gray-600">{t('Отмена', 'Cancel')}</button>
               </div>
             ) : (
-              <button onClick={() => setShowTagInput(true)} className="text-xs text-indigo-500 hover:text-indigo-700">+ Новая метка</button>
+              <button onClick={() => setShowTagInput(true)} className="text-xs text-indigo-500 hover:text-indigo-700">+ {t('Новая метка', 'New tag')}</button>
             )}
           </div>
 
           {/* Dependencies */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Зависимости</div>
+            <div className="text-xs text-gray-500 mb-1">{t('Зависимости', 'Dependencies')}</div>
             {dependencies.some(d => d.status !== 'done') && (
               <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/30 rounded px-2 py-1 mb-2 font-medium">
-                ⚠️ Заблокировано
+                ⚠️ {t('Заблокировано', 'Blocked')}
               </div>
             )}
             {dependencies.map(dep => (
@@ -280,7 +283,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
                   }}
                   className="text-[10px] text-red-400 opacity-0 group-hover:opacity-100 hover:text-red-600"
                 >
-                  убрать
+                  {t('убрать', 'remove')}
                 </button>
               </div>
             ))}
@@ -303,7 +306,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
                   }}
                   onBlur={() => setDepSelectOpen(false)}
                 >
-                  <option value="">Выберите задачу...</option>
+                  <option value="">{t('Выберите задачу...', 'Select a task...')}</option>
                   {allTasks
                     .filter(t => t.id !== task.id && !dependencies.some(d => d.id === t.id))
                     .map(t => (
@@ -313,7 +316,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
               </div>
             ) : (
               <button onClick={() => setDepSelectOpen(true)} className="text-xs text-indigo-500 hover:text-indigo-700 mt-1">
-                + Добавить зависимость
+                + {t('Добавить зависимость', 'Add dependency')}
               </button>
             )}
           </div>
@@ -321,13 +324,13 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
           {/* Priority & Urgency */}
           <div className="grid grid-cols-2 gap-3">
             <RatingField
-              label="Приоритет"
+              label={t('Приоритет', 'Priority')}
               value={form.priority}
               onChange={(v) => handleRatingClick('priority', v)}
               disabled={saving}
             />
             <RatingField
-              label="Срочность"
+              label={t('Срочность', 'Urgency')}
               value={form.urgency}
               onChange={(v) => handleRatingClick('urgency', v)}
               disabled={saving}
@@ -336,7 +339,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Due date */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Дедлайн</div>
+            <div className="text-xs text-gray-500 mb-1">{t('Дедлайн', 'Deadline')}</div>
             <input
               type="date"
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
@@ -349,7 +352,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Recurrence */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Повторение</div>
+            <div className="text-xs text-gray-500 mb-1">{t('Повторение', 'Recurrence')}</div>
             <div className="flex gap-1">
               {RECURRENCE_OPTIONS.map((opt) => (
                 <button
@@ -370,7 +373,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Description */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Описание</div>
+            <div className="text-xs text-gray-500 mb-1">{t('Описание', 'Description')}</div>
             <textarea
               className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-none"
               rows={4}
@@ -384,7 +387,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
           {/* Assignees */}
           {people.length > 0 && (
             <div>
-              <div className="text-xs text-gray-500 mb-2">Исполнители</div>
+              <div className="text-xs text-gray-500 mb-2">{t('Исполнители', 'Assignees')}</div>
               <div className="flex flex-wrap gap-2">
                 {people.map((p) => {
                   const assigned = assignedIds.has(p.id);
@@ -404,19 +407,19 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Comments */}
           <div>
-            <div className="text-xs text-gray-500 mb-2">Комментарии</div>
+            <div className="text-xs text-gray-500 mb-2">{t('Комментарии', 'Comments')}</div>
             {comments.map(c => (
               <div key={c.id} className="text-sm bg-gray-50 dark:bg-gray-900 rounded-lg p-2 mb-1.5 group">
                 <div className="text-gray-700 dark:text-gray-200">{c.text}</div>
                 <div className="flex items-center justify-between mt-1">
                   <span className="text-[10px] text-gray-400">{c.created_at.split('T')[0]}</span>
-                  <button onClick={() => deleteComment(c.id)} className="text-[10px] text-red-400 opacity-0 group-hover:opacity-100">удалить</button>
+                  <button onClick={() => deleteComment(c.id)} className="text-[10px] text-red-400 opacity-0 group-hover:opacity-100">{t('удалить', 'delete')}</button>
                 </div>
               </div>
             ))}
             <div className="flex gap-2 mt-2">
               <input className="flex-1 text-sm border border-gray-200 dark:border-gray-600 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 bg-white dark:bg-gray-700"
-                placeholder="Комментарий..." value={commentText} onChange={e => setCommentText(e.target.value)}
+                placeholder={t('Комментарий...', 'Comment...')} value={commentText} onChange={e => setCommentText(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && commentText.trim()) addComment(); }} />
               <button onClick={addComment} disabled={!commentText.trim()} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700 disabled:opacity-50">→</button>
             </div>
@@ -424,7 +427,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           {/* Subtasks */}
           <div>
-            <div className="text-xs text-gray-500 mb-2">Подзадачи</div>
+            <div className="text-xs text-gray-500 mb-2">{t('Подзадачи', 'Subtasks')}</div>
             {((task as unknown as Record<string, unknown>)['subtasks'] as Array<{ id: number; title: string; status: string }> ?? []).map(sub => (
               <div key={sub.id} className="flex items-center gap-2 py-1">
                 <button
@@ -443,12 +446,12 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             <SubtaskInput taskId={task.id} projectId={task.project_id} onCreated={onUpdated} />
           </div>
 
-          <div className="text-xs text-gray-400 pt-2">Создано: {task.created_at}</div>
+          <div className="text-xs text-gray-400 pt-2">{t('Создано: ', 'Created: ')}{task.created_at}</div>
 
           {onDeleted && (
             <button
               onClick={async () => {
-                if (confirm('Удалить задачу?')) {
+                if (confirm(t('Удалить задачу?', 'Delete task?'))) {
                   await tasksApi.delete(task.id);
                   onDeleted();
                   onClose();
@@ -456,7 +459,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
               }}
               className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors"
             >
-              Удалить задачу
+              {t('Удалить задачу', 'Delete task')}
             </button>
           )}
         </div>
@@ -466,6 +469,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 }
 
 function SubtaskInput({ taskId, projectId, onCreated }: { taskId: number; projectId: number | null; onCreated: () => void }) {
+  const { t } = useLangStore();
   const [title, setTitle] = useState('');
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -478,7 +482,7 @@ function SubtaskInput({ taskId, projectId, onCreated }: { taskId: number; projec
       setTitle('');
       onCreated();
     } catch (err) {
-      alert('Ошибка: ' + (err instanceof Error ? err.message : 'unknown'));
+      alert(t('Ошибка: ', 'Error: ') + (err instanceof Error ? err.message : 'unknown'));
     } finally {
       setSaving(false);
     }
@@ -487,7 +491,7 @@ function SubtaskInput({ taskId, projectId, onCreated }: { taskId: number; projec
   if (!adding) {
     return (
       <button onClick={() => setAdding(true)} className="text-xs text-indigo-500 hover:text-indigo-700 mt-1">
-        + Подзадача
+        + {t('Подзадача', 'Subtask')}
       </button>
     );
   }
@@ -497,7 +501,7 @@ function SubtaskInput({ taskId, projectId, onCreated }: { taskId: number; projec
       <input
         autoFocus
         className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-300"
-        placeholder="Название подзадачи"
+        placeholder={t('Название подзадачи', 'Subtask title')}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false); }}

@@ -14,12 +14,15 @@ const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'
 type ProjectStatus = 'active' | 'paused' | 'completed' | 'archived';
 
 const STAGES: ProjectStatus[] = ['active', 'completed', 'archived'];
-const STAGE_LABELS: Record<ProjectStatus, string> = {
-  active: '🚀 Активные',
-  paused: '⏸ На паузе',
-  completed: '🔄 В работе',
-  archived: '✅ Завершены',
-};
+
+function getStageLabels(t: (ru: string, en: string) => string): Record<ProjectStatus, string> {
+  return {
+    active: t('🚀 Активные', '🚀 Active'),
+    paused: t('⏸ На паузе', '⏸ Paused'),
+    completed: t('🔄 В работе', '🔄 In Progress'),
+    archived: t('✅ Завершены', '✅ Completed'),
+  };
+}
 
 interface TaskStats {
   total: number;
@@ -28,6 +31,7 @@ interface TaskStats {
 }
 
 function DraggableProjectCard({ project, stats, onClick }: { project: Project; stats?: TaskStats; onClick: () => void }) {
+  const { t } = useLangStore();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `proj-${project.id}` });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
 
@@ -46,14 +50,14 @@ function DraggableProjectCard({ project, stats, onClick }: { project: Project; s
       {stats && stats.total > 0 && (
         <div>
           <div className="flex items-center justify-between text-[10px] text-gray-400 mb-1">
-            <span>{stats.done}/{stats.total} задач</span>
+            <span>{stats.done}/{stats.total} {t('задач', 'tasks')}</span>
             <span>{progress}%</span>
           </div>
           <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
             <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, backgroundColor: project.color }} />
           </div>
           {stats.in_progress > 0 && (
-            <div className="text-[10px] text-gray-400 mt-1">🔄 {stats.in_progress} в работе</div>
+            <div className="text-[10px] text-gray-400 mt-1">🔄 {stats.in_progress} {t('в работе', 'in progress')}</div>
           )}
         </div>
       )}
@@ -83,6 +87,7 @@ function StageColumn({ stage, projects, statsMap, onClickProject }: {
 
 export function ProjectsPage() {
   const { t } = useLangStore();
+  const stageLabels = getStageLabels(t);
   const { projects, loading, fetchProjects } = useProjectsStore();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
@@ -195,12 +200,12 @@ export function ProjectsPage() {
         <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 p-4">
           <div className="max-w-md space-y-3">
             <input autoFocus className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-              placeholder="Название проекта..." value={name} onChange={(e) => setName(e.target.value)}
+              placeholder={t('Название проекта...', 'Project name...')} value={name} onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false); }} />
             <input className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-              placeholder="Описание (необязательно)" value={description} onChange={(e) => setDescription(e.target.value)} />
+              placeholder={t('Описание (необязательно)', 'Description (optional)')} value={description} onChange={(e) => setDescription(e.target.value)} />
             <div className="flex items-center gap-1">
-              <span className="text-xs text-gray-500 mr-2">Цвет:</span>
+              <span className="text-xs text-gray-500 mr-2">{t('Цвет:', 'Color:')}</span>
               {COLORS.map((c) => (
                 <button key={c} onClick={() => setColor(c)}
                   className={`w-6 h-6 rounded-full border-2 transition-all ${color === c ? 'border-gray-800 scale-110' : 'border-transparent'}`}
@@ -227,7 +232,7 @@ export function ProjectsPage() {
           <div className="sticky top-0 z-30 flex bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 py-2 px-4">
             {STAGES.map(s => (
               <div key={s} className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-500 dark:text-gray-400 text-center">
-                {STAGE_LABELS[s]} ({byStage[s].length})
+                {stageLabels[s]} ({byStage[s].length})
               </div>
             ))}
           </div>
@@ -252,7 +257,7 @@ export function ProjectsPage() {
         </DndContext>
       </div>
 
-      {loading && <div className="absolute inset-0 flex items-center justify-center text-gray-400">Загрузка...</div>}
+      {loading && <div className="absolute inset-0 flex items-center justify-center text-gray-400">{t('Загрузка...', 'Loading...')}</div>}
 
       <ProjectDetailPanel
         project={selected}

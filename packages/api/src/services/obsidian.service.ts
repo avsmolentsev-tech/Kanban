@@ -40,7 +40,29 @@ interface WriteIdeaParams {
 }
 
 export class ObsidianService {
-  constructor(private readonly vaultPath: string) {}
+  constructor(private readonly vaultPath: string, private readonly userPrefix: string = '') {}
+
+  /** Create a user-scoped instance that writes to vault/user_N/ */
+  forUser(userId: number | null): ObsidianService {
+    if (!userId) return this;
+    return new ObsidianService(this.vaultPath, `user_${userId}`);
+  }
+
+  /** Resolve path within vault, prefixed with user dir if set */
+  private userPath(...parts: string[]): string {
+    if (this.userPrefix) {
+      return path.join(this.vaultPath, this.userPrefix, ...parts);
+    }
+    return path.join(this.vaultPath, ...parts);
+  }
+
+  /** Return vault-relative path (for storing in DB) */
+  private userRelative(...parts: string[]): string {
+    if (this.userPrefix) {
+      return [this.userPrefix, ...parts].join('/');
+    }
+    return parts.join('/');
+  }
 
   private ensureDir(dir: string): void {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -65,7 +87,7 @@ export class ObsidianService {
   async writeTask(params: WriteTaskParams): Promise<string> {
     const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15);
     const filename = `task-${ts}-${this.toSlug(params.title)}.md`;
-    const dir = path.join(this.vaultPath, 'Tasks');
+    const dir = this.userPath('Tasks');
     this.ensureDir(dir);
     const people = (params.people ?? []).map((p) => this.wikiLink(p));
     const frontmatter = [
@@ -78,12 +100,12 @@ export class ObsidianService {
       `created_at: ${this.now()}`, '---',
     ].join('\n');
     fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.title}\n\n`, 'utf-8');
-    return `Tasks/${filename}`;
+    return this.userRelative('Tasks', filename);
   }
 
   async writeMeeting(params: WriteMeetingParams): Promise<string> {
     const filename = this.meetingFileName(params.date, params.title);
-    const dir = path.join(this.vaultPath, 'Meetings');
+    const dir = this.userPath('Meetings');
     this.ensureDir(dir);
     const people = (params.people ?? []).map((p) => this.wikiLink(p));
     const frontmatter = [
@@ -94,12 +116,12 @@ export class ObsidianService {
       `created_at: ${this.now()}`, '---',
     ].join('\n');
     fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.title}\n\n${params.summary}\n`, 'utf-8');
-    return `Meetings/${filename}`;
+    return this.userRelative('Meetings', filename);
   }
 
   async writePerson(params: WritePersonParams): Promise<string> {
     const filename = `${this.toSlug(params.name)}.md`;
-    const dir = path.join(this.vaultPath, 'People');
+    const dir = this.userPath('People');
     this.ensureDir(dir);
     const frontmatter = [
       '---', 'type: person', `name: "${params.name}"`,
@@ -108,12 +130,12 @@ export class ObsidianService {
       `created_at: ${this.now()}`, '---',
     ].join('\n');
     fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.name}\n\n`, 'utf-8');
-    return `People/${filename}`;
+    return this.userRelative('People', filename);
   }
 
   async writeIdea(params: WriteIdeaParams): Promise<string> {
     const filename = `${params.date}-idea-${this.toSlug(params.title)}.md`;
-    const dir = path.join(this.vaultPath, 'Ideas');
+    const dir = this.userPath('Ideas');
     this.ensureDir(dir);
     const frontmatter = [
       '---', 'type: idea', `category: ${params.category}`,
@@ -122,16 +144,16 @@ export class ObsidianService {
       `created_at: ${this.now()}`, '---',
     ].join('\n');
     fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.title}\n\n${params.body}\n`, 'utf-8');
-    return `Ideas/${filename}`;
+    return this.userRelative('Ideas', filename);
   }
 
   async writeInboxItem(originalName: string, content: string): Promise<string> {
     const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15);
     const filename = `inbox-${ts}-${this.toSlug(originalName)}.md`;
-    const dir = path.join(this.vaultPath, 'Inbox');
+    const dir = this.userPath('Inbox');
     this.ensureDir(dir);
     fs.writeFileSync(path.join(dir, filename), content, 'utf-8');
-    return `Inbox/${filename}`;
+    return this.userRelative('Inbox', filename);
   }
 
   /** Update an existing .md file by vault_path */
@@ -216,18 +238,23 @@ export class ObsidianService {
   }
 
   readFile(relativePath: string): string {
+    // Try user-scoped path first, fall back to root
+    const userScoped = this.userPath(relativePath);
+    if (fs.existsSync(userScoped)) {
+      return fs.readFileSync(userScoped, 'utf-8');
+    }
     return fs.readFileSync(path.join(this.vaultPath, relativePath), 'utf-8');
   }
 
   listFolder(folder: string): string[] {
-    const dir = path.join(this.vaultPath, folder);
+    const dir = this.userPath(folder);
     if (!fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => `${folder}/${f}`);
+    return fs.readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => this.userRelative(folder, f));
   }
 
   initVaultFolders(): void {
     for (const folder of ['Projects', 'People', 'Meetings', 'Ideas', 'Goals', 'Tasks', 'Materials', 'Inbox']) {
-      this.ensureDir(path.join(this.vaultPath, folder));
+      this.ensureDir(this.userPath(folder));
     }
   }
 }

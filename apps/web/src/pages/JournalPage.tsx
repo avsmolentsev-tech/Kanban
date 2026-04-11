@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiGet, apiPost, apiPatch } from '../api/client';
+import { useLangStore } from '../store/lang.store';
 
 interface JournalEntry {
   id: number;
@@ -26,14 +27,15 @@ function getRecentDates(count: number): string[] {
 }
 
 const MOODS = [
-  { value: 1, emoji: '😫', label: 'Тяжело' },
-  { value: 2, emoji: '😕', label: 'Так себе' },
-  { value: 3, emoji: '😐', label: 'Нормально' },
-  { value: 4, emoji: '🙂', label: 'Хорошо' },
-  { value: 5, emoji: '🔥', label: 'Отлично' },
+  { value: 1, emoji: '😫', labelRu: 'Тяжело', labelEn: 'Rough' },
+  { value: 2, emoji: '😕', labelRu: 'Так себе', labelEn: 'Meh' },
+  { value: 3, emoji: '😐', labelRu: 'Нормально', labelEn: 'Okay' },
+  { value: 4, emoji: '🙂', labelRu: 'Хорошо', labelEn: 'Good' },
+  { value: 5, emoji: '🔥', labelRu: 'Отлично', labelEn: 'Great' },
 ];
 
 export function JournalPage() {
+  const { t } = useLangStore();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [selectedDate, setSelectedDate] = useState(getToday());
   const [entry, setEntry] = useState<JournalEntry | null>(null);
@@ -78,8 +80,8 @@ export function JournalPage() {
   return (
     <div className="flex flex-col h-full pb-20">
       <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">📓 Ежедневник</h1>
-        <div className="text-xs text-gray-400">{saving ? 'Сохранение...' : '✓ Сохранено'}</div>
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('📓 Ежедневник', '📓 Journal')}</h1>
+        <div className="text-xs text-gray-400">{saving ? t('Сохранение...', 'Saving...') : t('✓ Сохранено', '✓ Saved')}</div>
       </div>
 
       {/* Date selector — horizontal scroll */}
@@ -109,7 +111,7 @@ export function JournalPage() {
       <div className="flex-1 overflow-auto px-4 space-y-4">
         {/* Mood */}
         <div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Настроение</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">{t('Настроение', 'Mood')}</div>
           <div className="flex gap-2">
             {MOODS.map(m => (
               <button key={m.value} onClick={() => { setForm(f => ({ ...f, mood: m.value })); setTimeout(save, 100); }}
@@ -117,7 +119,7 @@ export function JournalPage() {
                   form.mood === m.value ? 'bg-indigo-100 dark:bg-indigo-900/40 ring-2 ring-indigo-500' : 'bg-gray-50 dark:bg-gray-800'
                 }`}>
                 <span className="text-2xl">{m.emoji}</span>
-                <span className="text-[10px] text-gray-500 mt-1">{m.label}</span>
+                <span className="text-[10px] text-gray-500 mt-1">{t(m.labelRu, m.labelEn)}</span>
               </button>
             ))}
           </div>
@@ -125,33 +127,33 @@ export function JournalPage() {
 
         {/* Focus */}
         <div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">🎯 Фокус дня</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t('🎯 Фокус дня', '🎯 Focus of the day')}</div>
           <textarea className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 resize-none focus:outline-none focus:border-indigo-300"
-            rows={2} placeholder="На чём сфокусируюсь сегодня..."
+            rows={2} placeholder={t('На чём сфокусируюсь сегодня...', "What I'll focus on today...")}
             value={form.focus} onChange={e => setForm(f => ({ ...f, focus: e.target.value }))} onBlur={handleBlur} />
         </div>
 
         {/* Gratitude */}
         <div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">🙏 Благодарность</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t('🙏 Благодарность', '🙏 Gratitude')}</div>
           <textarea className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 resize-none focus:outline-none focus:border-indigo-300"
-            rows={2} placeholder="За что благодарен..."
+            rows={2} placeholder={t('За что благодарен...', 'What I am grateful for...')}
             value={form.gratitude} onChange={e => setForm(f => ({ ...f, gratitude: e.target.value }))} onBlur={handleBlur} />
         </div>
 
         {/* Notes */}
         <div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">📝 Заметки</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t('📝 Заметки', '📝 Notes')}</div>
           <textarea className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 resize-none focus:outline-none focus:border-indigo-300"
-            rows={3} placeholder="Мысли, идеи, размышления..."
+            rows={3} placeholder={t('Мысли, идеи, размышления...', 'Thoughts, ideas, reflections...')}
             value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} onBlur={handleBlur} />
         </div>
 
         {/* Results */}
         <div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">✅ Итоги дня</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t('✅ Итоги дня', '✅ Day results')}</div>
           <textarea className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 resize-none focus:outline-none focus:border-indigo-300"
-            rows={2} placeholder="Что удалось сделать..."
+            rows={2} placeholder={t('Что удалось сделать...', 'What got done today...')}
             value={form.results} onChange={e => setForm(f => ({ ...f, results: e.target.value }))} onBlur={handleBlur} />
         </div>
       </div>

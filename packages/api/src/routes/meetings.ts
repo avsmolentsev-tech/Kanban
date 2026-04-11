@@ -7,6 +7,8 @@ import { searchService } from '../services/search.service';
 import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
 import OpenAI from 'openai';
+import type { AuthRequest } from '../middleware/auth';
+import { getUserId, userScopeWhere } from '../middleware/user-scope';
 
 const obsidian = new ObsidianService(config.vaultPath);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -57,14 +59,18 @@ function setMeetingProjects(meetingId: number, projectIds: number[]): void {
   db.prepare('UPDATE meetings SET project_id = ? WHERE id = ?').run(projectIds[0] ?? null, meetingId);
 }
 
-meetingsRouter.get('/', (req: Request, res: Response) => {
+meetingsRouter.get('/', (req: AuthRequest, res: Response) => {
+  const scope = userScopeWhere(req);
   let query = 'SELECT DISTINCT m.* FROM meetings m';
   const params: unknown[] = [];
   if (req.query['project']) {
     query += ' LEFT JOIN meeting_projects mp ON mp.meeting_id = m.id WHERE (m.project_id = ? OR mp.project_id = ?)';
     params.push(Number(req.query['project']), Number(req.query['project']));
+    query += ` AND ${scope.sql}`;
+    params.push(...scope.params);
   } else {
-    query += ' WHERE 1=1';
+    query += ` WHERE ${scope.sql}`;
+    params.push(...scope.params);
   }
   if (req.query['from']) { query += ' AND m.date >= ?'; params.push(req.query['from']); }
   if (req.query['to']) { query += ' AND m.date <= ?'; params.push(req.query['to']); }
@@ -73,26 +79,27 @@ meetingsRouter.get('/', (req: Request, res: Response) => {
   res.json(ok(attachProjects(meetings)));
 });
 
-meetingsRouter.post('/', async (req: Request, res: Response) => {
+meetingsRouter.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { title, date, project_id, project_ids, summary_raw } = parsed.data;
   const effectiveIds = project_ids && project_ids.length > 0 ? project_ids : project_id != null ? [project_id] : [];
-  const result = getDb().prepare('INSERT INTO meetings (title, date, project_id, summary_raw) VALUES (?, ?, ?, ?)').run(title, date, effectiveIds[0] ?? null, summary_raw);
+  const userId = getUserId(req);
+  const result = getDb().prepare('INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES (?, ?, ?, ?, ?)').run(title, date, effectiveIds[0] ?? null, summary_raw, userId);
   const meetingId = Number(result.lastInsertRowid);
   if (effectiveIds.length > 0) setMeetingProjects(meetingId, effectiveIds);
   searchService.indexRecord('meeting', meetingId, title, summary_raw);
   // Sync to vault
   try {
     const projectName = effectiveIds[0] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(effectiveIds[0]) as { name: string } | undefined)?.name : undefined;
-    const vaultPath = await obsidian.writeMeeting({ title, date, project: projectName, summary: summary_raw, people: [] });
+    const vaultPath = await obsidian.forUser(getUserId(req)).writeMeeting({ title, date, project: projectName, summary: summary_raw, people: [] });
     getDb().prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultPath, meetingId);
   } catch {}
   const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId) as Record<string, unknown>;
   res.status(201).json(ok(attachProjects([meeting])[0]));
 });
 
-meetingsRouter.patch('/:id', (req: Request, res: Response) => {
+meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const existing = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id);
   if (!existing) { res.status(404).json(fail('Meeting not found')); return; }
@@ -117,7 +124,7 @@ meetingsRouter.patch('/:id', (req: Request, res: Response) => {
   res.json(ok(attachProjects([updated])[0]));
 });
 
-meetingsRouter.get('/:id', (req: Request, res: Response) => {
+meetingsRouter.get('/:id', (req: AuthRequest, res: Response) => {
   const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(Number(req.params['id']));
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
   const agreements = getDb().prepare('SELECT * FROM agreements WHERE meeting_id = ?').all(Number(req.params['id']));
@@ -125,7 +132,7 @@ meetingsRouter.get('/:id', (req: Request, res: Response) => {
   res.json(ok({ ...meeting as object, agreements, people }));
 });
 
-meetingsRouter.delete('/:id', (req: Request, res: Response) => {
+meetingsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const meeting = getDb().prepare('SELECT vault_path FROM meetings WHERE id = ?').get(id) as { vault_path: string | null } | undefined;
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
@@ -134,12 +141,12 @@ meetingsRouter.delete('/:id', (req: Request, res: Response) => {
   getDb().prepare('DELETE FROM agreements WHERE meeting_id = ?').run(id);
   getDb().prepare('DELETE FROM meetings WHERE id = ?').run(id);
   searchService.removeRecord('meeting', id);
-  try { if (meeting.vault_path) obsidian.deleteFile(meeting.vault_path); } catch {}
+  try { if (meeting.vault_path) obsidian.forUser(getUserId(req)).deleteFile(meeting.vault_path); } catch {}
   res.json(ok({ deleted: true }));
 });
 
 // Transcribe audio file and attach to meeting
-meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: Request, res: Response) => {
+meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id) as Record<string, unknown> | undefined;
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
@@ -177,7 +184,7 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: Reque
       const vp = meeting['vault_path'] as string | null;
       if (vp) {
         const projectName = meeting['project_id'] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(meeting['project_id'] as number) as { name: string } | undefined)?.name : undefined;
-        await obsidian.writeMeeting({
+        await obsidian.forUser(getUserId(req)).writeMeeting({
           title: meeting['title'] as string,
           date: meeting['date'] as string,
           project: projectName,

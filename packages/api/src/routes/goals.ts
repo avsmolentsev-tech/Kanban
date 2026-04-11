@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
+import type { AuthRequest } from '../middleware/auth';
+import { getUserId, userScopeWhere } from '../middleware/user-scope';
 
 export const goalsRouter = Router();
 
@@ -29,10 +31,11 @@ const UpdateSchema = z.object({
   status: z.enum(['active', 'completed', 'cancelled']).optional(),
 });
 
-goalsRouter.get('/', (_req: Request, res: Response) => {
+goalsRouter.get('/', (req: AuthRequest, res: Response) => {
+  const scope = userScopeWhere(req);
   const goals = getDb()
-    .prepare("SELECT * FROM goals WHERE type = 'goal' ORDER BY created_at DESC")
-    .all() as Record<string, unknown>[];
+    .prepare(`SELECT * FROM goals WHERE type = 'goal' AND ${scope.sql} ORDER BY created_at DESC`)
+    .all(...scope.params) as Record<string, unknown>[];
 
   const goalIds = goals.map((g) => g['id'] as number);
   let keyResults: Record<string, unknown>[] = [];
@@ -59,23 +62,24 @@ goalsRouter.get('/', (_req: Request, res: Response) => {
   res.json(ok(enriched));
 });
 
-goalsRouter.post('/', (req: Request, res: Response) => {
+goalsRouter.post('/', (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json(fail(parsed.error.message));
     return;
   }
   const { title, description, type, parent_id, project_id, target_value, unit, due_date } = parsed.data;
+  const userId = getUserId(req);
   const result = getDb()
     .prepare(
-      'INSERT INTO goals (title, description, type, parent_id, project_id, target_value, unit, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO goals (title, description, type, parent_id, project_id, target_value, unit, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
-    .run(title, description, type, parent_id ?? null, project_id ?? null, target_value ?? null, unit, due_date ?? null);
+    .run(title, description, type, parent_id ?? null, project_id ?? null, target_value ?? null, unit, due_date ?? null, userId);
   const goal = getDb().prepare('SELECT * FROM goals WHERE id = ?').get(result.lastInsertRowid as number);
   res.status(201).json(ok(goal));
 });
 
-goalsRouter.patch('/:id', (req: Request, res: Response) => {
+goalsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json(fail(parsed.error.message));
@@ -96,7 +100,7 @@ goalsRouter.patch('/:id', (req: Request, res: Response) => {
   res.json(ok(goal));
 });
 
-goalsRouter.delete('/:id', (req: Request, res: Response) => {
+goalsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   // Delete key results first
   getDb().prepare('DELETE FROM goals WHERE parent_id = ?').run(goalId);

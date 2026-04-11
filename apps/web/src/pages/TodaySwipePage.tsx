@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useTasksStore, useProjectsStore } from '../store';
 import { tasksApi } from '../api/tasks.api';
+import { useLangStore } from '../store/lang.store';
 import type { Task } from '@pis/shared';
 
 export function TodaySwipePage() {
+  const { t } = useLangStore();
   const { tasks, fetchTasks } = useTasksStore();
   const { projects, fetchProjects } = useProjectsStore();
   const [index, setIndex] = useState(0);
@@ -61,13 +63,13 @@ export function TodaySwipePage() {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
         <div className="text-6xl mb-4">🎉</div>
-        <div className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Все задачи сделаны!</div>
-        <div className="text-sm text-gray-500 dark:text-gray-400">На сегодня задач нет</div>
+        <div className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">{t('Все задачи сделаны!', 'All tasks done!')}</div>
+        <div className="text-sm text-gray-500 dark:text-gray-400">{t('На сегодня задач нет', 'No tasks for today')}</div>
         <button
           onClick={() => { setIndex(0); fetchTasks(); }}
           className="mt-6 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
         >
-          Обновить
+          {t('Обновить', 'Refresh')}
         </button>
       </div>
     );
@@ -81,7 +83,7 @@ export function TodaySwipePage() {
     <div className="flex flex-col h-full p-4">
       {/* Counter */}
       <div className="text-center mb-4">
-        <div className="text-xs text-gray-400 dark:text-gray-500">Задача {index + 1} из {todayTasks.length}</div>
+        <div className="text-xs text-gray-400 dark:text-gray-500">{t('Задача', 'Task')} {index + 1} {t('из', 'of')} {todayTasks.length}</div>
         <div className="mt-2 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div
             className="h-full bg-indigo-600 transition-all"
@@ -135,7 +137,7 @@ export function TodaySwipePage() {
             className="absolute top-6 left-6 px-4 py-2 border-4 border-green-500 rounded-xl text-green-500 font-bold text-2xl rotate-[-20deg] pointer-events-none"
             style={{ opacity: doneOpacity }}
           >
-            ГОТОВО ✓
+            {t('ГОТОВО ✓', 'DONE ✓')}
           </div>
 
           {/* Skip stamp */}
@@ -143,7 +145,7 @@ export function TodaySwipePage() {
             className="absolute top-6 right-6 px-4 py-2 border-4 border-gray-400 rounded-xl text-gray-400 font-bold text-2xl rotate-[20deg] pointer-events-none"
             style={{ opacity: skipOpacity }}
           >
-            ДАЛЬШЕ
+            {t('ДАЛЬШЕ', 'SKIP')}
           </div>
 
           {/* Project badge */}
@@ -171,7 +173,7 @@ export function TodaySwipePage() {
                 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
                 : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
             }`}>
-              {currentTask.status === 'in_progress' ? 'В работе' : 'К выполнению'}
+              {currentTask.status === 'in_progress' ? t('В работе', 'In Progress') : t('К выполнению', 'To Do')}
             </span>
           </div>
 
@@ -201,7 +203,7 @@ export function TodaySwipePage() {
             onClick={() => handleSwipe('left')}
             disabled={animating}
             className="w-14 h-14 rounded-full bg-white dark:bg-gray-700 shadow-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center text-2xl hover:scale-110 transition-transform disabled:opacity-50"
-            title="Пропустить"
+            title={t('Пропустить', 'Skip')}
           >
             ↻
           </button>
@@ -209,7 +211,7 @@ export function TodaySwipePage() {
             onClick={() => handleSwipe('right')}
             disabled={animating}
             className="w-16 h-16 rounded-full bg-green-500 shadow-lg flex items-center justify-center text-white text-3xl hover:scale-110 transition-transform disabled:opacity-50"
-            title="Готово"
+            title={t('Готово', 'Done')}
           >
             ✓
           </button>
@@ -218,7 +220,7 @@ export function TodaySwipePage() {
 
       {/* Hint */}
       <div className="text-center text-xs text-gray-400 dark:text-gray-500 mt-2">
-        Свайп вправо → готово, влево → следующая
+        {t('Свайп вправо → готово, влево → следующая', 'Swipe right → done, left → next')}
       </div>
     </div>
   );

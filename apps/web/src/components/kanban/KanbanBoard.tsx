@@ -10,6 +10,7 @@ import { AddTaskModal } from './AddTaskModal';
 import { AddProjectForm } from './AddProjectForm';
 import { tasksApi } from '../../api/tasks.api';
 import { apiGet, apiPost } from '../../api/client';
+import { useLangStore } from '../../store/lang.store';
 
 interface TaskTemplate {
   id: number;
@@ -22,7 +23,15 @@ interface TaskTemplate {
 }
 
 const COLUMNS: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'done', 'someday'];
-const COL_LABELS: Record<TaskStatus, string> = { backlog: 'Бэклог', todo: 'К выполнению', in_progress: 'В работе', done: 'Готово', someday: 'Когда-нибудь' };
+function getColLabels(t: (ru: string, en: string) => string): Record<TaskStatus, string> {
+  return {
+    backlog: t('Бэклог', 'Backlog'),
+    todo: t('К выполнению', 'To Do'),
+    in_progress: t('В работе', 'In Progress'),
+    done: t('Готово', 'Done'),
+    someday: t('Когда-нибудь', 'Someday'),
+  };
+}
 
 interface Props {
   tasks: Task[];
@@ -35,6 +44,7 @@ interface Props {
 }
 
 function TemplateDropdown({ onSelect, onRefresh }: { onSelect: (tpl: TaskTemplate) => void; onRefresh: () => void }) {
+  const { t } = useLangStore();
   const [open, setOpen] = useState(false);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -59,14 +69,14 @@ function TemplateDropdown({ onSelect, onRefresh }: { onSelect: (tpl: TaskTemplat
       <button
         onClick={() => setOpen(!open)}
         className="text-xs text-gray-400 hover:text-indigo-600 transition-colors"
-        title="Создать из шаблона"
+        title={t('Создать из шаблона', 'Create from template')}
       >
-        Из шаблона
+        {t('Из шаблона', 'From template')}
       </button>
       {open && (
         <div className="absolute z-50 mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 right-0">
-          {loading && <div className="px-3 py-2 text-xs text-gray-400">Загрузка...</div>}
-          {!loading && templates.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">Нет шаблонов</div>}
+          {loading && <div className="px-3 py-2 text-xs text-gray-400">{t('Загрузка...', 'Loading...')}</div>}
+          {!loading && templates.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">{t('Нет шаблонов', 'No templates')}</div>}
           {templates.map((tpl) => (
             <button
               key={tpl.id}
@@ -86,6 +96,7 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
   droppableId: string; status: TaskStatus; tasks: Task[]; projects: Project[]; people: Person[];
   onTaskClick: (t: Task, e: React.MouseEvent) => void; onToggleDone: (id: number, newStatus: TaskStatus) => void; projectId: number | null; onRefresh: () => void; selectedIds?: Set<number>;
 }) {
+  const { t } = useLangStore();
   const { setNodeRef, isOver } = useDroppable({ id: droppableId });
   const pMap = new Map(projects.map((p) => [p.id, p]));
   const [adding, setAdding] = useState(false);
@@ -93,19 +104,19 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
   return (
     <div ref={setNodeRef} className={`flex flex-col w-64 min-w-[256px] bg-gray-100 dark:bg-gray-800 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
       <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
-        {tasks.map((t) => (
-          <div key={t.id}
-            className={selectedIds?.has(t.id) ? 'ring-2 ring-indigo-500 rounded-lg' : ''}
+        {tasks.map((task) => (
+          <div key={task.id}
+            className={selectedIds?.has(task.id) ? 'ring-2 ring-indigo-500 rounded-lg' : ''}
             onClickCapture={(e) => {
               if (e.ctrlKey || e.metaKey || (selectedIds && selectedIds.size > 0)) {
                 e.stopPropagation();
                 e.preventDefault();
-                onTaskClick(t, e);
+                onTaskClick(task, e);
               }
             }}
           >
-            <TaskCard task={t} project={t.project_id ? pMap.get(t.project_id) : undefined}
-              onClick={() => { if (!selectedIds || selectedIds.size === 0) onTaskClick(t, {} as React.MouseEvent); }}
+            <TaskCard task={task} project={task.project_id ? pMap.get(task.project_id) : undefined}
+              onClick={() => { if (!selectedIds || selectedIds.size === 0) onTaskClick(task, {} as React.MouseEvent); }}
               onToggleDone={onToggleDone} dragMode="draggable" />
           </div>
         ))}
@@ -116,7 +127,7 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
         </div>
       ) : (
         <div className="mt-2 flex items-center justify-center gap-2">
-          <button onClick={() => setAdding(true)} className="text-xs text-gray-400 hover:text-indigo-600 transition-colors">+ Добавить</button>
+          <button onClick={() => setAdding(true)} className="text-xs text-gray-400 hover:text-indigo-600 transition-colors">{t('+ Добавить', '+ Add')}</button>
           <span className="text-gray-300 dark:text-gray-600">|</span>
           <TemplateDropdown onSelect={() => {}} onRefresh={onRefresh} />
         </div>
@@ -136,6 +147,8 @@ function SortableProjectRow({ id, children }: { id: string; children: (dragHandl
 }
 
 export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone, onRefresh, onReorderProjects }: Props) {
+  const { t } = useLangStore();
+  const COL_LABELS = getColLabels(t);
   const [selected, setSelected] = useState<Task | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 8 } });
@@ -162,10 +175,10 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
   };
 
   const tasksByProject = new Map<number | null, Task[]>();
-  for (const t of tasks) {
-    const key = t.project_id;
+  for (const task of tasks) {
+    const key = task.project_id;
     if (!tasksByProject.has(key)) tasksByProject.set(key, []);
-    tasksByProject.get(key)!.push(t);
+    tasksByProject.get(key)!.push(task);
   }
 
   const projectOrder: Array<{ project: Project | null; tasks: Task[] }> = [];
@@ -209,7 +222,7 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
           : [draggedId];
 
         for (const taskId of idsToMove) {
-          const task = tasks.find((t) => t.id === taskId);
+          const task = tasks.find((tk) => tk.id === taskId);
           if (task && task.project_id !== targetProjectId) {
             await tasksApi.update(taskId, { status, project_id: targetProjectId });
           } else {
@@ -255,9 +268,9 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
                             </div>
                           )}
                           <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-                          <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'Без проекта'}</span>
+                          <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? t('Без проекта', 'No project')}</span>
                         </div>
-                        <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} задач</div>
+                        <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} {t('задач', 'tasks')}</div>
                       </div>
                       <div className="flex gap-4">
                         {COLUMNS.map((status) => (
@@ -265,7 +278,7 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
                             key={`${project?.id ?? 'none'}-${status}`}
                             droppableId={`${project?.id ?? 'none'}-${status}`}
                             status={status}
-                            tasks={pTasks.filter((t) => t.status === status)}
+                            tasks={pTasks.filter((tk) => tk.status === status)}
                             projects={projects}
                             people={people}
                             onTaskClick={handleCardClick}

@@ -15,8 +15,22 @@ import { journalRouter } from './journal';
 import { exportRouter } from './export';
 import { tagsRouter } from './tags';
 import { templatesRouter } from './templates';
+import { emailWebhookRouter } from './email-webhook';
+import { widgetRouter } from './widget';
+import { googleCalendarRouter } from './google-calendar';
+import { authRouter } from './auth';
+import { requireAuth } from '../middleware/auth';
+import { adminRouter } from './admin';
 
 export const router = Router();
+
+// Public routes (no auth required)
+router.use('/auth', authRouter);
+router.use('/widget', widgetRouter);
+router.use('/email-webhook', emailWebhookRouter);
+
+// All routes below require authentication
+router.use(requireAuth);
 
 router.use('/projects', projectsRouter);
 router.use('/tasks', tasksRouter);
@@ -34,3 +48,5 @@ router.use('/journal', journalRouter);
 router.use('/export', exportRouter);
 router.use('/tags', tagsRouter);
 router.use('/templates', templatesRouter);
+router.use('/google-calendar', googleCalendarRouter);
+router.use('/admin', adminRouter);

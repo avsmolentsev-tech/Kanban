@@ -8,6 +8,8 @@ import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
 import { config } from '../config';
 import slugify from 'slugify';
+import type { AuthRequest } from '../middleware/auth';
+import { getUserId, userScopeWhere } from '../middleware/user-scope';
 
 const attachDir = path.join(config.vaultPath, 'Attachments');
 if (!fs.existsSync(attachDir)) fs.mkdirSync(attachDir, { recursive: true });
@@ -35,33 +37,35 @@ const UpdateSchema = z.object({
   status: z.enum(DOC_STATUSES).optional(),
 });
 
-documentsRouter.get('/', (req: Request, res: Response) => {
-  let query = 'SELECT * FROM documents WHERE 1=1';
-  const params: unknown[] = [];
+documentsRouter.get('/', (req: AuthRequest, res: Response) => {
+  const scope = userScopeWhere(req);
+  let query = `SELECT * FROM documents WHERE ${scope.sql}`;
+  const params: unknown[] = [...scope.params];
   if (req.query['project']) { query += ' AND project_id = ?'; params.push(Number(req.query['project'])); }
   if (req.query['category']) { query += ' AND category = ?'; params.push(req.query['category']); }
   query += ' ORDER BY updated_at DESC';
   res.json(ok(getDb().prepare(query).all(...params)));
 });
 
-documentsRouter.post('/', (req: Request, res: Response) => {
+documentsRouter.post('/', (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { title, body, project_id, category, vault_path } = parsed.data;
+  const userId = getUserId(req);
   const result = getDb()
-    .prepare('INSERT INTO documents (title, body, project_id, category, vault_path) VALUES (?, ?, ?, ?, ?)')
-    .run(title, body, project_id ?? null, category, vault_path ?? null);
+    .prepare('INSERT INTO documents (title, body, project_id, category, vault_path, user_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(title, body, project_id ?? null, category, vault_path ?? null, userId);
   searchService.indexRecord('document', Number(result.lastInsertRowid), title, body ?? '');
   res.status(201).json(ok(getDb().prepare('SELECT * FROM documents WHERE id = ?').get(result.lastInsertRowid)));
 });
 
-documentsRouter.get('/:id', (req: Request, res: Response) => {
+documentsRouter.get('/:id', (req: AuthRequest, res: Response) => {
   const doc = getDb().prepare('SELECT * FROM documents WHERE id = ?').get(Number(req.params['id']));
   if (!doc) { res.status(404).json(fail('Document not found')); return; }
   res.json(ok(doc));
 });
 
-documentsRouter.patch('/:id', (req: Request, res: Response) => {
+documentsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const fields = Object.entries(parsed.data)
@@ -113,7 +117,7 @@ documentsRouter.patch('/:id', (req: Request, res: Response) => {
   res.json(ok(updatedDoc));
 });
 
-documentsRouter.delete('/:id', (req: Request, res: Response) => {
+documentsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   // Delete attachments
   const atts = getDb().prepare('SELECT filename FROM attachments WHERE document_id = ?').all(id) as Array<{ filename: string }>;
@@ -124,7 +128,7 @@ documentsRouter.delete('/:id', (req: Request, res: Response) => {
 });
 
 // Attachments
-documentsRouter.post('/:id/attachments', upload.single('file'), (req: Request, res: Response) => {
+documentsRouter.post('/:id/attachments', upload.single('file'), (req: AuthRequest, res: Response) => {
   const docId = Number(req.params['id']);
   if (!req.file) { res.status(400).json(fail('Файл не предоставлен')); return; }
 
@@ -139,12 +143,12 @@ documentsRouter.post('/:id/attachments', upload.single('file'), (req: Request, r
   res.status(201).json(ok(attachment));
 });
 
-documentsRouter.get('/:id/attachments', (req: Request, res: Response) => {
+documentsRouter.get('/:id/attachments', (req: AuthRequest, res: Response) => {
   const atts = getDb().prepare('SELECT * FROM attachments WHERE document_id = ? ORDER BY created_at DESC').all(Number(req.params['id']));
   res.json(ok(atts));
 });
 
-documentsRouter.delete('/attachments/:attId', (req: Request, res: Response) => {
+documentsRouter.delete('/attachments/:attId', (req: AuthRequest, res: Response) => {
   const att = getDb().prepare('SELECT * FROM attachments WHERE id = ?').get(Number(req.params['attId'])) as { filename: string } | undefined;
   if (att) {
     try { fs.unlinkSync(path.join(attachDir, att.filename)); } catch {}
@@ -154,7 +158,7 @@ documentsRouter.delete('/attachments/:attId', (req: Request, res: Response) => {
 });
 
 // Serve attachment files
-documentsRouter.get('/attachments/file/:filename', (req: Request, res: Response) => {
+documentsRouter.get('/attachments/file/:filename', (req: AuthRequest, res: Response) => {
   const filePath = path.join(attachDir, req.params['filename']!);
   if (!fs.existsSync(filePath)) { res.status(404).json(fail('Файл не найден')); return; }
   res.sendFile(filePath);

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../api/client';
+import { useLangStore } from '../store/lang.store';
 
 interface Habit {
   id: number;
@@ -28,6 +29,7 @@ interface HabitStat {
 }
 
 function SwipeableHabitCard({ habit, isLogged, onToggle }: { habit: Habit; isLogged: boolean; onToggle: () => void }) {
+  const { t } = useLangStore();
   const [swipeX, setSwipeX] = useState(0);
   const [startX, setStartX] = useState<number | null>(null);
   const [swiped, setSwiped] = useState(false);
@@ -66,7 +68,7 @@ function SwipeableHabitCard({ habit, isLogged, onToggle }: { habit: Habit; isLog
       {!isLogged && (
         <div className="absolute inset-y-0 left-0 w-full bg-green-500 flex items-center pl-4 text-white font-bold"
           style={{ opacity: doneOpacity * 0.3 }}>
-          ✓ Готово
+          ✓ {t('Готово', 'Done')}
         </div>
       )}
       <div
@@ -134,9 +136,19 @@ function getWeeksGrid(weeksCount: number): string[][] {
   return grid;
 }
 
-const DAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-
 export function HabitsPage() {
+  const { t } = useLangStore();
+
+  const DAY_LABELS = [
+    t('Пн', 'Mo'),
+    t('Вт', 'Tu'),
+    t('Ср', 'We'),
+    t('Чт', 'Th'),
+    t('Пт', 'Fr'),
+    t('Сб', 'Sa'),
+    t('Вс', 'Su'),
+  ];
+
   const [habits, setHabits] = useState<Habit[]>([]);
   const [logMap, setLogMap] = useState<Record<number, Set<string>>>({});
   const [showModal, setShowModal] = useState(false);
@@ -265,7 +277,7 @@ export function HabitsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">
-        Загрузка...
+        {t('Загрузка...', 'Loading...')}
       </div>
     );
   }
@@ -274,26 +286,26 @@ export function HabitsPage() {
     <div className="p-4 max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Привычки</h1>
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">{t('Привычки', 'Habits')}</h1>
         <button
           onClick={openCreate}
           className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
         >
-          + Добавить
+          + {t('Добавить', 'Add')}
         </button>
       </div>
 
       {habits.length === 0 ? (
         <div className="text-center py-16 text-gray-400 dark:text-gray-500">
           <div className="text-4xl mb-3">🔥</div>
-          <p className="text-lg">Нет привычек</p>
-          <p className="text-sm mt-1">Добавьте первую привычку для отслеживания</p>
+          <p className="text-lg">{t('Нет привычек', 'No habits yet')}</p>
+          <p className="text-sm mt-1">{t('Добавьте первую привычку для отслеживания', 'Add your first habit to track')}</p>
         </div>
       ) : (
         <div className="space-y-6">
           {/* Today's checklist — swipeable cards */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-            <div className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">Сегодня</div>
+            <div className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">{t('Сегодня', 'Today')}</div>
             <div className="space-y-2">
               {habits.map((habit) => {
                 const isLogged = logMap[habit.id]?.has(today);
@@ -301,7 +313,7 @@ export function HabitsPage() {
                   <SwipeableHabitCard
                     key={habit.id}
                     habit={habit}
-                    isLogged={isLogged}
+                    isLogged={!!isLogged}
                     onToggle={() => toggleLog(habit.id, today)}
                   />
                 );
@@ -309,7 +321,7 @@ export function HabitsPage() {
             </div>
             {habits.length > 0 && (
               <div className="mt-3 text-center text-xs text-gray-400">
-                {habits.filter(h => logMap[h.id]?.has(today)).length} из {habits.length} выполнено
+                {habits.filter(h => logMap[h.id]?.has(today)).length} {t('из', 'of')} {habits.length} {t('выполнено', 'done')}
               </div>
             )}
           </div>
@@ -329,7 +341,10 @@ export function HabitsPage() {
                   </span>
                   {habit.streak > 0 && (
                     <span className="text-sm text-orange-500 font-medium ml-1">
-                      🔥 {habit.streak} {habit.streak === 1 ? 'день' : habit.streak < 5 ? 'дня' : 'дней'}
+                      🔥 {habit.streak} {t(
+                        habit.streak === 1 ? 'день' : habit.streak < 5 ? 'дня' : 'дней',
+                        habit.streak === 1 ? 'day' : 'days'
+                      )}
                     </span>
                   )}
                 </div>
@@ -337,14 +352,14 @@ export function HabitsPage() {
                   <button
                     onClick={() => openEdit(habit)}
                     className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded transition-colors"
-                    title="Редактировать"
+                    title={t('Редактировать', 'Edit')}
                   >
                     ✏️
                   </button>
                   <button
                     onClick={() => deleteHabit(habit.id)}
                     className="p-1.5 text-gray-400 hover:text-red-500 rounded transition-colors"
-                    title="Архивировать"
+                    title={t('Архивировать', 'Archive')}
                   >
                     🗑️
                   </button>
@@ -370,17 +385,17 @@ export function HabitsPage() {
                   {Array.from({ length: weeksCount }, (_, col) => (
                     <div key={col} className="flex flex-col gap-0.5">
                       {grid.map((row, rowIdx) => {
-                        const date = row[col];
+                        const date = row[col] ?? '';
                         const isFuture = date > today;
-                        const isLogged = logMap[habit.id]?.has(date);
+                        const isLogged = date ? logMap[habit.id]?.has(date) : false;
                         const isToday = date === today;
 
                         return (
                           <button
-                            key={date}
-                            onClick={() => toggleLog(habit.id, date)}
+                            key={date || `${col}-${rowIdx}`}
+                            onClick={() => date && toggleLog(habit.id, date)}
                             disabled={isFuture}
-                            title={`${DAY_LABELS[rowIdx]}, ${date}${isLogged ? ' — выполнено' : ''}`}
+                            title={`${DAY_LABELS[rowIdx]}, ${date}${isLogged ? ` — ${t('выполнено', 'done')}` : ''}`}
                             className={`w-[14px] h-[14px] rounded-sm transition-colors ${
                               isFuture
                                 ? 'bg-gray-100 dark:bg-gray-700/30 cursor-default'
@@ -415,18 +430,18 @@ export function HabitsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4">
-              {editingHabit ? 'Редактировать привычку' : 'Новая привычка'}
+              {editingHabit ? t('Редактировать привычку', 'Edit habit') : t('Новая привычка', 'New habit')}
             </h2>
 
             {/* Title */}
             <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-              Название
+              {t('Название', 'Name')}
             </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Например: Медитация"
+              placeholder={t('Например: Медитация', 'E.g.: Meditation')}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-4"
               autoFocus
               onKeyDown={(e) => e.key === 'Enter' && saveHabit()}
@@ -434,7 +449,7 @@ export function HabitsPage() {
 
             {/* Icon picker */}
             <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-              Иконка
+              {t('Иконка', 'Icon')}
             </label>
             <div className="flex flex-wrap gap-2 mb-4">
               {EMOJI_OPTIONS.map((em) => (
@@ -454,7 +469,7 @@ export function HabitsPage() {
 
             {/* Color picker */}
             <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-              Цвет
+              {t('Цвет', 'Color')}
             </label>
             <div className="flex flex-wrap gap-2 mb-6">
               {COLOR_OPTIONS.map((c) => (
@@ -475,14 +490,14 @@ export function HabitsPage() {
                 onClick={() => setShowModal(false)}
                 className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
               >
-                Отмена
+                {t('Отмена', 'Cancel')}
               </button>
               <button
                 onClick={saveHabit}
                 disabled={!title.trim()}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
               >
-                {editingHabit ? 'Сохранить' : 'Создать'}
+                {editingHabit ? t('Сохранить', 'Save') : t('Создать', 'Create')}
               </button>
             </div>
           </div>

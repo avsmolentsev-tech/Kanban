@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
+import type { AuthRequest } from '../middleware/auth';
+import { getUserId, userScopeWhere } from '../middleware/user-scope';
 
 export const habitsRouter = Router();
 
@@ -57,10 +59,11 @@ function calculateStreak(habitId: number): number {
 }
 
 // GET /habits — list all active habits with streak
-habitsRouter.get('/', (_req: Request, res: Response) => {
+habitsRouter.get('/', (req: AuthRequest, res: Response) => {
+  const scope = userScopeWhere(req);
   const habits = getDb()
-    .prepare('SELECT * FROM habits WHERE archived = 0 ORDER BY created_at ASC')
-    .all() as Array<Record<string, unknown>>;
+    .prepare(`SELECT * FROM habits WHERE archived = 0 AND ${scope.sql} ORDER BY created_at ASC`)
+    .all(...scope.params) as Array<Record<string, unknown>>;
 
   const result = habits.map((h) => ({
     ...h,
@@ -71,15 +74,16 @@ habitsRouter.get('/', (_req: Request, res: Response) => {
 });
 
 // GET /habits/stats — completion stats for current month
-habitsRouter.get('/stats', (_req: Request, res: Response) => {
+habitsRouter.get('/stats', (req: AuthRequest, res: Response) => {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const monthPrefix = `${year}-${month}`;
 
+  const scope = userScopeWhere(req);
   const habits = getDb()
-    .prepare('SELECT id, title, icon, color FROM habits WHERE archived = 0')
-    .all() as Array<{ id: number; title: string; icon: string; color: string }>;
+    .prepare(`SELECT id, title, icon, color FROM habits WHERE archived = 0 AND ${scope.sql}`)
+    .all(...scope.params) as Array<{ id: number; title: string; icon: string; color: string }>;
 
   const stats = habits.map((h) => {
     const logs = getDb()
@@ -104,19 +108,20 @@ habitsRouter.get('/stats', (_req: Request, res: Response) => {
 });
 
 // POST /habits — create habit
-habitsRouter.post('/', (req: Request, res: Response) => {
+habitsRouter.post('/', (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { title, icon, color, frequency } = parsed.data;
+  const userId = getUserId(req);
   const result = getDb()
-    .prepare('INSERT INTO habits (title, icon, color, frequency) VALUES (?, ?, ?, ?)')
-    .run(title, icon, color, frequency);
+    .prepare('INSERT INTO habits (title, icon, color, frequency, user_id) VALUES (?, ?, ?, ?, ?)')
+    .run(title, icon, color, frequency, userId);
   const habit = getDb().prepare('SELECT * FROM habits WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(ok({ ...(habit as Record<string, unknown>), streak: 0 }));
 });
 
 // PATCH /habits/:id — update habit
-habitsRouter.patch('/:id', (req: Request, res: Response) => {
+habitsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const id = Number(req.params['id']);
@@ -133,14 +138,14 @@ habitsRouter.patch('/:id', (req: Request, res: Response) => {
 });
 
 // DELETE /habits/:id — archive habit
-habitsRouter.delete('/:id', (req: Request, res: Response) => {
+habitsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   getDb().prepare('UPDATE habits SET archived = 1 WHERE id = ?').run(id);
   res.json(ok({ archived: true }));
 });
 
 // POST /habits/:id/log — toggle log for date
-habitsRouter.post('/:id/log', (req: Request, res: Response) => {
+habitsRouter.post('/:id/log', (req: AuthRequest, res: Response) => {
   const parsed = LogSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const id = Number(req.params['id']);

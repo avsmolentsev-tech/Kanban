@@ -21,12 +21,6 @@ interface Idea {
 type IdeaStatus = Idea['status'];
 
 const STATUSES: IdeaStatus[] = ['backlog', 'in_obsidian', 'completed', 'garbage'];
-const STATUS_LABELS: Record<IdeaStatus, string> = {
-  backlog: 'Бэклог',
-  in_obsidian: 'В Obsidian',
-  completed: 'Выполнено',
-  garbage: 'Мусор',
-};
 const STATUS_COLORS: Record<IdeaStatus, string> = {
   backlog: 'text-purple-600',
   in_obsidian: 'text-indigo-600',
@@ -73,6 +67,13 @@ function IdeaColumn({ projectId, status, ideas, projects, onClickIdea }: {
 
 export function IdeasPage() {
   const { t } = useLangStore();
+
+  const STATUS_LABELS: Record<IdeaStatus, string> = {
+    backlog: t('Бэклог', 'Backlog'),
+    in_obsidian: t('В Obsidian', 'In Obsidian'),
+    completed: t('Выполнено', 'Completed'),
+    garbage: t('Мусор', 'Garbage'),
+  };
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const { projects, fetchProjects } = useProjectsStore();
   const { selectedProjectIds } = useFiltersStore();
@@ -162,7 +163,7 @@ export function IdeasPage() {
           <ProjectFilter projects={projects} />
           {!adding && (
             <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
-              + Идея
+              + {t('Идея', 'Idea')}
             </button>
           )}
         </div>
@@ -172,18 +173,18 @@ export function IdeasPage() {
         <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 p-4">
           <div className="max-w-md space-y-3">
             <input autoFocus className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-              placeholder="Название идеи" value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
+              placeholder={t('Название идеи', 'Idea title')} value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false); }} />
             <select className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 bg-white"
               value={newProjectId} onChange={(e) => setNewProjectId(e.target.value !== '' ? Number(e.target.value) : '')}>
-              <option value="">Без проекта</option>
+              <option value="">{t('Без проекта', 'No project')}</option>
               {activeProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <div className="flex justify-end gap-2">
               <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">{t('Отмена', 'Cancel')}</button>
               <button onClick={submit} disabled={!newTitle.trim()}
                 className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                Добавить
+                {t('Добавить', 'Add')}
               </button>
             </div>
           </div>
@@ -219,9 +220,9 @@ export function IdeasPage() {
                   <div className="sticky left-0 top-12 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-gray-50 border-r border-gray-100 self-start">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-                      <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'Без проекта'}</span>
+                      <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? t('Без проекта', 'No project')}</span>
                     </div>
-                    <div className="text-xs text-gray-400 mt-1 ml-5">{rowIdeas.length} идей</div>
+                    <div className="text-xs text-gray-400 mt-1 ml-5">{rowIdeas.length} {t('идей', 'ideas')}</div>
                   </div>
 
                   <div className="flex gap-3">
@@ -236,7 +237,7 @@ export function IdeasPage() {
             })}
 
             {rows.length === 0 && (
-              <div className="text-gray-400 text-sm text-center py-8">Нет идей</div>
+              <div className="text-gray-400 text-sm text-center py-8">{t('Нет идей', 'No ideas')}</div>
             )}
           </div>
 

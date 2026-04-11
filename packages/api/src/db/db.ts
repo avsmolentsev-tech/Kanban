@@ -248,6 +248,65 @@ export function initDb(): void {
       )
     `);
   } catch {}
+
+  // Settings key-value store (Google Calendar tokens, etc.)
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL DEFAULT ''
+      )
+    `);
+  } catch {}
+
+  // Habits: remind_time column
+  try { _db.exec("ALTER TABLE habits ADD COLUMN remind_time TEXT"); } catch {}
+
+  // Users table
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        email         TEXT    NOT NULL UNIQUE,
+        password_hash TEXT    NOT NULL,
+        name          TEXT    NOT NULL DEFAULT '',
+        role          TEXT    NOT NULL DEFAULT 'user' CHECK(role IN ('admin','user')),
+        created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
+
+  // Add user_id to all data tables (nullable for backward compatibility)
+  const tablesNeedingUserId = [
+    'tasks', 'projects', 'meetings', 'people', 'ideas', 'documents',
+    'habits', 'goals', 'journal', 'tags', 'task_templates', 'claude_notes'
+  ];
+  for (const table of tablesNeedingUserId) {
+    try { _db.exec(`ALTER TABLE ${table} ADD COLUMN user_id INTEGER REFERENCES users(id)`); } catch {}
+  }
+
+  // Settings: add user_id for per-user settings
+  try { _db.exec("ALTER TABLE settings ADD COLUMN user_id INTEGER REFERENCES users(id)"); } catch {}
+
+  // Users: telegram id
+  try { _db.exec("ALTER TABLE users ADD COLUMN tg_id TEXT"); } catch {}
+
+  // Usage tracking (AI tokens, transcriptions, etc.)
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS usage_logs (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER REFERENCES users(id),
+        type       TEXT NOT NULL,
+        model      TEXT NOT NULL DEFAULT '',
+        tokens_in  INTEGER NOT NULL DEFAULT 0,
+        tokens_out INTEGER NOT NULL DEFAULT 0,
+        cost_usd   REAL NOT NULL DEFAULT 0,
+        detail     TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
 }
 
 export function initTestDb(): void {
@@ -454,6 +513,19 @@ export function initTestDb(): void {
       )
     `);
   } catch {}
+
+  // Settings key-value store (Google Calendar tokens, etc.)
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL DEFAULT ''
+      )
+    `);
+  } catch {}
+
+  // Habits: remind_time column
+  try { _db.exec("ALTER TABLE habits ADD COLUMN remind_time TEXT"); } catch {}
 }
 
 export function closeDb(): void {

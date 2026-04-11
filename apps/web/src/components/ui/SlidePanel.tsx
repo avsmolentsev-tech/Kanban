@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { useLangStore } from '../../store/lang.store';
 
 interface SlidePanelProps { open: boolean; onClose: () => void; title: string; children: React.ReactNode; expandable?: boolean; }
 
 export function SlidePanel({ open, onClose, title, children, expandable }: SlidePanelProps) {
+  const { t } = useLangStore();
   const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
@@ -29,7 +31,7 @@ export function SlidePanel({ open, onClose, title, children, expandable }: Slide
               <button
                 onClick={() => setFullscreen(!fullscreen)}
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
-                title={fullscreen ? 'Свернуть' : 'На весь экран'}
+                title={fullscreen ? t('Свернуть', 'Collapse') : t('На весь экран', 'Fullscreen')}
               >
                 {fullscreen ? '⊟' : '⊞'}
               </button>

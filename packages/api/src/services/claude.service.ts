@@ -84,6 +84,18 @@ export class ClaudeService {
       message = response.choices[0]?.message;
     }
 
+    // Log usage
+    try {
+      const usage = response.usage;
+      if (usage) {
+        const { getDb } = require('../db/db');
+        const db = getDb();
+        db.prepare("INSERT INTO usage_logs (type, model, tokens_in, tokens_out, detail) VALUES (?, ?, ?, ?, ?)").run(
+          'ai_chat', selectedModel, usage.prompt_tokens || 0, usage.completion_tokens || 0, ''
+        );
+      }
+    } catch {}
+
     return message?.content ?? '';
   }
 

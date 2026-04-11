@@ -7,6 +7,8 @@ import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
 import { moscowDateString, moscowDateTimeString } from '../utils/time';
 import { generateBundle, findProjectByName } from '../services/bundle.service';
+import type { AuthRequest } from '../middleware/auth';
+import { getUserId } from '../middleware/user-scope';
 
 export const aiRouter = Router();
 const claude = new ClaudeService();
@@ -17,13 +19,13 @@ const ChatSchema = z.object({
   context: z.string().optional(),
 });
 
-aiRouter.post('/chat', async (req: Request, res: Response) => {
+aiRouter.post('/chat', async (req: AuthRequest, res: Response) => {
   const parsed = ChatSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   try {
-    // Build vault context for AI
+    // Build vault context for AI (scoped to user)
     let vaultContext = '';
-    try { vaultContext = obsidian.readAllForContext(); } catch {}
+    try { vaultContext = obsidian.forUser(getUserId(req)).readAllForContext(); } catch {}
 
     const systemPrompt = [
       parsed.data.context ?? '',

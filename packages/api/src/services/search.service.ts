@@ -107,16 +107,36 @@ export class SearchService {
     if (!fs.existsSync(vaultPath)) return 0;
 
     const folders = ['Tasks', 'Meetings', 'Ideas', 'Materials', 'Inbox', 'Projects', 'Goals'];
+
+    // Index files in root vault folders (legacy)
+    count += this.indexVaultFolders(vaultPath, folders, '');
+
+    // Index user-specific vault folders (user_N/)
+    try {
+      const entries = fs.readdirSync(vaultPath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name.startsWith('user_')) {
+          const userDir = path.join(vaultPath, entry.name);
+          count += this.indexVaultFolders(userDir, folders, entry.name + '/');
+        }
+      }
+    } catch {}
+
+    return count;
+  }
+
+  private indexVaultFolders(basePath: string, folders: string[], prefix: string): number {
+    let count = 0;
     for (const folder of folders) {
-      const dir = path.join(vaultPath, folder);
+      const dir = path.join(basePath, folder);
       if (!fs.existsSync(dir)) continue;
       const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'));
       for (const file of files) {
         try {
           const content = fs.readFileSync(path.join(dir, file), 'utf-8');
           const title = file.replace('.md', '');
-          // Use negative ref_id to distinguish vault files from DB records
-          this.indexRecord('vault', -(count + 1), `${folder}/${title}`, content);
+          const refId = -(Math.abs(this.hashCode(prefix + folder + '/' + file)) % 1000000);
+          this.indexRecord('vault', refId, `${prefix}${folder}/${title}`, content);
           count++;
         } catch {}
       }
@@ -162,6 +182,17 @@ export class SearchService {
     }
   }
 
+  /** Extract user_id from vault path like "user_2/Tasks/..." → 2, or null for root paths */
+  private extractUserIdFromPath(vaultRelPath: string): number | null {
+    const match = vaultRelPath.match(/^user_(\d+)\//);
+    return match ? Number(match[1]) : null;
+  }
+
+  /** Check if path contains a Meetings folder (root or user-scoped) */
+  private isMeetingPath(vaultRelPath: string): boolean {
+    return /(?:^|\/)Meetings\//.test(vaultRelPath);
+  }
+
   /** Parse vault .md file and sync changes back to database */
   private syncVaultFileToDb(filename: string, content: string): void {
     try {
@@ -169,7 +200,7 @@ export class SearchService {
       const vaultRelPath = filename.replace(/\\/g, '/');
 
       // Check if it's in Meetings folder → handle as new meeting
-      if (vaultRelPath.startsWith('Meetings/')) {
+      if (this.isMeetingPath(vaultRelPath)) {
         this.syncMeetingFromVault(vaultRelPath, content);
         return;
       }
@@ -226,9 +257,12 @@ export class SearchService {
         if (match) projectId = match.id;
       }
 
+      // Resolve user_id from path
+      const userId = this.extractUserIdFromPath(vaultRelPath);
+
       // Create meeting record
-      const result = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw, vault_path, processed) VALUES (?, ?, ?, ?, ?, 1)').run(
-        title, date, projectId, body, vaultRelPath
+      const result = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw, vault_path, processed, user_id) VALUES (?, ?, ?, ?, ?, 1, ?)').run(
+        title, date, projectId, body, vaultRelPath, userId
       );
       const meetingId = Number(result.lastInsertRowid);
       if (projectId) db.prepare('INSERT OR IGNORE INTO meeting_projects (meeting_id, project_id) VALUES (?, ?)').run(meetingId, projectId);
@@ -236,7 +270,7 @@ export class SearchService {
       console.log(`[vault-sync] created meeting #${meetingId} from ${vaultRelPath}`);
 
       // Extract tasks via AI (async, don't block watcher)
-      this.extractTasksFromMeeting(meetingId, title, body, projectId).catch(err => {
+      this.extractTasksFromMeeting(meetingId, title, body, projectId, userId).catch(err => {
         console.warn('[vault-sync] task extraction failed:', err);
       });
     } catch (err) {
@@ -245,7 +279,7 @@ export class SearchService {
   }
 
   /** Extract tasks from meeting content using AI */
-  private async extractTasksFromMeeting(meetingId: number, title: string, body: string, projectId: number | null): Promise<void> {
+  private async extractTasksFromMeeting(meetingId: number, title: string, body: string, projectId: number | null, userId?: number | null): Promise<void> {
     try {
       const { ClaudeService } = require('./claude.service');
       const claude = new ClaudeService();
@@ -271,8 +305,8 @@ ${body.slice(0, 8000)}`;
       for (const taskTitle of tasks) {
         if (!taskTitle || typeof taskTitle !== 'string' || taskTitle.length < 3) continue;
         try {
-          const tr = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority) VALUES (?, ?, ?, ?, ?)').run(
-            projectId, taskTitle, `Из встречи: ${title}`, 'backlog', 3
+          const tr = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, user_id) VALUES (?, ?, ?, ?, ?, ?)').run(
+            projectId, taskTitle, `Из встречи: ${title}`, 'backlog', 3, userId ?? null
           );
           const newTaskId = Number(tr.lastInsertRowid);
           if (selfRow) db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(newTaskId, selfRow.id);

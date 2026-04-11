@@ -8,7 +8,7 @@ interface LangState {
   t: (ru: string, en: string) => string;
 }
 
-const initial: Lang = (typeof localStorage !== 'undefined' && localStorage.getItem('lang') as Lang) ?? 'ru';
+const initial: Lang = (typeof localStorage !== 'undefined' ? (localStorage.getItem('lang') as Lang | null) : null) ?? 'ru';
 
 export const useLangStore = create<LangState>((set, get) => ({
   lang: initial,

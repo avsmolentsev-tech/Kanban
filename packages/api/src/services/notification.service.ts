@@ -11,8 +11,17 @@ let lastWeeklyReport = '';
 let lastDailyDigest = '';
 let lastDeadlineCheck = '';
 
+interface UserCtx {
+  id: number;
+  tg_id: string;
+  name: string;
+}
+
+function getUsers(): UserCtx[] {
+  return telegramService.getLinkedUsers();
+}
+
 export function startNotificationScheduler(): void {
-  // Check every 15 minutes
   setInterval(() => {
     checkOverdueTasks();
     checkMorningBrief();
@@ -31,19 +40,18 @@ function checkOverdueTasks(): void {
   const today = moscowDateString();
   const db = getDb();
 
-  const overdue = db.prepare(
-    "SELECT title, due_date, priority FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND due_date < ? ORDER BY due_date ASC LIMIT 10"
-  ).all(today) as Array<{ title: string; due_date: string; priority: number }>;
+  for (const user of getUsers()) {
+    const overdue = db.prepare(
+      "SELECT title, due_date, priority FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND due_date < ? AND user_id = ? ORDER BY due_date ASC LIMIT 10"
+    ).all(today, user.id) as Array<{ title: string; due_date: string; priority: number }>;
 
-  if (overdue.length === 0) return;
+    if (overdue.length === 0) continue;
 
-  const lines = overdue.map(t => `⚠️ <b>${t.title}</b> (срок: ${t.due_date})`);
-  const message = `🔔 Просроченные задачи (${overdue.length}):\n\n${lines.join('\n')}`;
-
-  telegramService.notify(message);
+    const lines = overdue.map(t => `⚠️ <b>${t.title}</b> (срок: ${t.due_date})`);
+    telegramService.notifyUser(user.tg_id, `🔔 Просроченные задачи (${overdue.length}):\n\n${lines.join('\n')}`);
+  }
 }
 
-/** Morning brief at 9:00 Moscow time */
 function checkMorningBrief(): void {
   const now = moscowNow();
   const hour = now.getUTCHours();
@@ -53,74 +61,75 @@ function checkMorningBrief(): void {
   lastMorningBrief = today;
 
   const db = getDb();
-  const tasks = db.prepare("SELECT title, priority FROM tasks WHERE archived = 0 AND status = 'in_progress' ORDER BY priority DESC LIMIT 5").all() as Array<{ title: string; priority: number }>;
-  const todayTasks = db.prepare("SELECT title FROM tasks WHERE archived = 0 AND due_date = ? AND status != 'done'").all(today) as Array<{ title: string }>;
-  const todayMeetings = db.prepare("SELECT title, date FROM meetings WHERE date = ? ORDER BY date").all(today) as Array<{ title: string; date: string }>;
 
-  let msg = `🌅 <b>Доброе утро!</b>\n\n`;
-  if (todayMeetings.length > 0) {
-    msg += `📅 Встречи сегодня (${todayMeetings.length}):\n${todayMeetings.map(m => `  • ${m.title}`).join('\n')}\n\n`;
-  }
-  if (todayTasks.length > 0) {
-    msg += `📋 Задачи на сегодня (${todayTasks.length}):\n${todayTasks.map(t => `  • ${t.title}`).join('\n')}\n\n`;
-  }
-  if (tasks.length > 0) {
-    msg += `🔄 В работе:\n${tasks.map(t => `  • ${t.title} ${'⭐'.repeat(t.priority)}`).join('\n')}`;
-  }
+  for (const user of getUsers()) {
+    const tasks = db.prepare("SELECT title, priority FROM tasks WHERE archived = 0 AND status = 'in_progress' AND user_id = ? ORDER BY priority DESC LIMIT 5").all(user.id) as Array<{ title: string; priority: number }>;
+    const todayTasks = db.prepare("SELECT title FROM tasks WHERE archived = 0 AND due_date = ? AND status != 'done' AND user_id = ?").all(today, user.id) as Array<{ title: string }>;
+    const todayMeetings = db.prepare("SELECT title, date FROM meetings WHERE date = ? AND user_id = ? ORDER BY date").all(today, user.id) as Array<{ title: string; date: string }>;
 
-  if (todayMeetings.length > 0 || todayTasks.length > 0 || tasks.length > 0) {
-    telegramService.notify(msg);
+    let msg = `🌅 <b>Доброе утро, ${user.name}!</b>\n\n`;
+    if (todayMeetings.length > 0) {
+      msg += `📅 Встречи сегодня (${todayMeetings.length}):\n${todayMeetings.map(m => `  • ${m.title}`).join('\n')}\n\n`;
+    }
+    if (todayTasks.length > 0) {
+      msg += `📋 Задачи на сегодня (${todayTasks.length}):\n${todayTasks.map(t => `  • ${t.title}`).join('\n')}\n\n`;
+    }
+    if (tasks.length > 0) {
+      msg += `🔄 В работе:\n${tasks.map(t => `  • ${t.title} ${'⭐'.repeat(t.priority)}`).join('\n')}`;
+    }
+
+    if (todayMeetings.length > 0 || todayTasks.length > 0 || tasks.length > 0) {
+      telegramService.notifyUser(user.tg_id, msg);
+    }
   }
 }
 
-/** Weekly report on Monday at 10:00 Moscow time — sends PDF bundle */
 function checkWeeklyReport(): void {
   const now = moscowNow();
   const hour = now.getUTCHours();
-  const dayOfWeek = now.getUTCDay(); // 0=Sun, 1=Mon
+  const dayOfWeek = now.getUTCDay();
   const today = moscowDateString();
 
-  if (dayOfWeek !== 1 || hour !== 10) return; // Monday 10:00 MSK
+  if (dayOfWeek !== 1 || hour !== 10) return;
   if (lastWeeklyReport === today) return;
   lastWeeklyReport = today;
 
-  try {
-    const db = getDb();
-    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const db = getDb();
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    // Stats
-    const completed = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND updated_at >= ?").get(weekAgo) as { c: number };
-    const created = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE created_at >= ?").get(weekAgo) as { c: number };
-    const meetingsCount = db.prepare("SELECT COUNT(*) as c FROM meetings WHERE date >= ? AND date <= ?").get(weekAgo, today) as { c: number };
-    const active = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday')").get() as { c: number };
-
-    let msg = `📊 <b>Еженедельный отчёт</b>\n\n`;
-    msg += `📅 Неделя: ${weekAgo} — ${today}\n\n`;
-    msg += `✅ Завершено задач: ${completed.c}\n`;
-    msg += `➕ Создано задач: ${created.c}\n`;
-    msg += `🤝 Встреч: ${meetingsCount.c}\n`;
-    msg += `📋 Активных задач: ${active.c}\n\n`;
-
-    telegramService.notify(msg);
-
-    // Generate and send PDF bundle
+  for (const user of getUsers()) {
     try {
-      const result = generateBundle('all');
-      const fullPath = path.join(config.vaultPath, result.vaultPath);
-      const formats = generateAllFormats(fullPath);
+      const completed = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND updated_at >= ? AND user_id = ?").get(weekAgo, user.id) as { c: number }).c;
+      const created = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE created_at >= ? AND user_id = ?").get(weekAgo, user.id) as { c: number }).c;
+      const meetingsCount = (db.prepare("SELECT COUNT(*) as c FROM meetings WHERE date >= ? AND date <= ? AND user_id = ?").get(weekAgo, today, user.id) as { c: number }).c;
+      const active = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND user_id = ?").get(user.id) as { c: number }).c;
 
-      if (formats.pdf) {
-        telegramService.sendFile(formats.pdf, `weekly-${today}.pdf`, '📦 Еженедельный bundle — загрузи в NotebookLM');
+      let msg = `📊 <b>Еженедельный отчёт</b>\n\n`;
+      msg += `📅 Неделя: ${weekAgo} — ${today}\n\n`;
+      msg += `✅ Завершено задач: ${completed}\n`;
+      msg += `➕ Создано задач: ${created}\n`;
+      msg += `🤝 Встреч: ${meetingsCount}\n`;
+      msg += `📋 Активных задач: ${active}\n`;
+
+      telegramService.notifyUser(user.tg_id, msg);
+
+      // Generate and send PDF bundle for admin users
+      if (user.id === getUsers()[0]?.id) {
+        try {
+          const result = generateBundle('all');
+          const fullPath = path.join(config.vaultPath, result.vaultPath);
+          const formats = generateAllFormats(fullPath);
+          if (formats.pdf) {
+            telegramService.sendFileToUser(user.tg_id, formats.pdf, `weekly-${today}.pdf`, '📦 Еженедельный bundle');
+          }
+        } catch {}
       }
     } catch (err) {
-      console.warn('[notifications] weekly bundle failed:', err);
+      console.warn(`[notifications] weekly report failed for user ${user.id}:`, err);
     }
-  } catch (err) {
-    console.warn('[notifications] weekly report failed:', err);
   }
 }
 
-/** Evening daily digest at 21:00 MSK — what was done + what's left */
 function checkDailyDigest(): void {
   const now = moscowNow();
   const hour = now.getUTCHours();
@@ -129,44 +138,42 @@ function checkDailyDigest(): void {
   if (lastDailyDigest === today) return;
   lastDailyDigest = today;
 
-  try {
-    const db = getDb();
-    const done = db.prepare("SELECT title FROM tasks WHERE status = 'done' AND updated_at LIKE ? AND archived = 0").all(`${today}%`) as Array<{ title: string }>;
-    const inProgress = db.prepare("SELECT title, priority FROM tasks WHERE status = 'in_progress' AND archived = 0 ORDER BY priority DESC LIMIT 5").all() as Array<{ title: string; priority: number }>;
-    const overdue = db.prepare("SELECT title, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < ? LIMIT 5").all(today) as Array<{ title: string; due_date: string }>;
-    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-    const tomorrowTasks = db.prepare("SELECT title FROM tasks WHERE due_date = ? AND archived = 0 AND status != 'done'").all(tomorrow) as Array<{ title: string }>;
-    const tomorrowMeetings = db.prepare("SELECT title FROM meetings WHERE date = ?").all(tomorrow) as Array<{ title: string }>;
+  const db = getDb();
 
-    let msg = `🌙 <b>Итоги дня</b>\n\n`;
+  for (const user of getUsers()) {
+    try {
+      const done = db.prepare("SELECT title FROM tasks WHERE status = 'done' AND updated_at LIKE ? AND archived = 0 AND user_id = ?").all(`${today}%`, user.id) as Array<{ title: string }>;
+      const inProgress = db.prepare("SELECT title, priority FROM tasks WHERE status = 'in_progress' AND archived = 0 AND user_id = ? ORDER BY priority DESC LIMIT 5").all(user.id) as Array<{ title: string; priority: number }>;
+      const overdue = db.prepare("SELECT title, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < ? AND user_id = ? LIMIT 5").all(today, user.id) as Array<{ title: string; due_date: string }>;
+      const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
+      const tomorrowTasks = db.prepare("SELECT title FROM tasks WHERE due_date = ? AND archived = 0 AND status != 'done' AND user_id = ?").all(tomorrow, user.id) as Array<{ title: string }>;
+      const tomorrowMeetings = db.prepare("SELECT title FROM meetings WHERE date = ? AND user_id = ?").all(tomorrow, user.id) as Array<{ title: string }>;
 
-    if (done.length > 0) {
-      msg += `✅ Сделано сегодня (${done.length}):\n${done.map(t => `  • ${t.title}`).join('\n')}\n\n`;
-    } else {
-      msg += `📋 Задач завершено: 0\n\n`;
+      let msg = `🌙 <b>Итоги дня</b>\n\n`;
+      if (done.length > 0) {
+        msg += `✅ Сделано сегодня (${done.length}):\n${done.map(t => `  • ${t.title}`).join('\n')}\n\n`;
+      } else {
+        msg += `📋 Задач завершено: 0\n\n`;
+      }
+      if (inProgress.length > 0) {
+        msg += `🔄 В работе:\n${inProgress.map(t => `  • ${t.title} ${'⭐'.repeat(t.priority)}`).join('\n')}\n\n`;
+      }
+      if (overdue.length > 0) {
+        msg += `⚠️ Просрочено:\n${overdue.map(t => `  • ${t.title} (${t.due_date})`).join('\n')}\n\n`;
+      }
+      if (tomorrowTasks.length > 0 || tomorrowMeetings.length > 0) {
+        msg += `📅 Завтра:\n`;
+        for (const m of tomorrowMeetings) msg += `  🤝 ${m.title}\n`;
+        for (const t of tomorrowTasks) msg += `  📋 ${t.title}\n`;
+      }
+
+      telegramService.notifyUser(user.tg_id, msg);
+    } catch (err) {
+      console.warn(`[notifications] daily digest failed for user ${user.id}:`, err);
     }
-
-    if (inProgress.length > 0) {
-      msg += `🔄 В работе:\n${inProgress.map(t => `  • ${t.title} ${'⭐'.repeat(t.priority)}`).join('\n')}\n\n`;
-    }
-
-    if (overdue.length > 0) {
-      msg += `⚠️ Просрочено:\n${overdue.map(t => `  • ${t.title} (${t.due_date})`).join('\n')}\n\n`;
-    }
-
-    if (tomorrowTasks.length > 0 || tomorrowMeetings.length > 0) {
-      msg += `📅 Завтра:\n`;
-      for (const m of tomorrowMeetings) msg += `  🤝 ${m.title}\n`;
-      for (const t of tomorrowTasks) msg += `  📋 ${t.title}\n`;
-    }
-
-    telegramService.notify(msg);
-  } catch (err) {
-    console.warn('[notifications] daily digest failed:', err);
   }
 }
 
-/** Habit reminders based on remind_time */
 function checkHabitReminders(): void {
   try {
     const now = moscowNow();
@@ -176,19 +183,20 @@ function checkHabitReminders(): void {
     const currentTime = `${String(hour).padStart(2, '0')}:${String(minute < 30 ? '00' : '30')}`;
 
     const db = getDb();
-    const habits = db.prepare("SELECT id, title, icon, remind_time FROM habits WHERE archived = 0 AND remind_time IS NOT NULL").all() as Array<{ id: number; title: string; icon: string; remind_time: string }>;
 
-    for (const h of habits) {
-      if (h.remind_time !== currentTime) continue;
-      // Check if already done today
-      const log = db.prepare("SELECT id FROM habit_logs WHERE habit_id = ? AND date = ?").get(h.id, today);
-      if (log) continue;
-      telegramService.notify(`${h.icon} Напоминание: <b>${h.title}</b>\n\nОтметь в /habits или в приложении`);
+    for (const user of getUsers()) {
+      const habits = db.prepare("SELECT id, title, icon, remind_time FROM habits WHERE archived = 0 AND remind_time IS NOT NULL AND user_id = ?").all(user.id) as Array<{ id: number; title: string; icon: string; remind_time: string }>;
+
+      for (const h of habits) {
+        if (h.remind_time !== currentTime) continue;
+        const log = db.prepare("SELECT id FROM habit_logs WHERE habit_id = ? AND date = ?").get(h.id, today);
+        if (log) continue;
+        telegramService.notifyUser(user.tg_id, `${h.icon} Напоминание: <b>${h.title}</b>\n\nОтметь в /habits или в приложении`);
+      }
     }
   } catch {}
 }
 
-/** Deadline reminder — notify about tasks due tomorrow (at 20:00 MSK) */
 function checkUpcomingDeadlines(): void {
   const now = moscowNow();
   const hour = now.getUTCHours();
@@ -197,39 +205,40 @@ function checkUpcomingDeadlines(): void {
   if (lastDeadlineCheck === today) return;
   lastDeadlineCheck = today;
 
-  try {
-    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0]!;
-    const db = getDb();
-    const tasks = db.prepare(
-      "SELECT title FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND due_date = ? ORDER BY priority DESC"
-    ).all(tomorrowStr) as Array<{ title: string }>;
+  const db = getDb();
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0]!;
 
-    if (tasks.length === 0) return;
+  for (const user of getUsers()) {
+    try {
+      const tasks = db.prepare(
+        "SELECT title FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND due_date = ? AND user_id = ? ORDER BY priority DESC"
+      ).all(tomorrowStr, user.id) as Array<{ title: string }>;
 
-    const lines = tasks.map(t => `• ${t.title}`);
-    const message = `⏰ Завтра дедлайн:\n\n${lines.join('\n')}`;
-    telegramService.notify(message);
-  } catch (err) {
-    console.warn('[notifications] deadline check failed:', err);
+      if (tasks.length === 0) continue;
+
+      const lines = tasks.map(t => `• ${t.title}`);
+      telegramService.notifyUser(user.tg_id, `⏰ Завтра дедлайн:\n\n${lines.join('\n')}`);
+    } catch {}
   }
 }
 
-/** Remind about meetings today (once per meeting) */
-const notifiedMeetings = new Set<number>();
+const notifiedMeetings = new Set<string>();
 function checkUpcomingMeetings(): void {
-  const now = moscowNow();
   const today = moscowDateString();
   const db = getDb();
 
-  const meetings = db.prepare("SELECT id, title, date FROM meetings WHERE date = ?").all(today) as Array<{ id: number; title: string; date: string }>;
+  for (const user of getUsers()) {
+    const meetings = db.prepare("SELECT id, title, date FROM meetings WHERE date = ? AND user_id = ?").all(today, user.id) as Array<{ id: number; title: string; date: string }>;
 
-  for (const m of meetings) {
-    if (notifiedMeetings.has(m.id)) continue;
-    notifiedMeetings.add(m.id);
-    telegramService.notify(`📅 Встреча сегодня: <b>${m.title}</b>`);
+    for (const m of meetings) {
+      const key = `${user.id}-${m.id}`;
+      if (notifiedMeetings.has(key)) continue;
+      notifiedMeetings.add(key);
+      telegramService.notifyUser(user.tg_id, `📅 Встреча сегодня: <b>${m.title}</b>`);
+    }
   }
 
-  // Clear at midnight
+  const now = moscowNow();
   if (now.getUTCHours() === 0) notifiedMeetings.clear();
 }

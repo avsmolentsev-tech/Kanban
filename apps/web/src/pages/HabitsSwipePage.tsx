@@ -18,17 +18,17 @@ interface HabitStat {
 }
 
 const ICON_OPTIONS = [
-  { icon: '🧘', label: 'Медитация' }, { icon: '🏋️', label: 'Спорт' }, { icon: '📖', label: 'Чтение' },
-  { icon: '🏃', label: 'Бег' }, { icon: '💧', label: 'Вода' }, { icon: '😴', label: 'Сон' },
-  { icon: '🥗', label: 'Питание' }, { icon: '✍️', label: 'Письмо' }, { icon: '🎯', label: 'Фокус' },
-  { icon: '💊', label: 'Витамины' }, { icon: '🚶', label: 'Прогулка' }, { icon: '🧠', label: 'Учёба' },
+  { icon: '🧘', labelRu: 'Медитация', labelEn: 'Meditation' }, { icon: '🏋️', labelRu: 'Спорт', labelEn: 'Sport' }, { icon: '📖', labelRu: 'Чтение', labelEn: 'Reading' },
+  { icon: '🏃', labelRu: 'Бег', labelEn: 'Running' }, { icon: '💧', labelRu: 'Вода', labelEn: 'Water' }, { icon: '😴', labelRu: 'Сон', labelEn: 'Sleep' },
+  { icon: '🥗', labelRu: 'Питание', labelEn: 'Nutrition' }, { icon: '✍️', labelRu: 'Письмо', labelEn: 'Writing' }, { icon: '🎯', labelRu: 'Фокус', labelEn: 'Focus' },
+  { icon: '💊', labelRu: 'Витамины', labelEn: 'Vitamins' }, { icon: '🚶', labelRu: 'Прогулка', labelEn: 'Walk' }, { icon: '🧠', labelRu: 'Учёба', labelEn: 'Study' },
 ];
 const COLOR_OPTIONS = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6'];
 const FREQ_OPTIONS = [
-  { value: 'daily', label: 'Каждый день' },
-  { value: '2x_week', label: '2 раза в неделю' },
-  { value: '3x_week', label: '3 раза в неделю' },
-  { value: 'weekly', label: 'Раз в неделю' },
+  { value: 'daily', labelRu: 'Каждый день', labelEn: 'Every day' },
+  { value: '2x_week', labelRu: '2 раза в неделю', labelEn: '2x a week' },
+  { value: '3x_week', labelRu: '3 раза в неделю', labelEn: '3x a week' },
+  { value: 'weekly', labelRu: 'Раз в неделю', labelEn: 'Once a week' },
 ];
 
 function getToday(): string {
@@ -48,6 +48,7 @@ function getLast14Days(): string[] {
 function SwipeHabitCard({ habit, done, logDates, onToggle, onEdit }: {
   habit: Habit; done: boolean; logDates: Set<string>; onToggle: () => void; onEdit: () => void;
 }) {
+  const { t } = useLangStore();
   const [sx, setSx] = useState(0);
   const [startX, setStartX] = useState<number | null>(null);
   const last14 = getLast14Days();
@@ -57,7 +58,7 @@ function SwipeHabitCard({ habit, done, logDates, onToggle, onEdit }: {
     <div className="relative overflow-hidden rounded-2xl">
       {!done && sx > 20 && (
         <div className="absolute inset-0 bg-green-500 flex items-center pl-5 text-white font-bold text-sm rounded-2xl"
-          style={{ opacity: Math.min(1, sx / 80) }}>✓ Готово</div>
+          style={{ opacity: Math.min(1, sx / 80) }}>✓ {t('Готово', 'Done')}</div>
       )}
       <div
         className={`relative border-2 cursor-pointer transition-colors ${
@@ -80,7 +81,7 @@ function SwipeHabitCard({ habit, done, logDates, onToggle, onEdit }: {
               {habit.title}
             </div>
             <div className="text-[10px] text-gray-400 mt-0.5">
-              {FREQ_OPTIONS.find(f => f.value === habit.frequency)?.label ?? habit.frequency}
+              {(() => { const fo = FREQ_OPTIONS.find(f => f.value === habit.frequency); return fo ? t(fo.labelRu, fo.labelEn) : habit.frequency; })()}
               {habit.remind_time && ` • ⏰ ${habit.remind_time}`}
             </div>
           </div>
@@ -180,7 +181,7 @@ export function HabitsSwipePage() {
   };
 
   const remove = async (id: number) => {
-    if (!confirm('Удалить привычку?')) return;
+    if (!confirm(t('Удалить привычку?', 'Delete habit?'))) return;
     await apiDelete(`/habits/${id}`);
     setShowModal(false); setEditHabit(null); load();
   };
@@ -192,9 +193,9 @@ export function HabitsSwipePage() {
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
         <div>
           <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('🔥 Привычки', '🔥 Habits')}</h1>
-          {habits.length > 0 && <div className="text-xs text-gray-400 mt-0.5">{doneCount} из {habits.length} сегодня</div>}
+          {habits.length > 0 && <div className="text-xs text-gray-400 mt-0.5">{doneCount} {t('из', 'of')} {habits.length} {t('сегодня', 'today')}</div>}
         </div>
-        <button onClick={openCreate} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm">+ Новая</button>
+        <button onClick={openCreate} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm">+ {t('Новая', 'New')}</button>
       </div>
 
       {habits.length > 0 && (
@@ -209,8 +210,8 @@ export function HabitsSwipePage() {
         {habits.length === 0 && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">🔥</div>
-            <div className="text-gray-500 dark:text-gray-400">Нет привычек</div>
-            <button onClick={openCreate} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">+ Добавить</button>
+            <div className="text-gray-500 dark:text-gray-400">{t('Нет привычек', 'No habits yet')}</div>
+            <button onClick={openCreate} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">+ {t('Добавить', 'Add')}</button>
           </div>
         )}
 
@@ -222,7 +223,7 @@ export function HabitsSwipePage() {
         {doneCount === habits.length && habits.length > 0 && (
           <div className="text-center py-6">
             <div className="text-4xl mb-2">🎉</div>
-            <div className="text-sm text-gray-500">Все привычки выполнены!</div>
+            <div className="text-sm text-gray-500">{t('Все привычки выполнены!', 'All habits done!')}</div>
           </div>
         )}
       </div>
@@ -232,25 +233,25 @@ export function HabitsSwipePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowModal(false)}>
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="p-5 space-y-4">
-              <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">{editHabit ? 'Редактировать' : 'Новая привычка'}</h2>
+              <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">{editHabit ? t('Редактировать', 'Edit') : t('Новая привычка', 'New habit')}</h2>
 
               <input autoFocus className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100"
-                placeholder="Название" value={title} onChange={e => setTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()} />
+                placeholder={t('Название', 'Title')} value={title} onChange={e => setTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()} />
 
               <div>
-                <div className="text-xs text-gray-500 mb-2">Иконка</div>
+                <div className="text-xs text-gray-500 mb-2">{t('Иконка', 'Icon')}</div>
                 <div className="grid grid-cols-3 gap-2">
-                  {ICON_OPTIONS.map(({ icon: ic, label }) => (
-                    <button key={ic} onClick={() => { setIcon(ic); if (!title) setTitle(label); }}
+                  {ICON_OPTIONS.map(({ icon: ic, labelRu, labelEn }) => (
+                    <button key={ic} onClick={() => { setIcon(ic); if (!title) setTitle(t(labelRu, labelEn)); }}
                       className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${icon === ic ? 'ring-2 ring-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'bg-gray-50 dark:bg-gray-700'}`}>
-                      <span className="text-xl">{ic}</span><span className="text-gray-600 dark:text-gray-300 truncate">{label}</span>
+                      <span className="text-xl">{ic}</span><span className="text-gray-600 dark:text-gray-300 truncate">{t(labelRu, labelEn)}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <div className="text-xs text-gray-500 mb-2">Цвет</div>
+                <div className="text-xs text-gray-500 mb-2">{t('Цвет', 'Color')}</div>
                 <div className="flex gap-3">
                   {COLOR_OPTIONS.map(c => (
                     <button key={c} onClick={() => setColor(c)}
@@ -261,26 +262,26 @@ export function HabitsSwipePage() {
               </div>
 
               <div>
-                <div className="text-xs text-gray-500 mb-2">Частота</div>
+                <div className="text-xs text-gray-500 mb-2">{t('Частота', 'Frequency')}</div>
                 <div className="grid grid-cols-2 gap-2">
                   {FREQ_OPTIONS.map(f => (
                     <button key={f.value} onClick={() => setFreq(f.value)}
                       className={`px-3 py-2 rounded-xl text-sm ${freq === f.value ? 'bg-indigo-600 text-white' : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
-                      {f.label}
+                      {t(f.labelRu, f.labelEn)}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <div className="text-xs text-gray-500 mb-2">⏰ Напоминание (МСК)</div>
+                <div className="text-xs text-gray-500 mb-2">⏰ {t('Напоминание (МСК)', 'Reminder (MSK)')}</div>
                 <input type="time" className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100"
                   value={remind} onChange={e => setRemind(e.target.value)} />
               </div>
 
               <div className="flex gap-3 pt-2">
                 {editHabit && (
-                  <button onClick={() => remove(editHabit.id)} className="py-3 px-4 text-sm text-red-500 border border-red-200 rounded-xl">Удалить</button>
+                  <button onClick={() => remove(editHabit.id)} className="py-3 px-4 text-sm text-red-500 border border-red-200 rounded-xl">{t('Удалить', 'Delete')}</button>
                 )}
                 <button onClick={() => setShowModal(false)} className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-400">{t('Отмена', 'Cancel')}</button>
                 <button onClick={save} disabled={!title.trim()} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl text-sm font-semibold disabled:opacity-50">

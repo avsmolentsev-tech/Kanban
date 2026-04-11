@@ -4,7 +4,7 @@ import { useLangStore } from '../../store/lang.store';
 const getTabs = (t: (ru: string, en: string) => string) => [
   { to: '/timeline', label: t('Таймлайн', 'Timeline'), icon: '📊' },
   { to: '/habits', label: t('Привычки', 'Habits'), icon: '🔥' },
-  { to: '/projects', label: t('Проекты', 'Projects'), icon: '📁' },
+  { to: '/meetings', label: t('Встречи', 'Meetings'), icon: '🤝' },
   { to: '/chat', label: t('Чат', 'Chat'), icon: '💬' },
   { to: '/more', label: t('Ещё', 'More'), icon: '☰' },
 ];

@@ -17,17 +17,18 @@ import { useFiltersStore, useProjectsStore } from '../store';
 import { DocumentDetailPanel } from '../components/documents/DocumentDetailPanel';
 import type { Document } from '../components/documents/DocumentDetailPanel';
 import type { Project } from '@pis/shared';
+import { useLangStore } from '../store/lang.store';
 
 const CATEGORIES = ['note', 'reference', 'template', 'archive'] as const;
 type Category = typeof CATEGORIES[number];
 
 const DOC_STATUSES = ['draft', 'active', 'in_obsidian', 'archive'] as const;
 type DocStatus = typeof DOC_STATUSES[number];
-const STATUS_LABELS: Record<DocStatus, string> = {
-  draft: 'Черновики',
-  active: 'Активные',
-  in_obsidian: 'В Obsidian',
-  archive: 'Архив',
+const STATUS_LABELS: Record<DocStatus, [string, string]> = {
+  draft: ['Черновики', 'Drafts'],
+  active: ['Активные', 'Active'],
+  in_obsidian: ['В Obsidian', 'In Obsidian'],
+  archive: ['Архив', 'Archive'],
 };
 const STATUS_COLORS: Record<DocStatus, string> = {
   draft: 'text-gray-500',
@@ -63,6 +64,7 @@ function DraggableDocumentCard({
   onClick: () => void;
   onDelete: (e: React.MouseEvent) => void;
 }) {
+  const { t } = useLangStore();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `doc-${doc.id}`,
   });
@@ -83,7 +85,7 @@ function DraggableDocumentCard({
       <button
         onClick={onDelete}
         className="absolute top-2 right-2 text-gray-300 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Удалить"
+        title={t('Удалить', 'Delete')}
       >
         ✕
       </button>
@@ -130,6 +132,7 @@ function DocumentDropZone({
   onClickDoc: (d: Document) => void;
   onDeleteDoc: (id: number) => void;
 }) {
+  const { t } = useLangStore();
   const { setNodeRef, isOver } = useDroppable({ id: `doc-zone-${projectId ?? 'none'}` });
 
   return (
@@ -141,11 +144,11 @@ function DocumentDropZone({
             style={{ backgroundColor: project?.color ?? '#9ca3af' }}
           />
           <span className="text-sm font-semibold text-gray-700 truncate">
-            {project?.name ?? 'Без проекта'}
+            {project?.name ?? t('Без проекта', 'No project')}
           </span>
         </div>
         <div className="text-xs text-gray-400 mt-1 ml-5">
-          {groupDocs.length} док.
+          {groupDocs.length} {t('док.', 'docs')}
         </div>
       </div>
       <div
@@ -166,7 +169,7 @@ function DocumentDropZone({
           />
         ))}
         {groupDocs.length === 0 && (
-          <div className="text-gray-300 text-xs self-center">Перетащи сюда</div>
+          <div className="text-gray-300 text-xs self-center">{t('Перетащи сюда', 'Drop here')}</div>
         )}
       </div>
     </div>
@@ -174,6 +177,7 @@ function DocumentDropZone({
 }
 
 export function DocumentsPage() {
+  const { t } = useLangStore();
   const [documents, setDocuments] = useState<Document[]>([]);
   const { projects, fetchProjects } = useProjectsStore();
   const { selectedProjectIds: filterProjectIds } = useFiltersStore();
@@ -289,7 +293,7 @@ export function DocumentsPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Документы</h1>
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('Документы', 'Documents')}</h1>
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
           {!adding && (
@@ -297,7 +301,7 @@ export function DocumentsPage() {
               onClick={() => setAdding(true)}
               className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 flex-shrink-0"
             >
-              + Новый документ
+              {t('+ Новый документ', '+ New document')}
             </button>
           )}
         </div>
@@ -308,7 +312,7 @@ export function DocumentsPage() {
           <input
             autoFocus
             className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-            placeholder="Название документа *"
+            placeholder={t('Название документа *', 'Document title *')}
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             onKeyDown={(e) => {
@@ -318,13 +322,13 @@ export function DocumentsPage() {
           />
           <textarea
             className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 resize-none"
-            placeholder="Содержание..."
+            placeholder={t('Содержание...', 'Content...')}
             rows={3}
             value={newBody}
             onChange={(e) => setNewBody(e.target.value)}
           />
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-500 mr-1">Категория:</span>
+            <span className="text-xs text-gray-500 mr-1">{t('Категория:', 'Category:')}</span>
             {CATEGORIES.map((c) => (
               <button
                 key={c}
@@ -343,7 +347,7 @@ export function DocumentsPage() {
             value={newProjectId}
             onChange={(e) => setNewProjectId(e.target.value !== '' ? Number(e.target.value) : '')}
           >
-            <option value="">Без проекта</option>
+            <option value="">{t('Без проекта', 'No project')}</option>
             {activeProjects.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
@@ -353,14 +357,14 @@ export function DocumentsPage() {
               onClick={() => setAdding(false)}
               className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5"
             >
-              Отмена
+              {t('Отмена', 'Cancel')}
             </button>
             <button
               onClick={submit}
               disabled={!newTitle.trim() || submitting}
               className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
             >
-              {submitting ? '...' : 'Добавить документ'}
+              {submitting ? '...' : t('Добавить документ', 'Add document')}
             </button>
           </div>
         </div>
@@ -381,7 +385,7 @@ export function DocumentsPage() {
           <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-gray-50 pl-4" />
           {DOC_STATUSES.map(s => (
             <div key={s} className={`w-56 min-w-[224px] mx-1.5 text-sm font-semibold text-center ${STATUS_COLORS[s]}`}>
-              {STATUS_LABELS[s]}
+              {t(...STATUS_LABELS[s])}
             </div>
           ))}
         </div>
@@ -391,7 +395,8 @@ export function DocumentsPage() {
           const grouped: Record<string, Document[]> = { draft: [], active: [], in_obsidian: [], archive: [] };
           for (const d of rowDocs) {
             const st = ((d as unknown as Record<string, unknown>)['status'] as string) ?? 'draft';
-            (grouped[st] ?? grouped['draft']).push(d);
+            const bucket = grouped[st] ?? grouped['draft']!;
+            bucket.push(d);
           }
 
           return (
@@ -399,9 +404,9 @@ export function DocumentsPage() {
               <div className="sticky left-0 top-12 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-gray-50 border-r border-gray-100 self-start">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-                  <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'Без проекта'}</span>
+                  <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? t('Без проекта', 'No project')}</span>
                 </div>
-                <div className="text-xs text-gray-400 mt-1 ml-5">{rowDocs.length} док.</div>
+                <div className="text-xs text-gray-400 mt-1 ml-5">{rowDocs.length} {t('док.', 'docs')}</div>
               </div>
               <div className="flex gap-3">
                 {DOC_STATUSES.map(status => {
@@ -416,7 +421,7 @@ export function DocumentsPage() {
           );
         })}
 
-        {rows.length === 0 && <div className="text-gray-400 text-sm text-center py-8">Нет документов</div>}
+        {rows.length === 0 && <div className="text-gray-400 text-sm text-center py-8">{t('Нет документов', 'No documents')}</div>}
         </div>
 
         <DragOverlay>

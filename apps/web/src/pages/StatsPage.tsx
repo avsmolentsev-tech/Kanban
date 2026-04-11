@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
+import { useLangStore } from '../store/lang.store';
 
 interface Task {
   id: number;
@@ -71,13 +72,16 @@ function getWeekNumber(dateStr: string): number {
   return Math.ceil((diff / 86400000 + start.getDay() + 1) / 7);
 }
 
-function shortDay(dateStr: string): string {
+function shortDay(dateStr: string, lang: 'ru' | 'en'): string {
   const d = new Date(dateStr);
-  const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+  const daysRu = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+  const daysEn = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  const days = lang === 'en' ? daysEn : daysRu;
   return days[d.getDay()] ?? '';
 }
 
 export function StatsPage() {
+  const { t, lang } = useLangStore();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [habitStats, setHabitStats] = useState<HabitStat[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
@@ -108,7 +112,7 @@ export function StatsPage() {
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center text-gray-500 dark:text-gray-400">
-        Загрузка статистики...
+        {t('Загрузка статистики...', 'Loading statistics...')}
       </div>
     );
   }
@@ -157,7 +161,7 @@ export function StatsPage() {
   const noProjectTasks = tasks.filter((t) => !t.project_id);
   if (noProjectTasks.length > 0) {
     projectStats.push({
-      name: 'Без проекта',
+      name: t('Без проекта', 'No project'),
       created: noProjectTasks.length,
       completed: noProjectTasks.filter((t) => t.status === 'done').length,
     });
@@ -173,7 +177,7 @@ export function StatsPage() {
       {/* Header with export buttons */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-          Статистика
+          {t('Статистика', 'Statistics')}
         </h1>
         <div className="flex gap-2">
           <a
@@ -181,14 +185,14 @@ export function StatsPage() {
             download
             className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
           >
-            {'\u{1F4E5}'} Экспорт задач (CSV)
+            {'\u{1F4E5}'} {t('Экспорт задач (CSV)', 'Export tasks (CSV)')}
           </a>
           <a
             href="/v1/export/meetings.csv"
             download
             className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
           >
-            {'\u{1F4E5}'} Экспорт встреч (CSV)
+            {'\u{1F4E5}'} {t('Экспорт встреч (CSV)', 'Export meetings (CSV)')}
           </a>
         </div>
       </div>
@@ -196,7 +200,7 @@ export function StatsPage() {
       {/* 1. Tasks per week (bar chart) */}
       <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-          Задачи за неделю
+          {t('Задачи за неделю', 'Tasks this week')}
         </h2>
         <div className="flex items-end gap-2 h-40">
           {tasksPerDay.map(({ day, count }) => (
@@ -212,7 +216,7 @@ export function StatsPage() {
                 }}
               />
               <span className="text-xs text-gray-500 dark:text-gray-400">
-                {shortDay(day)}
+                {shortDay(day, lang)}
               </span>
             </div>
           ))}
@@ -222,10 +226,10 @@ export function StatsPage() {
       {/* 2. Habits completion rate */}
       <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-          Привычки
+          {t('Привычки', 'Habits')}
         </h2>
         {habitStats.length === 0 ? (
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Нет привычек</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">{t('Нет привычек', 'No habits')}</p>
         ) : (
           <div className="space-y-3">
             {habitStats.map((h) => (
@@ -256,7 +260,7 @@ export function StatsPage() {
       {/* 3. Meetings per week */}
       <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-          Встречи
+          {t('Встречи', 'Meetings')}
         </h2>
         <div className="flex items-end gap-3 h-32">
           {meetingWeeks.map(({ week, count }) => (
@@ -272,7 +276,7 @@ export function StatsPage() {
                 }}
               />
               <span className="text-xs text-gray-500 dark:text-gray-400">
-                Н{week}
+                {t('Н', 'W')}{week}
               </span>
             </div>
           ))}
@@ -282,10 +286,10 @@ export function StatsPage() {
       {/* 4. Activity by project */}
       <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-          Активность по проектам
+          {t('Активность по проектам', 'Activity by project')}
         </h2>
         {projectStats.length === 0 ? (
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Нет данных</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">{t('Нет данных', 'No data')}</p>
         ) : (
           <div className="space-y-3">
             {projectStats.map((p) => (
@@ -312,10 +316,10 @@ export function StatsPage() {
             ))}
             <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-400">
               <span className="flex items-center gap-1">
-                <span className="inline-block w-3 h-3 rounded bg-blue-200 dark:bg-blue-900" /> Создано
+                <span className="inline-block w-3 h-3 rounded bg-blue-200 dark:bg-blue-900" /> {t('Создано', 'Created')}
               </span>
               <span className="flex items-center gap-1">
-                <span className="inline-block w-3 h-3 rounded bg-blue-500" /> Завершено
+                <span className="inline-block w-3 h-3 rounded bg-blue-500" /> {t('Завершено', 'Completed')}
               </span>
             </div>
           </div>
@@ -325,10 +329,10 @@ export function StatsPage() {
       {/* 5. Habit streaks */}
       <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-          Streak привычек
+          {t('Streak привычек', 'Habit streaks')}
         </h2>
         {habits.length === 0 ? (
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Нет привычек</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">{t('Нет привычек', 'No habits')}</p>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {habits.map((h) => (
@@ -354,7 +358,7 @@ export function StatsPage() {
       {/* 6. Mood timeline */}
       <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-          Настроение
+          {t('Настроение', 'Mood')}
         </h2>
         <div className="flex items-center gap-1 overflow-x-auto">
           {last14.map((day) => {

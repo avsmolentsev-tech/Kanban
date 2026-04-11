@@ -7,12 +7,14 @@ import { seedDb } from './db/seed';
 import { searchService } from './services/search.service';
 import { telegramService } from './services/telegram.service';
 import { startNotificationScheduler } from './services/notification.service';
+import { authMiddleware } from './middleware/auth';
 
 const app = express();
 
 app.use(cors());
 app.use(express.json({ limit: `${config.maxFileSizeMb}mb` }));
 app.use(express.urlencoded({ extended: true }));
+app.use(authMiddleware);
 
 app.use('/v1', router);
 

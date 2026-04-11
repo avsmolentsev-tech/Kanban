@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { apiPost, apiClient } from '../api/client';
+import { useLangStore } from '../store/lang.store';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -26,7 +27,7 @@ declare global {
   }
 }
 
-const suggestions = [
+const SUGGESTIONS_RU = [
   'Что обсуждали на последней встрече?',
   'Какие задачи в работе?',
   'Сделай бандл по всем проектам',
@@ -34,7 +35,16 @@ const suggestions = [
   'Какие цели активны?',
 ];
 
+const SUGGESTIONS_EN = [
+  'What did we discuss at the last meeting?',
+  'What tasks are in progress?',
+  'Create a bundle for all projects',
+  'Show today\'s tasks',
+  'What goals are active?',
+];
+
 export function ChatPage() {
+  const { t } = useLangStore();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -65,7 +75,7 @@ export function ChatPage() {
       const reply = res.response + (res.results && res.results.length > 0 ? '\n\n' + res.results.map(r => r.detail).join('\n') : '');
       setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e: unknown) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Ошибка: ${e instanceof Error ? e.message : 'unknown'}` }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: `${t('Ошибка:', 'Error:')} ${e instanceof Error ? e.message : 'unknown'}` }]);
     } finally { setLoading(false); }
   };
 
@@ -79,10 +89,10 @@ export function ChatPage() {
       form.append('file', file);
       const res = await apiClient.post('/ingest', form, { headers: { 'Content-Type': 'multipart/form-data' } });
       const data = res.data?.data;
-      const reply = data ? `${data.detected_type}: ${data.summary}` : 'Файл обработан';
+      const reply = data ? `${data.detected_type}: ${data.summary}` : t('Файл обработан', 'File processed');
       setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e: unknown) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Ошибка: ${e instanceof Error ? e.message : 'unknown'}` }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: `${t('Ошибка:', 'Error:')} ${e instanceof Error ? e.message : 'unknown'}` }]);
     } finally { setLoading(false); }
   };
 
@@ -128,14 +138,14 @@ export function ChatPage() {
         {messages.length === 0 && !loading && (
           <div className="flex flex-col items-center justify-center h-full gap-6">
             <div className="text-center">
-              <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Чат с ассистентом</h2>
-              <p className="text-gray-500 dark:text-gray-400 text-sm">Задайте вопрос или прикрепите файл</p>
+              <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">{t('Чат с ассистентом', 'AI Assistant')}</h2>
+              <p className="text-gray-500 dark:text-gray-400 text-sm">{t('Задайте вопрос или прикрепите файл', 'Ask a question or attach a file')}</p>
             </div>
             <div className="flex flex-wrap justify-center gap-2 max-w-lg">
-              {suggestions.map(s => (
-                <button key={s} onClick={() => send(s)}
+              {SUGGESTIONS_RU.map((ru, i) => (
+                <button key={ru} onClick={() => send(t(ru, SUGGESTIONS_EN[i] ?? ru))}
                   className="px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:border-indigo-300 transition-colors">
-                  {s}
+                  {t(ru, SUGGESTIONS_EN[i] ?? ru)}
                 </button>
               ))}
             </div>
@@ -157,7 +167,7 @@ export function ChatPage() {
         {loading && (
           <div className="flex justify-start">
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-2.5 text-sm text-gray-500 animate-pulse">
-              Думаю...
+              {t('Думаю...', 'Thinking...')}
             </div>
           </div>
         )}
@@ -170,7 +180,7 @@ export function ChatPage() {
           {/* File attach */}
           <button onClick={() => fileRef.current?.click()}
             className="px-3 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-lg flex-shrink-0"
-            title="Прикрепить файл">
+            title={t('Прикрепить файл', 'Attach file')}>
             📎
           </button>
           <input ref={fileRef} type="file" className="hidden" onChange={e => {
@@ -184,7 +194,7 @@ export function ChatPage() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
-            placeholder={recording ? 'Говори...' : 'Сообщение...'}
+            placeholder={recording ? t('Говори...', 'Speaking...') : t('Сообщение...', 'Message...')}
             rows={1}
             className={`flex-1 resize-none rounded-xl border bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
               recording ? 'border-red-400 bg-red-50 dark:bg-red-900/20' : 'border-gray-300 dark:border-gray-600'
@@ -206,7 +216,7 @@ export function ChatPage() {
                   ? 'bg-red-500 border-red-500 text-white animate-pulse'
                   : 'border-gray-300 dark:border-gray-600 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
-              title={recording ? 'Остановить' : 'Голосовой ввод'}>
+              title={recording ? t('Остановить', 'Stop') : t('Голосовой ввод', 'Voice input')}>
               🎤
             </button>
           )}

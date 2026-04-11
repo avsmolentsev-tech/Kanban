@@ -14,15 +14,25 @@ export class TelegramService {
   private bot: Telegraf | null = null;
   private chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
-  /** Execute a command via AI — same as web voice commands */
-  private async executeCommand(text: string): Promise<{ text: string; files?: Array<{ path: string; filename: string }> }> {
+  /** Resolve internal user id from Telegram user id */
+  private resolveUserId(tgId: number): number | null {
     const db = getDb();
+    const row = db.prepare("SELECT id FROM users WHERE tg_id = ?").get(String(tgId)) as { id: number } | undefined;
+    return row?.id ?? null;
+  }
+
+  /** Execute a command via AI — same as web voice commands */
+  private async executeCommand(text: string, tgUserId?: number): Promise<{ text: string; files?: Array<{ path: string; filename: string }> }> {
+    const db = getDb();
+    const userId = tgUserId ? this.resolveUserId(tgUserId) : null;
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
+    const userParams = userId != null ? [userId] : [];
     const claude = new ClaudeService();
-    const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
-    const tasks = db.prepare("SELECT id, title, status, project_id FROM tasks WHERE archived = 0").all() as Array<{ id: number; title: string; status: string; project_id: number | null }>;
-    const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
+    const projects = db.prepare(`SELECT id, name FROM projects WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; name: string }>;
+    const tasks = db.prepare(`SELECT id, title, status, project_id FROM tasks WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; title: string; status: string; project_id: number | null }>;
+    const people = db.prepare(`SELECT id, name FROM people WHERE 1=1${userFilter}`).all(...userParams) as Array<{ id: number; name: string }>;
     let goals: Array<{ id: number; title: string; type: string; parent_id: number | null; current_value: number; target_value: number; unit: string; status: string }> = [];
-    try { goals = db.prepare("SELECT id, title, type, parent_id, current_value, target_value, unit, status FROM goals WHERE status = 'active' ORDER BY type, parent_id").all() as typeof goals; } catch {}
+    try { goals = db.prepare(`SELECT id, title, type, parent_id, current_value, target_value, unit, status FROM goals WHERE status = 'active'${userFilter} ORDER BY type, parent_id`).all(...userParams) as typeof goals; } catch {}
 
     // Auto-detect if question is about meetings → include full content
     const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
@@ -33,13 +43,13 @@ export class TelegramService {
 
     if (needsFullMeetings) {
       // Fetch last 5 meetings with FULL content
-      const fullMeetings = db.prepare("SELECT id, title, date, project_id, summary_raw FROM meetings ORDER BY date DESC LIMIT 5").all() as Array<{ id: number; title: string; date: string; project_id: number | null; summary_raw: string }>;
+      const fullMeetings = db.prepare(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 5`).all(...userParams) as Array<{ id: number; title: string; date: string; project_id: number | null; summary_raw: string }>;
       fullMeetingContent = fullMeetings.map(m =>
         `## Встреча #${m.id}: ${m.title} (${m.date})\n${(m.summary_raw || '').slice(0, 8000)}`
       ).join('\n\n---\n\n');
       meetings = fullMeetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.summary_raw || '').slice(0, 200) }));
     } else {
-      meetings = db.prepare("SELECT id, title, date, project_id, substr(summary_raw, 1, 500) as preview FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<{ id: number; title: string; date: string; project_id: number | null; preview: string }>;
+      meetings = db.prepare(`SELECT id, title, date, project_id, substr(summary_raw, 1, 500) as preview FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 20`).all(...userParams) as Array<{ id: number; title: string; date: string; project_id: number | null; preview: string }>;
     }
 
     const systemPrompt = `Ты — персональный ассистент пользователя в Telegram. Ты умный, дружелюбный, вдумчивый собеседник.
@@ -143,8 +153,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       try {
         switch (action['type']) {
           case 'create_task': {
-            const r = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, due_date) VALUES (?, ?, ?, ?, ?, ?)').run(
-              action['project_id'] ?? null, action['title'], '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null
+            const r = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+              action['project_id'] ?? null, action['title'], '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId
             );
             const taskId = Number(r.lastInsertRowid);
             // Auto-add self if no people specified
@@ -183,29 +193,29 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
             break;
           }
           case 'create_project': {
-            db.prepare('INSERT INTO projects (name, color) VALUES (?, ?)').run(action['name'], action['color'] ?? '#6366f1');
+            db.prepare('INSERT INTO projects (name, color, user_id) VALUES (?, ?, ?)').run(action['name'], action['color'] ?? '#6366f1', userId);
             results.push(`✅ Проект "${action['name']}"`);
             break;
           }
           case 'create_idea': {
-            db.prepare('INSERT INTO ideas (title, body, category, project_id, status) VALUES (?, ?, ?, ?, ?)').run(
+            db.prepare('INSERT INTO ideas (title, body, category, project_id, status, user_id) VALUES (?, ?, ?, ?, ?, ?)').run(
               action['title'], (action['body'] as string) ?? '', (action['category'] as string) ?? 'personal',
-              action['project_id'] ?? null, 'backlog'
+              action['project_id'] ?? null, 'backlog', userId
             );
             const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
             results.push(`💡 Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog`);
             break;
           }
           case 'create_habit': {
-            db.prepare('INSERT INTO habits (title, icon, remind_time) VALUES (?, ?, ?)').run(
-              action['title'], (action['icon'] as string) ?? '✅', action['remind_time'] ?? null
+            db.prepare('INSERT INTO habits (title, icon, remind_time, user_id) VALUES (?, ?, ?, ?)').run(
+              action['title'], (action['icon'] as string) ?? '✅', action['remind_time'] ?? null, userId
             );
             results.push(`🔥 Привычка "${action['title']}" создана${action['remind_time'] ? ` (⏰ ${action['remind_time']})` : ''}`);
             break;
           }
           case 'log_habit': {
             const title = (action['habit_title'] as string).toLowerCase();
-            const habit = db.prepare("SELECT id, title FROM habits WHERE archived = 0").all() as Array<{ id: number; title: string }>;
+            const habit = db.prepare(`SELECT id, title FROM habits WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; title: string }>;
             const match = habit.find(h => h.title.toLowerCase().includes(title) || title.includes(h.title.toLowerCase()));
             if (match) {
               const today = moscowDateString();
@@ -222,16 +232,16 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
             break;
           }
           case 'create_goal': {
-            const r = db.prepare('INSERT INTO goals (title, description, type, project_id, target_value, unit, due_date) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+            const r = db.prepare('INSERT INTO goals (title, description, type, project_id, target_value, unit, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
               action['title'], (action['description'] as string) ?? '', 'goal',
-              action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%', action['due_date'] ?? null
+              action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%', action['due_date'] ?? null, userId
             );
             results.push(`🎯 Цель "${action['title']}" создана`);
             break;
           }
           case 'create_key_result': {
-            db.prepare('INSERT INTO goals (title, type, parent_id, target_value, unit) VALUES (?, ?, ?, ?, ?)').run(
-              action['title'], 'key_result', action['parent_id'], action['target_value'] ?? 100, (action['unit'] as string) ?? '%'
+            db.prepare('INSERT INTO goals (title, type, parent_id, target_value, unit, user_id) VALUES (?, ?, ?, ?, ?, ?)').run(
+              action['title'], 'key_result', action['parent_id'], action['target_value'] ?? 100, (action['unit'] as string) ?? '%', userId
             );
             results.push(`📊 KR "${action['title']}" добавлен`);
             break;
@@ -269,8 +279,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
           }
           case 'create_meeting': {
             const summary = (action['summary_raw'] as string) ?? '';
-            const r = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw) VALUES (?, ?, ?, ?)').run(
-              action['title'], action['date'], action['project_id'] ?? null, summary
+            const r = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES (?, ?, ?, ?, ?)').run(
+              action['title'], action['date'], action['project_id'] ?? null, summary, userId
             );
             const meetingId = Number(r.lastInsertRowid);
             if (Array.isArray(action['person_ids'])) {
@@ -377,8 +387,14 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     // /start
     this.bot.command('start', (ctx) => {
+      const tgId = ctx.from?.id;
+      const linked = tgId ? this.resolveUserId(tgId) : null;
+      const linkStatus = linked
+        ? '✅ Аккаунт привязан'
+        : `⚠️ Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.`;
       const text =
         '🚀 Бот готов к работе!\n\n' +
+        `🆔 Ваш Telegram ID: ${tgId}\n${linkStatus}\n\n` +
         '📋 Команды:\n' +
         '/tasks — активные задачи\n' +
         '/all — все задачи по статусам\n' +
@@ -418,8 +434,10 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     this.bot.command('cmd', async (ctx) => {
       const text = ctx.message.text.replace(/^\/cmd\s*/, '').trim();
       if (!text) { ctx.reply('Формат: /cmd создай задачу купить молоко'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
       try {
-        const response = await this.executeCommand(text);
+        const response = await this.executeCommand(text, ctx.from?.id);
           await sendCommandResult(ctx, response);
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
@@ -430,6 +448,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // /bundle — generate NotebookLM bundle for project
     // /bundle — generate and SEND bundle in all formats
     this.bot.command('bundle', async (ctx) => {
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
       const text = ctx.message.text.replace(/^\/bundle\s*/, '').trim();
       if (!text) {
         ctx.reply('Формат:\n/bundle <название проекта>\n/bundle все\n\nПримеры:\n/bundle Атланты\n/bundle Robots\n\nОтправлю файлы: PDF, DOCX, MD');
@@ -495,6 +515,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     // /transcribe <url> — download and transcribe large audio from URL
     this.bot.command('transcribe', async (ctx) => {
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
       const url = ctx.message.text.replace(/^\/transcribe\s*/, '').trim();
       if (!url) { ctx.reply('Формат: /transcribe <ссылка на аудио>\n\nЗалей файл в Google Drive/Яндекс Диск, сделай публичную ссылку и отправь.'); return; }
       try {
@@ -538,7 +560,9 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // /habits — today's habits
     this.bot.command('habits', (ctx) => {
       const db = getDb();
-      const habits = db.prepare("SELECT id, title, icon FROM habits WHERE archived = 0").all() as Array<{ id: number; title: string; icon: string }>;
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const habits = db.prepare("SELECT id, title, icon FROM habits WHERE archived = 0 AND user_id = ?").all(userId) as Array<{ id: number; title: string; icon: string }>;
       if (habits.length === 0) { ctx.reply('🔥 Нет привычек. Добавь в /app → Привычки'); return; }
       const today = moscowDateString();
       const logs = db.prepare("SELECT habit_id FROM habit_logs WHERE date = ?").all(today) as Array<{ habit_id: number }>;
@@ -549,7 +573,9 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     this.bot.command('meetings', (ctx) => {
       const db = getDb();
-      const meetings = db.prepare("SELECT m.title, m.date, p.name as project_name FROM meetings m LEFT JOIN projects p ON m.project_id = p.id ORDER BY m.date DESC LIMIT 10").all() as Array<{ title: string; date: string; project_name: string | null }>;
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const meetings = db.prepare("SELECT m.title, m.date, p.name as project_name FROM meetings m LEFT JOIN projects p ON m.project_id = p.id WHERE m.user_id = ? ORDER BY m.date DESC LIMIT 10").all(userId) as Array<{ title: string; date: string; project_name: string | null }>;
       if (meetings.length === 0) { ctx.reply('Нет встреч'); return; }
       const lines = meetings.map(m => `📅 ${m.date} — ${m.title}${m.project_name ? ` [${m.project_name}]` : ''}`);
       ctx.reply(`🤝 Последние встречи:\n\n${lines.join('\n')}`);
@@ -558,9 +584,11 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // /tasks — today's tasks
     this.bot.command('tasks', (ctx) => {
       const db = getDb();
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
       const tasks = db.prepare(
-        "SELECT title, status, priority, due_date, project_id FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') ORDER BY priority DESC LIMIT 20"
-      ).all() as Array<{ title: string; status: string; priority: number; due_date: string | null; project_id: number | null }>;
+        "SELECT title, status, priority, due_date, project_id FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND user_id = ? ORDER BY priority DESC LIMIT 20"
+      ).all(userId) as Array<{ title: string; status: string; priority: number; due_date: string | null; project_id: number | null }>;
 
       if (tasks.length === 0) {
         ctx.reply('Нет активных задач!');
@@ -585,9 +613,11 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // /all — all tasks grouped by status
     this.bot.command('all', (ctx) => {
       const db = getDb();
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
       const tasks = db.prepare(
-        "SELECT title, status, priority FROM tasks WHERE archived = 0 ORDER BY status, priority DESC"
-      ).all() as Array<{ title: string; status: string; priority: number }>;
+        "SELECT title, status, priority FROM tasks WHERE archived = 0 AND user_id = ? ORDER BY status, priority DESC"
+      ).all(userId) as Array<{ title: string; status: string; priority: number }>;
 
       const grouped: Record<string, string[]> = {};
       for (const t of tasks) {
@@ -609,9 +639,11 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     // /projects
     this.bot.command('projects', (ctx) => {
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
       const projects = getDb().prepare(
-        "SELECT name, status, color FROM projects WHERE archived = 0 ORDER BY order_index ASC"
-      ).all() as Array<{ name: string; status: string }>;
+        "SELECT name, status, color FROM projects WHERE archived = 0 AND user_id = ? ORDER BY order_index ASC"
+      ).all(userId) as Array<{ name: string; status: string }>;
 
       const lines = projects.map(p => `• ${p.name} (${p.status})`);
       ctx.reply(`📁 Проекты:\n\n${lines.join('\n')}` || 'Нет проектов');
@@ -621,8 +653,10 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     this.bot.command('add', (ctx) => {
       const text = ctx.message.text.replace(/^\/add\s*/, '').trim();
       if (!text) { ctx.reply('Формат: /add Название задачи'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
 
-      const r = getDb().prepare('INSERT INTO tasks (title, status, priority) VALUES (?, ?, ?)').run(text, 'todo', 3);
+      const r = getDb().prepare('INSERT INTO tasks (title, status, priority, user_id) VALUES (?, ?, ?, ?)').run(text, 'todo', 3, userId);
       const tid = Number(r.lastInsertRowid);
       const selfRow = getDb().prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
       if (selfRow) getDb().prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(tid, selfRow.id);
@@ -632,13 +666,15 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // /brief — daily brief
     this.bot.command('brief', async (ctx) => {
       const db = getDb();
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
       const today = moscowDateString();
       const tasks = db.prepare(
-        "SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') ORDER BY priority DESC LIMIT 10"
-      ).all();
+        "SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND user_id = ? ORDER BY priority DESC LIMIT 10"
+      ).all(userId);
       const meetings = db.prepare(
-        'SELECT title, date FROM meetings WHERE date >= ? ORDER BY date ASC LIMIT 5'
-      ).all(today);
+        'SELECT title, date FROM meetings WHERE date >= ? AND user_id = ? ORDER BY date ASC LIMIT 5'
+      ).all(today, userId);
 
       let brief = '🌅 Дневной брифинг\n\n';
       brief += `📋 Активных задач: ${(tasks as Array<unknown>).length}\n`;
@@ -658,6 +694,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     this.bot.command('search', (ctx) => {
       const query = ctx.message.text.replace(/^\/search\s*/, '').trim();
       if (!query) { ctx.reply('Формат: /search ключевое слово'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
 
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { searchService } = require('./search.service');
@@ -734,6 +772,9 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       const text = ctx.message.text;
       if (text.startsWith('/')) return;
 
+      const userId = this.resolveUserId(ctx.from?.id ?? 0);
+      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.\n\n🆔 Ваш Telegram ID: ' + ctx.from?.id); return; }
+
       // Check for claude/клод prefix → save for Claude Code processing
       const claudeMatch = text.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
       if (claudeMatch) {
@@ -747,7 +788,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       try {
         const intent = await this.classifyMessage(text);
         if (intent === 'command' || intent === 'chat') {
-          const response = await this.executeCommand(text);
+          const response = await this.executeCommand(text, ctx.from?.id);
           await sendCommandResult(ctx, response);
         } else {
           const ingestService = new IngestService();
@@ -762,6 +803,9 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // Voice message → transcribe first, then decide
     this.bot.on(message('voice'), async (ctx) => {
       try {
+        const userId = this.resolveUserId(ctx.from?.id ?? 0);
+        if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.\n\n🆔 Ваш Telegram ID: ' + ctx.from?.id); return; }
+
         ctx.reply('🎤 Транскрибирую...');
         const fileId = ctx.message.voice.file_id;
         const fileLink = await ctx.telegram.getFileLink(fileId);
@@ -788,7 +832,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         // Route: short = command, long = ingest as meeting
         const intent = await this.classifyMessage(transcript);
         if (intent === 'command' || intent === 'chat') {
-          const cmdResponse = await this.executeCommand(transcript);
+          const cmdResponse = await this.executeCommand(transcript, ctx.from?.id);
             await sendCommandResult(ctx, cmdResponse);
         } else {
           const ingestService = new IngestService();
@@ -803,6 +847,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // Document → check if audio, transcribe; otherwise ingest
     this.bot.on(message('document'), async (ctx) => {
       try {
+        const userId = this.resolveUserId(ctx.from?.id ?? 0);
+        if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.\n\n🆔 Ваш Telegram ID: ' + ctx.from?.id); return; }
         const doc = ctx.message.document;
         const filename = doc.file_name ?? 'file';
         const mime = doc.mime_type ?? '';
@@ -840,6 +886,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // Audio message (mp3 etc sent as audio, not voice)
     this.bot.on(message('audio'), async (ctx) => {
       try {
+        const userId = this.resolveUserId(ctx.from?.id ?? 0);
+        if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.\n\n🆔 Ваш Telegram ID: ' + ctx.from?.id); return; }
         ctx.reply('🎤 Транскрибирую аудио...');
         const audio = ctx.message.audio;
         const fileLink = await ctx.telegram.getFileLink(audio.file_id);
@@ -862,6 +910,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     this.bot.on(message('photo'), async (ctx) => {
       try {
+        const userId = this.resolveUserId(ctx.from?.id ?? 0);
+        if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.\n\n🆔 Ваш Telegram ID: ' + ctx.from?.id); return; }
         const photo = ctx.message.photo[ctx.message.photo.length - 1]!;
         const fileLink = await ctx.telegram.getFileLink(photo.file_id);
         const response = await fetch(fileLink.href);
@@ -903,13 +953,23 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     process.once('SIGTERM', () => this.bot?.stop('SIGTERM'));
   }
 
-  /** Send a notification message to the configured user */
+  /** Send a notification message to the configured user (legacy) */
   async notify(message: string): Promise<void> {
     if (!this.bot || !config.telegramUserId) return;
     try {
       await this.bot.telegram.sendMessage(config.telegramUserId, message, { parse_mode: 'HTML' });
     } catch (err) {
       console.error('[telegram] notify failed:', err);
+    }
+  }
+
+  /** Send notification to a specific Telegram user by tg_id */
+  async notifyUser(tgId: string, message: string): Promise<void> {
+    if (!this.bot || !tgId) return;
+    try {
+      await this.bot.telegram.sendMessage(tgId, message, { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error(`[telegram] notifyUser(${tgId}) failed:`, err);
     }
   }
 
@@ -920,6 +980,23 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     } catch (err) {
       console.error('[telegram] sendFile failed:', err);
     }
+  }
+
+  async sendFileToUser(tgId: string, filePath: string, filename: string, caption?: string): Promise<void> {
+    if (!this.bot || !tgId) return;
+    try {
+      await this.bot.telegram.sendDocument(tgId, { source: filePath, filename }, caption ? { caption } : undefined);
+    } catch (err) {
+      console.error(`[telegram] sendFileToUser(${tgId}) failed:`, err);
+    }
+  }
+
+  /** Get all users with linked Telegram accounts */
+  getLinkedUsers(): Array<{ id: number; tg_id: string; name: string }> {
+    try {
+      const db = getDb();
+      return db.prepare("SELECT id, tg_id, name FROM users WHERE tg_id IS NOT NULL AND tg_id != ''").all() as Array<{ id: number; tg_id: string; name: string }>;
+    } catch { return []; }
   }
 }
 

@@ -57,5 +57,14 @@ export function transcribeLocal(buffer: Buffer, filename: string): string {
   try { fs.unlinkSync(wavPath); } catch {}
   try { fs.unlinkSync(txtPath); } catch {}
 
+  // Log transcription
+  try {
+    const { getDb } = require('../db/db');
+    const db = getDb();
+    db.prepare("INSERT INTO usage_logs (type, model, detail) VALUES (?, ?, ?)").run(
+      'transcription', 'whisper-local', `${transcript.length} chars`
+    );
+  } catch {}
+
   return transcript;
 }

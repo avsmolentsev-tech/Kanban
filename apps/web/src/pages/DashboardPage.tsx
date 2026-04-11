@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { apiGet, apiPost } from '../api/client';
+import { useLangStore } from '../store/lang.store';
 
 interface Task {
   id: string;
@@ -44,6 +45,7 @@ function WidgetCard({
   linkTo: string;
   children: React.ReactNode;
 }) {
+  const { t } = useLangStore();
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
       <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3">{title}</h2>
@@ -52,13 +54,14 @@ function WidgetCard({
         to={linkTo}
         className="inline-block mt-3 text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
       >
-        посмотреть все &rarr;
+        {t('посмотреть все', 'view all')} &rarr;
       </NavLink>
     </div>
   );
 }
 
 export function DashboardPage() {
+  const { t } = useLangStore();
   const [todayTasks, setTodayTasks] = useState<Task[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [ideas, setIdeas] = useState<Idea[]>([]);
@@ -121,7 +124,7 @@ export function DashboardPage() {
       const data = await apiPost<{ plan: string }>('/ai/daily-plan');
       setDailyPlan(data.plan);
     } catch (err) {
-      setDailyPlan('Ошибка генерации плана');
+      setDailyPlan(t('Ошибка генерации плана', 'Failed to generate plan'));
     } finally {
       setDailyPlanLoading(false);
     }
@@ -133,7 +136,7 @@ export function DashboardPage() {
       const data = await apiPost<{ analysis: string }>('/ai/productivity-analysis');
       setProductivityAnalysis(data.analysis);
     } catch (err) {
-      setProductivityAnalysis('Ошибка анализа продуктивности');
+      setProductivityAnalysis(t('Ошибка анализа продуктивности', 'Failed to analyse productivity'));
     } finally {
       setProductivityLoading(false);
     }
@@ -141,19 +144,19 @@ export function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="p-6 text-gray-500 dark:text-gray-400 text-center">Загрузка...</div>
+      <div className="p-6 text-gray-500 dark:text-gray-400 text-center">{t('Загрузка...', 'Loading...')}</div>
     );
   }
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
-      <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-5">Дашборд</h1>
+      <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-5">{t('Дашборд', 'Dashboard')}</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* AI Daily Plan */}
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
           <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3">
-            {'\uD83D\uDCC5'} План на день
+            {'\uD83D\uDCC5'} {t('План на день', 'Daily Plan')}
           </h2>
           <div className="space-y-2">
             {!dailyPlan && !dailyPlanLoading && (
@@ -161,12 +164,12 @@ export function DashboardPage() {
                 onClick={handleGeneratePlan}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
               >
-                Сгенерировать
+                {t('Сгенерировать', 'Generate')}
               </button>
             )}
             {dailyPlanLoading && (
               <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">
-                Генерация плана...
+                {t('Генерация плана...', 'Generating plan...')}
               </p>
             )}
             {dailyPlan && (
@@ -179,7 +182,7 @@ export function DashboardPage() {
                   disabled={dailyPlanLoading}
                   className="mt-2 px-3 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                 >
-                  Обновить
+                  {t('Обновить', 'Refresh')}
                 </button>
               </>
             )}
@@ -189,7 +192,7 @@ export function DashboardPage() {
         {/* AI Productivity Analysis */}
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
           <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3">
-            {'\uD83D\uDCCA'} Анализ продуктивности
+            {'\uD83D\uDCCA'} {t('Анализ продуктивности', 'Productivity Analysis')}
           </h2>
           <div className="space-y-2">
             {!productivityAnalysis && !productivityLoading && (
@@ -197,12 +200,12 @@ export function DashboardPage() {
                 onClick={handleProductivityAnalysis}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
               >
-                Анализировать
+                {t('Анализировать', 'Analyse')}
               </button>
             )}
             {productivityLoading && (
               <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">
-                Анализ данных...
+                {t('Анализ данных...', 'Analysing data...')}
               </p>
             )}
             {productivityAnalysis && (
@@ -215,7 +218,7 @@ export function DashboardPage() {
                   disabled={productivityLoading}
                   className="mt-2 px-3 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                 >
-                  Обновить
+                  {t('Обновить', 'Refresh')}
                 </button>
               </>
             )}
@@ -223,9 +226,9 @@ export function DashboardPage() {
         </div>
 
         {/* Today tasks */}
-        <WidgetCard title="Задачи на сегодня" linkTo="/kanban">
+        <WidgetCard title={t('Задачи на сегодня', 'Today\'s Tasks')} linkTo="/kanban">
           {todayTasks.length === 0 && (
-            <p className="text-sm text-gray-400 dark:text-gray-500">Нет задач</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">{t('Нет задач', 'No tasks')}</p>
           )}
           {todayTasks.map((t) => (
             <div
@@ -247,9 +250,9 @@ export function DashboardPage() {
         </WidgetCard>
 
         {/* Upcoming meetings */}
-        <WidgetCard title="Ближайшие встречи" linkTo="/meetings">
+        <WidgetCard title={t('Ближайшие встречи', 'Upcoming Meetings')} linkTo="/meetings">
           {meetings.length === 0 && (
-            <p className="text-sm text-gray-400 dark:text-gray-500">Нет встреч</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">{t('Нет встреч', 'No meetings')}</p>
           )}
           {meetings.map((m) => (
             <div
@@ -268,9 +271,9 @@ export function DashboardPage() {
         </WidgetCard>
 
         {/* Recent ideas */}
-        <WidgetCard title="Новые идеи" linkTo="/ideas">
+        <WidgetCard title={t('Новые идеи', 'New Ideas')} linkTo="/ideas">
           {ideas.length === 0 && (
-            <p className="text-sm text-gray-400 dark:text-gray-500">Нет идей</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">{t('Нет идей', 'No ideas')}</p>
           )}
           {ideas.map((idea) => (
             <div
@@ -283,9 +286,9 @@ export function DashboardPage() {
         </WidgetCard>
 
         {/* Project progress */}
-        <WidgetCard title="Прогресс по проектам" linkTo="/timeline">
+        <WidgetCard title={t('Прогресс по проектам', 'Project Progress')} linkTo="/timeline">
           {progress.length === 0 && (
-            <p className="text-sm text-gray-400 dark:text-gray-500">Нет проектов</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">{t('Нет проектов', 'No projects')}</p>
           )}
           {progress.map((p) => {
             const total = p.backlog + p.todo + p.in_progress + p.done;

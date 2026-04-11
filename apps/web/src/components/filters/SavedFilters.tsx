@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLangStore } from '../../store/lang.store';
 
 export interface SavedFilter {
   id: string;
@@ -72,6 +73,7 @@ interface SavedFiltersProps {
 }
 
 export function SavedFilters({ active, onApply }: SavedFiltersProps) {
+  const { t } = useLangStore();
   const [filters, setFilters] = useState<SavedFilter[]>(loadFilters);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
@@ -99,7 +101,7 @@ export function SavedFilters({ active, onApply }: SavedFiltersProps) {
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-xs text-gray-400 font-medium">Фильтры:</span>
+      <span className="text-xs text-gray-400 font-medium">{t('Фильтры:', 'Filters:')}</span>
       {filters.map((f) => (
         <button
           key={f.id}
@@ -110,7 +112,7 @@ export function SavedFilters({ active, onApply }: SavedFiltersProps) {
               : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-200 hover:text-indigo-600'
           }`}
         >
-          {f.name}
+          {f.id === 'preset-week' ? t('Мои на этой неделе', 'Mine this week') : f.id === 'preset-high' ? t('Высокий приоритет', 'High priority') : f.id === 'preset-overdue' ? t('Просрочено', 'Overdue') : f.name}
           {f.id.startsWith('custom-') && (
             <span
               onClick={(e) => { e.stopPropagation(); handleRemove(f.id); }}
@@ -126,20 +128,20 @@ export function SavedFilters({ active, onApply }: SavedFiltersProps) {
           <input
             autoFocus
             className="text-xs border border-gray-200 rounded px-2 py-1 w-36"
-            placeholder="Название фильтра..."
+            placeholder={t('Название фильтра...', 'Filter name...')}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') setAdding(false); }}
           />
           <button onClick={handleAdd} className="text-xs text-indigo-600 font-medium">OK</button>
-          <button onClick={() => setAdding(false)} className="text-xs text-gray-400">Отмена</button>
+          <button onClick={() => setAdding(false)} className="text-xs text-gray-400">{t('Отмена', 'Cancel')}</button>
         </div>
       ) : (
         <button
           onClick={() => setAdding(true)}
           className="text-xs text-gray-400 hover:text-indigo-600 border border-dashed border-gray-300 rounded-full px-2 py-1 transition-colors"
         >
-          + Сохранить
+          {t('+ Сохранить', '+ Save')}
         </button>
       )}
     </div>

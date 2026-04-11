@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { useLangStore } from '../../store/lang.store';
 
 type PomodoroState = 'idle' | 'work' | 'break' | 'long_break';
 type TimerMode = 'compact' | 'full';
@@ -10,12 +11,15 @@ const DURATIONS: Record<PomodoroState, number> = {
   long_break: 15 * 60,
 };
 
-const STATE_LABELS: Record<PomodoroState, string> = {
-  idle: 'Помодоро',
-  work: 'Работа',
-  break: 'Перерыв',
-  long_break: 'Длинный перерыв',
-};
+function getStateLabel(state: PomodoroState, t: (ru: string, en: string) => string): string {
+  const labels: Record<PomodoroState, string> = {
+    idle: t('Помодоро', 'Pomodoro'),
+    work: t('Работа', 'Work'),
+    break: t('Перерыв', 'Break'),
+    long_break: t('Длинный перерыв', 'Long break'),
+  };
+  return labels[state];
+}
 
 const STATE_COLORS: Record<PomodoroState, string> = {
   idle: '#6366f1',
@@ -82,7 +86,7 @@ function CircularProgress({ progress, color, size, children }: { progress: numbe
 function sendNotification(title: string) {
   // Browser notification
   if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification(title, { body: 'Помодоро таймер', icon: '/icons/icon-192.png' });
+    new Notification(title, { body: 'Pomodoro timer', icon: '/icons/icon-192.png' });
   }
   // Audio beep
   try {
@@ -109,6 +113,7 @@ function sendNotification(title: string) {
 }
 
 export function PomodoroTimer() {
+  const { t } = useLangStore();
   const [data, setData] = useState<PomodoroData>(loadState);
   const [mode, setMode] = useState<TimerMode>('compact');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -142,7 +147,7 @@ export function PomodoroTimer() {
             const nextState: PomodoroState = isWork
               ? (newSessions % 4 === 0 ? 'long_break' : 'break')
               : 'idle';
-            const msg = isWork ? 'Время перерыва!' : 'Перерыв окончен!';
+            const msg = isWork ? t('Время перерыва!', 'Time for a break!') : t('Перерыв окончен!', 'Break is over!');
             sendNotification(msg);
             const next = {
               ...prev,
@@ -182,7 +187,7 @@ export function PomodoroTimer() {
           else setMode('full');
         }}
         className="fixed bottom-20 right-4 md:bottom-4 md:right-16 z-40 shadow-lg rounded-full"
-        title="Помодоро"
+        title={t('Помодоро', 'Pomodoro')}
       >
         <CircularProgress progress={progress} color={color} size={48}>
           <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200">
@@ -198,10 +203,10 @@ export function PomodoroTimer() {
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-          {STATE_LABELS[state]}
+          {getStateLabel(state, t)}
         </span>
         <div className="flex items-center gap-1">
-          <span className="text-xs text-gray-400">Сессий: {sessions}</span>
+          <span className="text-xs text-gray-400">{t('Сессий:', 'Sessions:')} {sessions}</span>
           <button onClick={() => setMode('compact')} className="ml-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-lg leading-none">&times;</button>
         </div>
       </div>
@@ -218,7 +223,7 @@ export function PomodoroTimer() {
       {/* Task name */}
       {taskName && (
         <div className="text-xs text-gray-500 dark:text-gray-400 text-center mb-2 truncate">
-          Задача: {taskName}
+          {t('Задача:', 'Task:')} {taskName}
         </div>
       )}
 
@@ -227,24 +232,24 @@ export function PomodoroTimer() {
         {state === 'idle' ? (
           <button onClick={startWork}
             className="px-4 py-1.5 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors">
-            Старт
+            {t('Старт', 'Start')}
           </button>
         ) : (
           <>
             {running ? (
               <button onClick={pause}
                 className="px-3 py-1.5 bg-yellow-500 text-white rounded-lg text-sm font-medium hover:bg-yellow-600 transition-colors">
-                Пауза
+                {t('Пауза', 'Pause')}
               </button>
             ) : (
               <button onClick={resume}
                 className="px-3 py-1.5 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors">
-                Продолжить
+                {t('Продолжить', 'Resume')}
               </button>
             )}
             <button onClick={reset}
               className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
-              Сброс
+              {t('Сброс', 'Reset')}
             </button>
           </>
         )}

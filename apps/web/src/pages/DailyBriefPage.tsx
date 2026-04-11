@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { aiApi } from '../api/ai.api';
 import { useTasksStore, useProjectsStore } from '../store';
+import { useLangStore } from '../store/lang.store';
 import type { Task } from '@pis/shared';
 
 export function DailyBriefPage() {
+  const { t } = useLangStore();
   const { tasks, fetchTasks } = useTasksStore();
   const { projects, fetchProjects } = useProjectsStore();
   const [brief, setBrief] = useState<string>('');
@@ -32,7 +34,7 @@ export function DailyBriefPage() {
       setBrief(result.brief);
       setGenerated(true);
     } catch (err) {
-      setBrief('Не удалось сгенерировать брифинг. Проверьте API-ключ OpenAI.');
+      setBrief(t('Не удалось сгенерировать брифинг. Проверьте API-ключ OpenAI.', 'Failed to generate brief. Please check your OpenAI API key.'));
     } finally { setLoading(false); }
   };
 
@@ -58,12 +60,12 @@ export function DailyBriefPage() {
     <div className="p-6 max-w-3xl">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-800">Дневной брифинг</h1>
-          <p className="text-sm text-gray-400">{new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          <h1 className="text-xl font-bold text-gray-800">{t('Дневной брифинг', 'Daily Brief')}</h1>
+          <p className="text-sm text-gray-400">{new Date().toLocaleDateString(t('ru-RU', 'en-US'), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
         <button onClick={generateBrief} disabled={loading}
           className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-          {loading ? 'Генерация...' : generated ? 'Перегенерировать' : 'Сгенерировать AI-брифинг'}
+          {loading ? t('Генерация...', 'Generating...') : generated ? t('Перегенерировать', 'Regenerate') : t('Сгенерировать AI-брифинг', 'Generate AI Brief')}
         </button>
       </div>
 
@@ -76,29 +78,29 @@ export function DailyBriefPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {overdue.length > 0 && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-red-700 mb-3">Просрочено ({overdue.length})</h3>
+            <h3 className="text-sm font-semibold text-red-700 mb-3">{t('Просрочено', 'Overdue')} ({overdue.length})</h3>
             <TaskList items={overdue} emptyText="" />
           </div>
         )}
 
         <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Сегодня ({todayTasks.length})</h3>
-          <TaskList items={todayTasks} emptyText="Нет задач на сегодня" />
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('Сегодня', 'Today')} ({todayTasks.length})</h3>
+          <TaskList items={todayTasks} emptyText={t('Нет задач на сегодня', 'No tasks for today')} />
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">В работе ({inProgress.length})</h3>
-          <TaskList items={inProgress} emptyText="Нет задач в работе" />
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('В работе', 'In Progress')} ({inProgress.length})</h3>
+          <TaskList items={inProgress} emptyText={t('Нет задач в работе', 'No tasks in progress')} />
         </div>
 
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-blue-700 mb-3">На неделе ({weekTasks.length})</h3>
-          <TaskList items={weekTasks} emptyText="Нет задач на неделю" />
+          <h3 className="text-sm font-semibold text-blue-700 mb-3">{t('На неделе', 'This Week')} ({weekTasks.length})</h3>
+          <TaskList items={weekTasks} emptyText={t('Нет задач на неделю', 'No tasks this week')} />
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Высокий приоритет ({highPriority.length})</h3>
-          <TaskList items={highPriority} emptyText="Нет задач с высоким приоритетом" />
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('Высокий приоритет', 'High Priority')} ({highPriority.length})</h3>
+          <TaskList items={highPriority} emptyText={t('Нет задач с высоким приоритетом', 'No high priority tasks')} />
         </div>
       </div>
     </div>

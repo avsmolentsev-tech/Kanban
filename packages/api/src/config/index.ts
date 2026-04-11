@@ -14,4 +14,7 @@ export const config = {
   telegramBotToken: process.env['TELEGRAM_BOT_TOKEN'] ?? '',
   telegramUserId: process.env['TELEGRAM_USER_ID'] ?? '',
   webappUrl: process.env['WEBAPP_URL'] ?? '',
+  googleClientId: process.env['GOOGLE_CLIENT_ID'] ?? '',
+  googleClientSecret: process.env['GOOGLE_CLIENT_SECRET'] ?? '',
+  jwtSecret: process.env['JWT_SECRET'] ?? 'pis-default-secret-change-me',
 } as const;

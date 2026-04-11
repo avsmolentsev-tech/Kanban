@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useLangStore } from '../../store/lang.store';
 
 // Web Speech API types
 interface SpeechRecognitionEvent extends Event {
@@ -17,18 +18,14 @@ interface SpeechRecognitionInstance extends EventTarget {
   onend: (() => void) | null;
 }
 
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognitionInstance;
-    webkitSpeechRecognition: new () => SpeechRecognitionInstance;
-  }
-}
+// Uses global Window.SpeechRecognition declared in ChatPage.tsx
 
 interface Props {
   onTranscript: (text: string) => void;
 }
 
 export function VoiceDictation({ onTranscript }: Props) {
+  const { t } = useLangStore();
   const [recording, setRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [lang, setLang] = useState('ru-RU');
@@ -88,7 +85,7 @@ export function VoiceDictation({ onTranscript }: Props) {
   };
 
   if (!supported) {
-    return <div className="text-xs text-gray-400">Голосовой ввод не поддерживается в этом браузере</div>;
+    return <div className="text-xs text-gray-400">{t('Голосовой ввод не поддерживается в этом браузере', 'Voice input is not supported in this browser')}</div>;
   }
 
   return (
@@ -109,10 +106,10 @@ export function VoiceDictation({ onTranscript }: Props) {
         </button>
         <div>
           <div className="text-sm font-medium text-gray-700">
-            {recording ? 'Запись...' : 'Голосовой ввод'}
+            {recording ? t('Запись...', 'Recording...') : t('Голосовой ввод', 'Voice input')}
           </div>
           <div className="text-xs text-gray-400">
-            {recording ? 'Нажмите, чтобы остановить' : 'Нажмите на микрофон, чтобы начать'}
+            {recording ? t('Нажмите, чтобы остановить', 'Click to stop') : t('Нажмите на микрофон, чтобы начать', 'Click the microphone to start')}
           </div>
         </div>
         <select
@@ -121,8 +118,8 @@ export function VoiceDictation({ onTranscript }: Props) {
           onChange={(e) => setLang(e.target.value)}
           disabled={recording}
         >
-          <option value="ru-RU">Русский</option>
-          <option value="en-US">Английский</option>
+          <option value="ru-RU">{t('Русский', 'Russian')}</option>
+          <option value="en-US">{t('Английский', 'English')}</option>
         </select>
       </div>
 
@@ -139,13 +136,13 @@ export function VoiceDictation({ onTranscript }: Props) {
               onClick={() => setTranscript('')}
               className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1"
             >
-              Очистить
+              {t('Очистить', 'Clear')}
             </button>
             <button
               onClick={handleSend}
               className="px-4 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
             >
-              Отправить во Входящие
+              {t('Отправить во Входящие', 'Send to Inbox')}
             </button>
           </div>
         </div>

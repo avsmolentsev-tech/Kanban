@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
+import type { AuthRequest } from '../middleware/auth';
+import { getUserId, userScopeWhere } from '../middleware/user-scope';
 
 export const peopleRouter = Router();
 
@@ -34,12 +36,13 @@ function attachProjects(people: Record<string, unknown>[]): Record<string, unkno
   });
 }
 
-peopleRouter.get('/', (_req: Request, res: Response) => {
-  const people = getDb().prepare('SELECT * FROM people ORDER BY name ASC').all() as Record<string, unknown>[];
+peopleRouter.get('/', (req: AuthRequest, res: Response) => {
+  const scope = userScopeWhere(req);
+  const people = getDb().prepare(`SELECT * FROM people WHERE ${scope.sql} ORDER BY name ASC`).all(...scope.params) as Record<string, unknown>[];
   res.json(ok(attachProjects(people)));
 });
 
-peopleRouter.post('/', (req: Request, res: Response) => {
+peopleRouter.post('/', (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { name, company, role, telegram, email, phone, notes, project_id, project_ids } = parsed.data;
@@ -49,7 +52,8 @@ peopleRouter.post('/', (req: Request, res: Response) => {
     ? project_ids
     : project_id != null ? [project_id] : [];
 
-  const result = getDb().prepare('INSERT INTO people (name, company, role, telegram, email, phone, notes, project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(name, company, role, telegram, email, phone, notes, effectiveIds[0] ?? null);
+  const userId = getUserId(req);
+  const result = getDb().prepare('INSERT INTO people (name, company, role, telegram, email, phone, notes, project_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(name, company, role, telegram, email, phone, notes, effectiveIds[0] ?? null, userId);
   const newId = result.lastInsertRowid as number;
 
   if (effectiveIds.length > 0) {
@@ -76,7 +80,7 @@ const UpdatePersonSchema = z.object({
   meet_asap: z.boolean().optional(),
 });
 
-peopleRouter.patch('/:id', (req: Request, res: Response) => {
+peopleRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const parsed = UpdatePersonSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const id = Number(req.params['id']);
@@ -111,7 +115,7 @@ peopleRouter.patch('/:id', (req: Request, res: Response) => {
   res.json(ok(withProjects));
 });
 
-peopleRouter.delete('/:id', (req: Request, res: Response) => {
+peopleRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const person = getDb().prepare('SELECT * FROM people WHERE id = ?').get(id);
   if (!person) { res.status(404).json(fail('Person not found')); return; }
@@ -123,7 +127,7 @@ peopleRouter.delete('/:id', (req: Request, res: Response) => {
   res.json(ok({ deleted: true }));
 });
 
-peopleRouter.get('/:id/history', (req: Request, res: Response) => {
+peopleRouter.get('/:id/history', (req: AuthRequest, res: Response) => {
   const person = getDb().prepare('SELECT * FROM people WHERE id = ?').get(Number(req.params['id']));
   if (!person) { res.status(404).json(fail('Person not found')); return; }
   const meetings = getDb().prepare('SELECT m.id, m.title, m.date FROM meetings m JOIN meeting_people mp ON m.id = mp.meeting_id WHERE mp.person_id = ? ORDER BY m.date DESC').all(Number(req.params['id']));

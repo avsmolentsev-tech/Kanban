@@ -22,7 +22,7 @@ function applyZoom(zoom: number): void {
 }
 
 const initialTheme: Theme =
-  (typeof localStorage !== 'undefined' && (localStorage.getItem('theme') as Theme | null)) ?? 'light';
+  (typeof localStorage !== 'undefined' ? (localStorage.getItem('theme') as Theme | null) : null) ?? 'light';
 const savedZoom = typeof localStorage !== 'undefined' ? localStorage.getItem('zoom') : null;
 const initialZoom = savedZoom ? Number(savedZoom) : 16;
 

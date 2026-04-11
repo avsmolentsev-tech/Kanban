@@ -8,6 +8,8 @@ import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
 import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
+import type { AuthRequest } from '../middleware/auth';
+import { getUserId, userScopeWhere } from '../middleware/user-scope';
 
 const obsidian = new ObsidianService(config.vaultPath);
 
@@ -116,9 +118,10 @@ export function getSelfPersonId(): number | null {
   }
 }
 
-tasksRouter.get('/', (req: Request, res: Response) => {
-  let query = 'SELECT * FROM tasks WHERE archived = 0 AND parent_id IS NULL';
-  const params: unknown[] = [];
+tasksRouter.get('/', (req: AuthRequest, res: Response) => {
+  const scope = userScopeWhere(req);
+  let query = 'SELECT * FROM tasks WHERE archived = 0 AND parent_id IS NULL AND ' + scope.sql;
+  const params: unknown[] = [...scope.params];
   if (req.query['project']) { query += ' AND project_id = ?'; params.push(Number(req.query['project'])); }
   if (req.query['status']) { query += ' AND status = ?'; params.push(req.query['status']); }
   if (req.query['person']) { query += ' AND id IN (SELECT task_id FROM task_people WHERE person_id = ?)'; params.push(Number(req.query['person'])); }
@@ -127,11 +130,12 @@ tasksRouter.get('/', (req: Request, res: Response) => {
   res.json(ok(enrichTasksWithPeople(tasks)));
 });
 
-tasksRouter.post('/', async (req: Request, res: Response) => {
+tasksRouter.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, person_ids, recurrence } = parsed.data;
-  const result = getDb().prepare('INSERT INTO tasks (project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(project_id ?? null, parent_id ?? null, title, description, status, priority, urgency, due_date ?? null, start_date ?? null, recurrence ?? null);
+  const userId = getUserId(req);
+  const result = getDb().prepare('INSERT INTO tasks (project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, recurrence, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(project_id ?? null, parent_id ?? null, title, description, status, priority, urgency, due_date ?? null, start_date ?? null, recurrence ?? null, userId);
   const taskId = result.lastInsertRowid as number;
 
   // Auto-add self if no people specified
@@ -148,14 +152,14 @@ tasksRouter.post('/', async (req: Request, res: Response) => {
   // Sync to vault
   try {
     const projectName = project_id ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(project_id) as { name: string } | undefined)?.name : undefined;
-    const vaultPath = await obsidian.writeTask({ title, status, priority, urgency, project: projectName, due_date });
+    const vaultPath = await obsidian.forUser(getUserId(req)).writeTask({ title, status, priority, urgency, project: projectName, due_date });
     getDb().prepare('UPDATE tasks SET vault_path = ? WHERE id = ?').run(vaultPath, taskId);
     (task as Record<string, unknown>)['vault_path'] = vaultPath;
   } catch {}
   res.status(201).json(ok(enrichTasksWithPeople([task])[0]));
 });
 
-tasksRouter.patch('/:id', (req: Request, res: Response) => {
+tasksRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { person_ids, ...rest } = parsed.data;
@@ -178,7 +182,7 @@ tasksRouter.patch('/:id', (req: Request, res: Response) => {
       const vp = task['vault_path'] as string | null;
       if (vp) {
         const projectName = task['project_id'] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(task['project_id'] as number) as { name: string } | undefined)?.name : undefined;
-        obsidian.updateTask(vp, {
+        obsidian.forUser(getUserId(req)).updateTask(vp, {
           title: task['title'] as string, status: task['status'] as string,
           priority: task['priority'] as number, urgency: task['urgency'] as number,
           project: projectName, due_date: task['due_date'] as string | null,
@@ -189,7 +193,7 @@ tasksRouter.patch('/:id', (req: Request, res: Response) => {
   res.json(ok(enrichTasksWithPeople([task])[0]));
 });
 
-tasksRouter.patch('/:id/move', (req: Request, res: Response) => {
+tasksRouter.patch('/:id/move', (req: AuthRequest, res: Response) => {
   const parsed = MoveSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const taskId = Number(req.params['id']);
@@ -200,7 +204,7 @@ tasksRouter.patch('/:id/move', (req: Request, res: Response) => {
     const vp = task['vault_path'] as string | null;
     if (vp) {
       const projectName = task['project_id'] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(task['project_id'] as number) as { name: string } | undefined)?.name : undefined;
-      obsidian.updateTask(vp, {
+      obsidian.forUser(getUserId(req)).updateTask(vp, {
         title: task['title'] as string, status: parsed.data.status,
         priority: task['priority'] as number, urgency: task['urgency'] as number,
         project: projectName, due_date: task['due_date'] as string | null,
@@ -210,16 +214,16 @@ tasksRouter.patch('/:id/move', (req: Request, res: Response) => {
   res.json(ok(task));
 });
 
-tasksRouter.delete('/:id', (req: Request, res: Response) => {
+tasksRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const task = getDb().prepare('SELECT vault_path FROM tasks WHERE id = ?').get(Number(req.params['id'])) as { vault_path: string | null } | undefined;
   getDb().prepare(`UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(Number(req.params['id']));
   // Move vault file to trash
-  try { if (task?.vault_path) obsidian.deleteFile(task.vault_path); } catch {}
+  try { if (task?.vault_path) obsidian.forUser(getUserId(req)).deleteFile(task.vault_path); } catch {}
   res.json(ok({ archived: true }));
 });
 
 // Process recurring tasks
-tasksRouter.post('/process-recurring', (_req: Request, res: Response) => {
+tasksRouter.post('/process-recurring', (_req: AuthRequest, res: Response) => {
   const db = getDb();
   const doneTasks = db.prepare("SELECT * FROM tasks WHERE status = 'done' AND recurrence IS NOT NULL AND archived = 0").all() as Record<string, unknown>[];
   const created: number[] = [];
@@ -247,12 +251,12 @@ tasksRouter.post('/process-recurring', (_req: Request, res: Response) => {
 });
 
 // Task comments
-tasksRouter.get('/:id/comments', (req: Request, res: Response) => {
+tasksRouter.get('/:id/comments', (req: AuthRequest, res: Response) => {
   const comments = getDb().prepare('SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at DESC').all(Number(req.params['id']));
   res.json(ok(comments));
 });
 
-tasksRouter.post('/:id/comments', (req: Request, res: Response) => {
+tasksRouter.post('/:id/comments', (req: AuthRequest, res: Response) => {
   const { text } = req.body;
   if (!text || typeof text !== 'string') { res.status(400).json(fail('Text required')); return; }
   const result = getDb().prepare('INSERT INTO task_comments (task_id, text) VALUES (?, ?)').run(Number(req.params['id']), text.trim());
@@ -260,13 +264,13 @@ tasksRouter.post('/:id/comments', (req: Request, res: Response) => {
   res.json(ok(comment));
 });
 
-tasksRouter.delete('/:id/comments/:commentId', (req: Request, res: Response) => {
+tasksRouter.delete('/:id/comments/:commentId', (req: AuthRequest, res: Response) => {
   getDb().prepare('DELETE FROM task_comments WHERE id = ? AND task_id = ?').run(Number(req.params['commentId']), Number(req.params['id']));
   res.json(ok({ deleted: true }));
 });
 
 // Task dependencies
-tasksRouter.get('/:id/dependencies', (req: Request, res: Response) => {
+tasksRouter.get('/:id/dependencies', (req: AuthRequest, res: Response) => {
   const taskId = Number(req.params['id']);
   const deps = getDb().prepare(
     'SELECT t.id, t.title, t.status, t.priority FROM task_dependencies td JOIN tasks t ON t.id = td.depends_on_id WHERE td.task_id = ?'
@@ -274,7 +278,7 @@ tasksRouter.get('/:id/dependencies', (req: Request, res: Response) => {
   res.json(ok(deps));
 });
 
-tasksRouter.post('/:id/dependencies', (req: Request, res: Response) => {
+tasksRouter.post('/:id/dependencies', (req: AuthRequest, res: Response) => {
   const taskId = Number(req.params['id']);
   const { depends_on_id } = req.body;
   if (!depends_on_id || typeof depends_on_id !== 'number') { res.status(400).json(fail('depends_on_id required')); return; }
@@ -287,7 +291,7 @@ tasksRouter.post('/:id/dependencies', (req: Request, res: Response) => {
   }
 });
 
-tasksRouter.delete('/:id/dependencies/:depId', (req: Request, res: Response) => {
+tasksRouter.delete('/:id/dependencies/:depId', (req: AuthRequest, res: Response) => {
   const taskId = Number(req.params['id']);
   const depId = Number(req.params['depId']);
   getDb().prepare('DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?').run(taskId, depId);
@@ -295,7 +299,7 @@ tasksRouter.delete('/:id/dependencies/:depId', (req: Request, res: Response) => 
 });
 
 // Task attachments
-tasksRouter.post('/:id/attachments', upload.single('file'), (req: Request, res: Response) => {
+tasksRouter.post('/:id/attachments', upload.single('file'), (req: AuthRequest, res: Response) => {
   const taskId = Number(req.params['id']);
   if (!req.file) { res.status(400).json(fail('Файл не предоставлен')); return; }
 
@@ -310,7 +314,7 @@ tasksRouter.post('/:id/attachments', upload.single('file'), (req: Request, res: 
   res.status(201).json(ok(attachment));
 });
 
-tasksRouter.get('/:id/attachments', (req: Request, res: Response) => {
+tasksRouter.get('/:id/attachments', (req: AuthRequest, res: Response) => {
   const atts = getDb().prepare('SELECT * FROM attachments WHERE task_id = ? ORDER BY created_at DESC').all(Number(req.params['id']));
   res.json(ok(atts));
 });

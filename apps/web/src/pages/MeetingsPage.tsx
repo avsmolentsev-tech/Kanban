@@ -10,13 +10,7 @@ import { useLangStore } from '../store/lang.store';
 
 type TimePeriod = 'today' | 'week' | 'month' | 'year';
 
-const PERIOD_LABELS: Record<TimePeriod | 'none', string> = {
-  today: 'Сегодня',
-  week: 'На неделе',
-  month: 'В этом месяце',
-  year: 'В этом году',
-  none: 'Без даты',
-};
+// PERIOD_LABELS is now built inside MeetingsPage using t() for bilingual support
 
 function classifyMeeting(date: string | null): TimePeriod | 'none' {
   if (!date) return 'none';
@@ -82,6 +76,15 @@ function MeetingColumn({ label, meetings, projectMap, onClickMeeting }: {
 
 export function MeetingsPage() {
   const { t } = useLangStore();
+
+  const PERIOD_LABELS: Record<TimePeriod | 'none', string> = {
+    today: t('Сегодня', 'Today'),
+    week: t('На неделе', 'This week'),
+    month: t('В этом месяце', 'This month'),
+    year: t('В этом году', 'This year'),
+    none: t('Без даты', 'No date'),
+  };
+
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const { selectedProjectIds } = useFiltersStore();
@@ -131,7 +134,7 @@ export function MeetingsPage() {
       const updated = await meetingsApi.get(meetingId);
       setSelected(updated as unknown as Meeting);
     } catch (err) {
-      alert(`Ошибка транскрипции: ${err instanceof Error ? err.message : 'unknown'}`);
+      alert(`${t('Ошибка транскрипции', 'Transcription error')}: ${err instanceof Error ? err.message : 'unknown'}`);
     } finally { setTranscribing(false); }
   };
 
@@ -192,19 +195,19 @@ export function MeetingsPage() {
         <div className="bg-white border-b p-4">
           <div className="max-w-md space-y-3">
             <input autoFocus className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
-              placeholder="Название встречи *" value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
+              placeholder={t('Название встречи *', 'Meeting title *')} value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false); if (e.key === 'Enter') submit(); }} />
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-500 mb-1">Дата</div>
+                <div className="text-xs text-gray-500 mb-1">{t('Дата', 'Date')}</div>
                 <input type="date" className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
                   value={newDate} onChange={(e) => setNewDate(e.target.value)} />
               </div>
               <div>
-                <div className="text-xs text-gray-500 mb-1">Проект</div>
+                <div className="text-xs text-gray-500 mb-1">{t('Проект', 'Project')}</div>
                 <select className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 bg-white"
                   value={newProjectId} onChange={(e) => setNewProjectId(e.target.value !== '' ? Number(e.target.value) : '')}>
-                  <option value="">Без проекта</option>
+                  <option value="">{t('Без проекта', 'No project')}</option>
                   {activeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
@@ -242,9 +245,9 @@ export function MeetingsPage() {
               <div className="sticky left-0 top-12 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-gray-50 border-r border-gray-100 self-start">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-                  <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? 'Без проекта'}</span>
+                  <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? t('Без проекта', 'No project')}</span>
                 </div>
-                <div className="text-xs text-gray-400 mt-1 ml-5">{rowMeetings.length} встреч</div>
+                <div className="text-xs text-gray-400 mt-1 ml-5">{rowMeetings.length} {t('встреч', 'meetings')}</div>
               </div>
               <div className="flex gap-3">
                 {periods.map((period) => (
@@ -257,7 +260,7 @@ export function MeetingsPage() {
         })}
 
         {rows.length === 0 && !adding && (
-          <div className="text-gray-400 text-sm text-center py-8">Нет встреч</div>
+          <div className="text-gray-400 text-sm text-center py-8">{t('Нет встреч', 'No meetings')}</div>
         )}
         </div>
       </div>

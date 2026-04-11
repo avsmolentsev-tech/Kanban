@@ -3,10 +3,13 @@ import { apiGet } from '../api/client';
 import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
 import { peopleApi } from '../api/people.api';
 import type { Task, Project, Person } from '@pis/shared';
+import { useLangStore } from '../store/lang.store';
 
-function formatShortDate(d: Date): string {
+function formatShortDate(d: Date, lang: 'ru' | 'en'): string {
   const day = d.getDate();
-  const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  const monthsRu = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  const monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const months = lang === 'en' ? monthsEn : monthsRu;
   return `${day} ${months[d.getMonth()]}`;
 }
 
@@ -28,6 +31,7 @@ const PROJECT_LABEL_WIDTH = 180;
 const TOTAL_DAYS = 30;
 
 export function GanttPage() {
+  const { t, lang } = useLangStore();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
@@ -82,8 +86,8 @@ export function GanttPage() {
   return (
     <div className="h-full flex flex-col">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">Диаграмма Ганта</h1>
-        <p className="text-xs text-gray-500 dark:text-gray-400">Ближайшие 30 дней</p>
+        <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Диаграмма Ганта', 'Gantt Chart')}</h1>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{t('Ближайшие 30 дней', 'Next 30 days')}</p>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-auto relative">
@@ -97,7 +101,7 @@ export function GanttPage() {
               className="sticky left-0 z-30 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex items-center px-3"
               style={{ width: PROJECT_LABEL_WIDTH, minWidth: PROJECT_LABEL_WIDTH }}
             >
-              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">Проект</span>
+              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{t('Проект', 'Project')}</span>
             </div>
             <div className="flex relative">
               {days.map((d, i) => {
@@ -111,8 +115,8 @@ export function GanttPage() {
                     }`}
                     style={{ width: DAY_WIDTH, minWidth: DAY_WIDTH }}
                   >
-                    <span>{formatShortDate(d)}</span>
-                    <span className="text-[10px]">{['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][d.getDay()]}</span>
+                    <span>{formatShortDate(d, lang)}</span>
+                    <span className="text-[10px]">{(lang === 'en' ? ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] : ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'])[d.getDay()]}</span>
                   </div>
                 );
               })}
@@ -133,7 +137,7 @@ export function GanttPage() {
                     style={{ backgroundColor: project?.color ?? '#9ca3af' }}
                   />
                   <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 truncate">
-                    {project?.name ?? 'Без проекта'}
+                    {project?.name ?? t('Без проекта', 'No project')}
                   </span>
                   <span className="text-xs text-gray-400 ml-auto">{pTasks.length}</span>
                 </div>
@@ -198,7 +202,7 @@ export function GanttPage() {
 
           {rows.length === 0 && (
             <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500">
-              Нет задач с датами для отображения на диаграмме
+              {t('Нет задач с датами для отображения на диаграмме', 'No tasks with dates to display on the chart')}
             </div>
           )}
         </div>

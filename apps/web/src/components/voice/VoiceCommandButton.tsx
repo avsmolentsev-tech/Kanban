@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { apiPost } from '../../api/client';
+import { useLangStore } from '../../store/lang.store';
 
 interface SpeechRecognitionEvent extends Event {
   results: { [index: number]: { [index: number]: { transcript: string }; isFinal?: boolean }; length: number };
@@ -31,6 +32,7 @@ interface VoiceResult {
 }
 
 export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void }) {
+  const { t } = useLangStore();
   const [open, setOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -167,7 +169,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
       ]);
       onActionDone?.();
     } catch (err) {
-      setResponse(`Ошибка: ${err instanceof Error ? err.message : 'неизвестная'}`);
+      setResponse(`${t('Ошибка', 'Error')}: ${err instanceof Error ? err.message : t('неизвестная', 'unknown')}`);
     } finally {
       setProcessing(false);
     }
@@ -257,9 +259,9 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             {/* Mobile drag handle */}
             <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-1 bg-indigo-400 rounded-full md:hidden" />
             <div>
-              <div className="font-semibold text-sm">Ассистент</div>
+              <div className="font-semibold text-sm">{t('Ассистент', 'Assistant')}</div>
               <div className="text-xs text-indigo-200">
-                {history.length > 0 ? `Контекст: ${history.length / 2} сообщ.` : 'Задай вопрос или команду'}
+                {history.length > 0 ? `${t('Контекст', 'Context')}: ${history.length / 2} ${t('сообщ.', 'msg.')}` : t('Задай вопрос или команду', 'Ask a question or give a command')}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -268,14 +270,14 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
                   onClick={clearHistory}
                   className="text-xs text-indigo-200 hover:text-white px-2 py-1 rounded border border-indigo-400 hover:border-white transition-colors"
                 >
-                  Сброс
+                  {t('Сброс', 'Reset')}
                 </button>
               )}
               <button
                 onClick={() => { if (recording) stopRecording(); setOpen(false); }}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-indigo-700/50 hover:bg-indigo-800 text-white transition-colors"
-                title="Закрыть"
-                aria-label="Закрыть"
+                title={t('Закрыть', 'Close')}
+                aria-label={t('Закрыть', 'Close')}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -289,13 +291,13 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             {/* Hints */}
             {!transcript && !response && !recording && history.length === 0 && (
               <div className="text-sm text-gray-400 dark:text-gray-500 space-y-2 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                <div className="font-medium text-gray-500 dark:text-gray-300">Задай любой вопрос или команду:</div>
-                <div>• «Создай задачу купить молоко в проект Личные»</div>
-                <div>• «Перенеси ревью кода в работу»</div>
-                <div>• «Что обсуждали на последней встрече?»</div>
-                <div>• «Какие у меня задачи в работе?»</div>
-                <div>• «Расскажи про проект V-Cards»</div>
-                <div>• «А теперь перенеси её в работу»</div>
+                <div className="font-medium text-gray-500 dark:text-gray-300">{t('Задай любой вопрос или команду:', 'Ask any question or give a command:')}</div>
+                <div>• {t('«Создай задачу купить молоко в проект Личные»', '"Create a task to buy milk in the Personal project"')}</div>
+                <div>• {t('«Перенеси ревью кода в работу»', '"Move code review to in progress"')}</div>
+                <div>• {t('«Что обсуждали на последней встрече?»', '"What was discussed at the last meeting?"')}</div>
+                <div>• {t('«Какие у меня задачи в работе?»', '"What tasks do I have in progress?"')}</div>
+                <div>• {t('«Расскажи про проект V-Cards»', '"Tell me about the V-Cards project"')}</div>
+                <div>• {t('«А теперь перенеси её в работу»', '"Now move it to in progress"')}</div>
               </div>
             )}
 
@@ -309,7 +311,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
                       : 'bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-200 mr-6'
                   }`}>
                     <div className="text-xs font-medium mb-1 text-gray-400 dark:text-gray-500">
-                      {msg.role === 'user' ? 'Вы' : 'AI'}
+                      {msg.role === 'user' ? t('Вы', 'You') : 'AI'}
                     </div>
                     <div className="whitespace-pre-wrap">{msg.content}</div>
                   </div>
@@ -335,7 +337,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             )}
 
             {processing && (
-              <div className="text-sm text-indigo-500 dark:text-indigo-400 px-3 py-2">Думаю...</div>
+              <div className="text-sm text-indigo-500 dark:text-indigo-400 px-3 py-2">{t('Думаю...', 'Thinking...')}</div>
             )}
           </div>
 
@@ -359,11 +361,11 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
               </button>
               <div className="flex-1 text-sm">
                 {recording ? (
-                  <span className="text-red-500 font-medium">Слушаю... (нажми стоп)</span>
+                  <span className="text-red-500 font-medium">{t('Слушаю... (нажми стоп)', 'Listening... (press stop)')}</span>
                 ) : processing ? (
-                  <span className="text-indigo-500 font-medium">Выполняю...</span>
+                  <span className="text-indigo-500 font-medium">{t('Выполняю...', 'Executing...')}</span>
                 ) : (
-                  <span className="text-gray-500 dark:text-gray-400">Нажми микрофон или пиши</span>
+                  <span className="text-gray-500 dark:text-gray-400">{t('Нажми микрофон или пиши', 'Tap mic or type')}</span>
                 )}
               </div>
             </div>
@@ -377,7 +379,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
                 if (recording) stopRecording();
                 setTranscript(e.target.value);
               }}
-              placeholder={recording ? 'Говори, текст появится...' : 'Напиши вопрос или команду...'}
+              placeholder={recording ? t('Говори, текст появится...', 'Speak, text will appear...') : t('Напиши вопрос или команду...', 'Type a question or command...')}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -394,7 +396,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
               disabled={processing || !transcript.trim()}
               className="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
-              {processing ? 'Выполняю...' : recording ? 'Стоп и выполнить' : 'Отправить'}
+              {processing ? t('Выполняю...', 'Executing...') : recording ? t('Стоп и выполнить', 'Stop & send') : t('Отправить', 'Send')}
             </button>
 
           </div>

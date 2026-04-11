@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { SlidePanel } from '../ui/SlidePanel';
 import { projectsApi } from '../../api/projects.api';
 import { apiGet } from '../../api/client';
+import { useLangStore } from '../../store/lang.store';
 import type { Project, ProjectStatus } from '@pis/shared';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 const STATUSES: ProjectStatus[] = ['active', 'completed', 'archived'];
-const STATUS_LABELS: Record<string, string> = { active: '🚀 Активный', completed: '🔄 В работе', archived: '✅ Завершён' };
 
 interface ProjectDetail {
   tasks: Array<{ id: number; title: string; status: string; priority: number }>;
@@ -21,6 +21,7 @@ interface Props {
 }
 
 export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: Props) {
+  const { t } = useLangStore();
   const [form, setForm] = useState<Partial<Project>>({});
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [people, setPeople] = useState<Array<{ id: number; name: string }>>([]);
@@ -63,8 +64,8 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
   };
 
   const tasksByStatus = { backlog: 0, todo: 0, in_progress: 0, done: 0, someday: 0 };
-  for (const t of detail?.tasks ?? []) {
-    if (t.status in tasksByStatus) tasksByStatus[t.status as keyof typeof tasksByStatus]++;
+  for (const task of detail?.tasks ?? []) {
+    if (task.status in tasksByStatus) tasksByStatus[task.status as keyof typeof tasksByStatus]++;
   }
   const totalTasks = detail?.tasks?.length ?? 0;
   const doneTasks = tasksByStatus.done;
@@ -87,20 +88,20 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
 
           {/* Description */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Описание</div>
+            <div className="text-xs text-gray-500 mb-1">{t('Описание', 'Description')}</div>
             <textarea className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-none"
               rows={2} value={form.description ?? ''} onChange={(e) => handleChange('description', e.target.value)} onBlur={() => handleBlur('description')} />
           </div>
 
           {/* Status chips */}
           <div>
-            <div className="text-xs text-gray-500 mb-1.5">Стадия</div>
+            <div className="text-xs text-gray-500 mb-1.5">{t('Стадия', 'Stage')}</div>
             <div className="flex flex-wrap gap-2">
               {STATUSES.map((s) => (
                 <button key={s} type="button"
                   onClick={() => { setForm(f => ({ ...f, status: s })); save('status', s); }}
                   className={`text-xs px-3 py-1 rounded-full border transition-colors ${form.status === s ? 'bg-indigo-600 text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>
-                  {STATUS_LABELS[s]}
+                  {s === 'active' ? t('🚀 Активный', '🚀 Active') : s === 'completed' ? t('🔄 В работе', '🔄 In progress') : t('✅ Завершён', '✅ Completed')}
                 </button>
               ))}
             </div>
@@ -108,7 +109,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
 
           {/* Color */}
           <div>
-            <div className="text-xs text-gray-500 mb-1.5">Цвет</div>
+            <div className="text-xs text-gray-500 mb-1.5">{t('Цвет', 'Color')}</div>
             <div className="flex items-center gap-1.5 flex-wrap">
               {COLORS.map((c) => (
                 <button key={c} type="button" onClick={() => handleColorChange(c)}
@@ -122,17 +123,17 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
           {totalTasks > 0 && (
             <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-gray-500">Прогресс задач</span>
+                <span className="text-xs font-medium text-gray-500">{t('Прогресс задач', 'Task progress')}</span>
                 <span className="text-xs font-bold text-gray-700 dark:text-gray-200">{progress}%</span>
               </div>
               <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-2">
                 <div className="h-full rounded-full" style={{ width: `${progress}%`, backgroundColor: project.color }} />
               </div>
               <div className="flex gap-3 text-[10px] text-gray-400">
-                <span>📥 {tasksByStatus.backlog} бэклог</span>
+                <span>📥 {tasksByStatus.backlog} {t('бэклог', 'backlog')}</span>
                 <span>📋 {tasksByStatus.todo} todo</span>
-                <span>🔄 {tasksByStatus.in_progress} в работе</span>
-                <span>✅ {tasksByStatus.done} готово</span>
+                <span>🔄 {tasksByStatus.in_progress} {t('в работе', 'in progress')}</span>
+                <span>✅ {tasksByStatus.done} {t('готово', 'done')}</span>
               </div>
             </div>
           )}
@@ -140,7 +141,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
           {/* Meetings */}
           {detail?.meetings && detail.meetings.length > 0 && (
             <div>
-              <div className="text-xs text-gray-500 mb-2">🤝 Встречи ({detail.meetings.length})</div>
+              <div className="text-xs text-gray-500 mb-2">🤝 {t('Встречи', 'Meetings')} ({detail.meetings.length})</div>
               <div className="space-y-1 max-h-32 overflow-auto">
                 {detail.meetings.map(m => (
                   <div key={m.id} className="text-xs text-gray-600 dark:text-gray-300 flex items-center gap-2 py-1">
@@ -155,7 +156,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
           {/* People */}
           {people.length > 0 && (
             <div>
-              <div className="text-xs text-gray-500 mb-2">👥 Люди ({people.length})</div>
+              <div className="text-xs text-gray-500 mb-2">👥 {t('Люди', 'People')} ({people.length})</div>
               <div className="flex flex-wrap gap-1.5">
                 {people.map(p => (
                   <span key={p.id} className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-600 dark:text-gray-300">
@@ -169,26 +170,26 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
           {/* Tasks list */}
           {detail?.tasks && detail.tasks.length > 0 && (
             <div>
-              <div className="text-xs text-gray-500 mb-2">📋 Задачи ({detail.tasks.length})</div>
+              <div className="text-xs text-gray-500 mb-2">📋 {t('Задачи', 'Tasks')} ({detail.tasks.length})</div>
               <div className="space-y-1 max-h-40 overflow-auto">
-                {detail.tasks.slice(0, 15).map(t => (
-                  <div key={t.id} className={`text-xs flex items-center gap-2 py-0.5 ${t.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-600 dark:text-gray-300'}`}>
-                    <span>{t.status === 'done' ? '✅' : t.status === 'in_progress' ? '🔄' : '📋'}</span>
-                    <span className="truncate">{t.title}</span>
-                    <span className="ml-auto text-gray-300">{'⭐'.repeat(t.priority)}</span>
+                {detail.tasks.slice(0, 15).map(task => (
+                  <div key={task.id} className={`text-xs flex items-center gap-2 py-0.5 ${task.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-600 dark:text-gray-300'}`}>
+                    <span>{task.status === 'done' ? '✅' : task.status === 'in_progress' ? '🔄' : '📋'}</span>
+                    <span className="truncate">{task.title}</span>
+                    <span className="ml-auto text-gray-300">{'⭐'.repeat(task.priority)}</span>
                   </div>
                 ))}
-                {detail.tasks.length > 15 && <div className="text-[10px] text-gray-400">+{detail.tasks.length - 15} ещё</div>}
+                {detail.tasks.length > 15 && <div className="text-[10px] text-gray-400">+{detail.tasks.length - 15} {t('ещё', 'more')}</div>}
               </div>
             </div>
           )}
 
-          <div className="text-xs text-gray-400 pt-2">Создано: {project.created_at}</div>
+          <div className="text-xs text-gray-400 pt-2">{t('Создано', 'Created')}: {project.created_at}</div>
 
           {onDeleted && (
-            <button onClick={async () => { if (confirm(`Удалить проект "${project.name}"?`)) { await projectsApi.delete(project.id); onDeleted(); onClose(); } }}
+            <button onClick={async () => { if (confirm(t(`Удалить проект "${project.name}"?`, `Delete project "${project.name}"?`))) { await projectsApi.delete(project.id); onDeleted(); onClose(); } }}
               className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors">
-              Удалить проект
+              {t('Удалить проект', 'Delete project')}
             </button>
           )}
         </div>
