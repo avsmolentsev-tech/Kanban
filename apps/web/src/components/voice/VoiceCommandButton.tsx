@@ -128,6 +128,14 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
     setResults([]);
   };
 
+  const lastChimeRef = useRef(0);
+  const chimeOnce = (type: 'start' | 'stop') => {
+    const now = Date.now();
+    if (now - lastChimeRef.current < 500) return; // debounce 500ms
+    lastChimeRef.current = now;
+    if (type === 'start') playStart(); else playStop();
+  };
+
   const stopRecording = () => {
     recognitionRef.current?.stop();
     setRecording(false);
@@ -182,7 +190,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
           } else {
             setOpen(true);
             startRecording();
-            playStart();
+            chimeOnce("start");
           }
         }}
         className={`fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${
@@ -333,7 +341,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             {/* Mic button + status */}
             <div className="flex items-center gap-3">
               <button
-                onClick={() => { if (recording) { stopRecording(); } else { startRecording(); playStart(); } }}
+                onClick={() => { if (recording) { stopRecording(); chimeOnce("stop"); } else { startRecording(); chimeOnce("start"); } }}
                 disabled={processing}
                 className={`w-12 h-12 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
                   recording
@@ -379,7 +387,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             />
 
             <button
-              onClick={() => { if (recording) { stopRecording(); } executeCommand(); }}
+              onClick={() => { if (recording) { stopRecording(); chimeOnce("stop"); } executeCommand(); }}
               disabled={processing || !transcript.trim()}
               className="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
