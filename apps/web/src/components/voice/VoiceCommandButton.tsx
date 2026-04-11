@@ -333,7 +333,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             {/* Mic button + status */}
             <div className="flex items-center gap-3">
               <button
-                onClick={() => { if (recording) { stopRecording(); playStop(); } else { startRecording(); playStart(); } }}
+                onClick={() => { if (recording) { stopRecording(); } else { startRecording(); playStart(); } }}
                 disabled={processing}
                 className={`w-12 h-12 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
                   recording
@@ -379,7 +379,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             />
 
             <button
-              onClick={() => { if (recording) { stopRecording(); playStop(); } executeCommand(); }}
+              onClick={() => { if (recording) { stopRecording(); } executeCommand(); }}
               disabled={processing || !transcript.trim()}
               className="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
