@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTasksStore, useProjectsStore, useFiltersStore } from '../store';
 import { KanbanBoard } from '../components/kanban/KanbanBoard';
 import { ProjectFilter } from '../components/filters/ProjectFilter';
+import { SavedFilters, applyFilterCriteria, type SavedFilter } from '../components/filters/SavedFilters';
 import type { Person, TaskStatus } from '@pis/shared';
 import { peopleApi } from '../api/people.api';
 import { tasksApi } from '../api/tasks.api';
@@ -11,6 +12,7 @@ export function KanbanPage() {
   const { projects, fetchProjects, reorderProjects } = useProjectsStore();
   const { selectedProjectIds } = useFiltersStore();
   const [people, setPeople] = useState<Person[]>([]);
+  const [activeFilter, setActiveFilter] = useState<SavedFilter | null>(null);
 
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
@@ -23,14 +25,18 @@ export function KanbanPage() {
     refresh();
   };
 
-  const filteredTasks = selectedProjectIds === null ? tasks : tasks.filter((t) => t.project_id !== null && selectedProjectIds.has(t.project_id));
+  const projectFilteredTasks = selectedProjectIds === null ? tasks : tasks.filter((t) => t.project_id !== null && selectedProjectIds.has(t.project_id));
+  const filteredTasks = activeFilter ? applyFilterCriteria(projectFilteredTasks, activeFilter.criteria) : projectFilteredTasks;
   const filteredProjects = selectedProjectIds === null ? projects : projects.filter((p) => selectedProjectIds.has(p.id));
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b bg-white">
         <h1 className="text-xl font-bold text-gray-800">Kanban-доска</h1>
-        <ProjectFilter projects={projects} />
+        <div className="flex items-center gap-3">
+          <SavedFilters active={activeFilter?.id ?? null} onApply={setActiveFilter} />
+          <ProjectFilter projects={projects} />
+        </div>
       </div>
       <div className="flex-1 overflow-auto">
         <KanbanBoard

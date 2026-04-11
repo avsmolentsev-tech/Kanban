@@ -72,7 +72,7 @@ export function TaskCard({ task, project, onClick, onToggleDone, dragMode = 'sor
     e.preventDefault();
     e.stopPropagation();
     setFileDragOver(false);
-    const file = e.dataTransfer.files[0];
+    const file = e.dataTransfer.files[0]!;
     const formData = new FormData();
     formData.append('file', file);
     try {
@@ -128,6 +128,9 @@ export function TaskCard({ task, project, onClick, onToggleDone, dragMode = 'sor
           </div>
         )}
       </div>
+      {uploadFeedback && (
+        <div className="mt-1.5 text-xs text-center text-indigo-600 font-medium animate-pulse">{uploadFeedback}</div>
+      )}
     </div>
   );
 }

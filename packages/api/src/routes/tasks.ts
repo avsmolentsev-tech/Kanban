@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import * as fs from 'fs';
+import * as path from 'path';
+import multer from 'multer';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
@@ -7,6 +10,10 @@ import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
 
 const obsidian = new ObsidianService(config.vaultPath);
+
+const attachDir = path.join(config.vaultPath, 'Attachments');
+if (!fs.existsSync(attachDir)) fs.mkdirSync(attachDir, { recursive: true });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 export const tasksRouter = Router();
 
@@ -285,4 +292,25 @@ tasksRouter.delete('/:id/dependencies/:depId', (req: Request, res: Response) => 
   const depId = Number(req.params['depId']);
   getDb().prepare('DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?').run(taskId, depId);
   res.json(ok({ deleted: true }));
+});
+
+// Task attachments
+tasksRouter.post('/:id/attachments', upload.single('file'), (req: Request, res: Response) => {
+  const taskId = Number(req.params['id']);
+  if (!req.file) { res.status(400).json(fail('Файл не предоставлен')); return; }
+
+  const ext = path.extname(req.file.originalname);
+  const filename = `task-${taskId}-${Date.now()}${ext}`;
+  fs.writeFileSync(path.join(attachDir, filename), req.file.buffer);
+
+  const result = getDb().prepare(
+    'INSERT INTO attachments (task_id, filename, original_name, size, mime_type) VALUES (?, ?, ?, ?, ?)'
+  ).run(taskId, filename, req.file.originalname, req.file.size, req.file.mimetype);
+  const attachment = getDb().prepare('SELECT * FROM attachments WHERE id = ?').get(result.lastInsertRowid);
+  res.status(201).json(ok(attachment));
+});
+
+tasksRouter.get('/:id/attachments', (req: Request, res: Response) => {
+  const atts = getDb().prepare('SELECT * FROM attachments WHERE task_id = ? ORDER BY created_at DESC').all(Number(req.params['id']));
+  res.json(ok(atts));
 });

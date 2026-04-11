@@ -7,6 +7,7 @@ import { peopleApi } from '../api/people.api';
 import { TimelineView, type TimePeriod, classifyTask } from '../components/timeline/TimelineView';
 import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
 import { ProjectFilter } from '../components/filters/ProjectFilter';
+import { SavedFilters, applyFilterCriteria, type SavedFilter } from '../components/filters/SavedFilters';
 import type { Task, Person, TaskStatus } from '@pis/shared';
 
 function localDateStr(d: Date): string {
@@ -38,6 +39,7 @@ export function TimelinePage() {
   const { projects, fetchProjects, reorderProjects } = useProjectsStore();
   const [selected, setSelected] = useState<Task | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
+  const [activeFilter, setActiveFilter] = useState<SavedFilter | null>(null);
   const { selectedProjectIds } = useFiltersStore();
   const pMap = new Map(projects.map((p) => [p.id, p]));
 
@@ -114,12 +116,18 @@ export function TimelinePage() {
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
         <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Таймлайн</h1>
-        <ProjectFilter projects={projects} />
+        <div className="flex items-center gap-3">
+          <SavedFilters active={activeFilter?.id ?? null} onApply={setActiveFilter} />
+          <ProjectFilter projects={projects} />
+        </div>
       </div>
       <div className="flex-1 overflow-auto">
         <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <TimelineView
-            tasks={selectedProjectIds === null ? tasks : tasks.filter((t) => t.project_id !== null && selectedProjectIds.has(t.project_id))}
+            tasks={applyFilterCriteria(
+              selectedProjectIds === null ? tasks : tasks.filter((t) => t.project_id !== null && selectedProjectIds.has(t.project_id)),
+              activeFilter?.criteria ?? {}
+            )}
             projects={selectedProjectIds === null ? projects : projects.filter((p) => selectedProjectIds.has(p.id))}
             people={people}
             onTaskClick={setSelected}

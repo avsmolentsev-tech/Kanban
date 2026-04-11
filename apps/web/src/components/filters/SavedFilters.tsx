@@ -40,11 +40,11 @@ function getEndOfWeek(): string {
   const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
   const end = new Date(now);
   end.setDate(now.getDate() + daysUntilSunday);
-  return end.toISOString().split('T')[0];
+  return end.toISOString().split('T')[0]!;
 }
 
 function getTodayStr(): string {
-  return new Date().toISOString().split('T')[0];
+  return new Date().toISOString().split('T')[0]!;
 }
 
 export function resolveDueDate(val: string | undefined): string | undefined {
