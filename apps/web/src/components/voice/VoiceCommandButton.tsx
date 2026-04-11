@@ -46,6 +46,25 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
   const supported = typeof window !== 'undefined' &&
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
+  // Sound effects using Web Audio API
+  const playTone = (freq: number, duration: number, type: OscillatorType = 'sine') => {
+    try {
+      const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration);
+    } catch {}
+  };
+  const playStart = () => { playTone(880, 0.15); setTimeout(() => playTone(1320, 0.12), 100); };
+  const playStop = () => { playTone(660, 0.2, 'triangle'); };
+
   // Close on outside click
   useEffect(() => {
     if (!open) return;
@@ -106,11 +125,13 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
     setRecording(true);
     setResponse('');
     setResults([]);
+    playStart();
   };
 
   const stopRecording = () => {
     recognitionRef.current?.stop();
     setRecording(false);
+    playStop();
   };
 
   const executeCommand = async () => {
