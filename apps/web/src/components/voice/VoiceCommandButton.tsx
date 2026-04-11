@@ -131,10 +131,13 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
   const lastChimeRef = useRef(0);
   const chimeOnce = (type: 'start' | 'stop') => {
     const now = Date.now();
-    if (now - lastChimeRef.current < 500) return; // debounce 500ms
+    if (now - lastChimeRef.current < 1000) return;
     lastChimeRef.current = now;
     if (type === 'start') playStart(); else playStop();
   };
+
+  // Delay stop chime slightly so it doesn't overlap with system sound
+  const chimeStop = () => setTimeout(() => chimeOnce('stop'), 300);
 
   const stopRecording = () => {
     recognitionRef.current?.stop();
@@ -341,7 +344,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             {/* Mic button + status */}
             <div className="flex items-center gap-3">
               <button
-                onClick={() => { if (recording) { stopRecording(); chimeOnce("stop"); } else { startRecording(); chimeOnce("start"); } }}
+                onClick={() => { if (recording) { stopRecording(); chimeStop(); } else { startRecording(); chimeOnce("start"); } }}
                 disabled={processing}
                 className={`w-12 h-12 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
                   recording
@@ -387,7 +390,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             />
 
             <button
-              onClick={() => { if (recording) { stopRecording(); chimeOnce("stop"); } executeCommand(); }}
+              onClick={() => { if (recording) { stopRecording(); chimeStop(); } executeCommand(); }}
               disabled={processing || !transcript.trim()}
               className="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
