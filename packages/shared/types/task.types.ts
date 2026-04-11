@@ -15,7 +15,9 @@ export interface Task {
   updated_at: string;
   archived: boolean;
   order_index: number;
+  recurrence?: string | null;
   people?: Array<{ id: number; name: string }>;
+  tags?: Array<{ id: number; name: string; color: string }>;
 }
 
 export interface CreateTaskDto {
@@ -28,6 +30,7 @@ export interface CreateTaskDto {
   due_date?: string;
   start_date?: string;
   person_ids?: number[];
+  recurrence?: string | null;
 }
 
 export interface UpdateTaskDto {
@@ -41,6 +44,7 @@ export interface UpdateTaskDto {
   archived?: boolean;
   project_id?: number | null;
   person_ids?: number[];
+  recurrence?: string | null;
 }
 
 export interface MoveTaskDto {

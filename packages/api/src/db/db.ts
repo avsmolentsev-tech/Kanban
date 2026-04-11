@@ -201,6 +201,27 @@ export function initDb(): void {
       )
     `);
   } catch {}
+
+  // Recurring tasks
+  try { _db.exec('ALTER TABLE tasks ADD COLUMN recurrence TEXT'); } catch {}
+
+  // Tags / Labels
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT NOT NULL DEFAULT '#6366f1'
+      )
+    `);
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS task_tags (
+        task_id INTEGER NOT NULL REFERENCES tasks(id),
+        tag_id INTEGER NOT NULL REFERENCES tags(id),
+        PRIMARY KEY (task_id, tag_id)
+      )
+    `);
+  } catch {}
 }
 
 export function initTestDb(): void {
@@ -357,6 +378,27 @@ export function initTestDb(): void {
         results TEXT NOT NULL DEFAULT '',
         mood INTEGER NOT NULL DEFAULT 3,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
+
+  // Recurring tasks
+  try { _db.exec('ALTER TABLE tasks ADD COLUMN recurrence TEXT'); } catch {}
+
+  // Tags / Labels
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT NOT NULL DEFAULT '#6366f1'
+      )
+    `);
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS task_tags (
+        task_id INTEGER NOT NULL REFERENCES tasks(id),
+        tag_id INTEGER NOT NULL REFERENCES tags(id),
+        PRIMARY KEY (task_id, tag_id)
       )
     `);
   } catch {}

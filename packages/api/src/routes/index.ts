@@ -12,6 +12,8 @@ import { claudeNotesRouter } from './claude-notes';
 import { habitsRouter } from './habits';
 import { goalsRouter } from './goals';
 import { journalRouter } from './journal';
+import { exportRouter } from './export';
+import { tagsRouter } from './tags';
 
 export const router = Router();
 
@@ -28,3 +30,5 @@ router.use('/claude-notes', claudeNotesRouter);
 router.use('/habits', habitsRouter);
 router.use('/goals', goalsRouter);
 router.use('/journal', journalRouter);
+router.use('/export', exportRouter);
+router.use('/tags', tagsRouter);

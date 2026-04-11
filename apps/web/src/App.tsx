@@ -17,6 +17,7 @@ import { MorePage } from './pages/MorePage';
 import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { TodaySwipePage } from './pages/TodaySwipePage';
+import { StatsPage } from './pages/StatsPage';
 import { SearchBar } from './components/search/SearchBar';
 import { MobileNav } from './components/layout/MobileNav';
 import { SettingsMenu } from './components/layout/SettingsMenu';
@@ -41,6 +42,7 @@ const desktopNav = [
   { to: '/goals', label: 'Цели' },
   { to: '/journal', label: 'Ежедневник' },
   { to: '/dashboard', label: 'Дашборд' },
+  { to: '/stats', label: 'Статистика' },
 ];
 
 export default function App() {
@@ -50,6 +52,13 @@ export default function App() {
     const tg = isTelegramWebApp();
     setIsTg(tg);
     if (tg) initTelegramApp();
+
+    // Request browser notification permission + check overdue every 30 min
+    import('./lib/notifications').then(({ requestNotificationPermission, checkAndNotifyOverdue }) => {
+      requestNotificationPermission();
+      checkAndNotifyOverdue();
+      setInterval(checkAndNotifyOverdue, 30 * 60 * 1000);
+    }).catch(() => {});
   }, []);
 
   // Also treat narrow screens as mobile layout
@@ -111,6 +120,7 @@ export default function App() {
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/stats" element={<StatsPage />} />
               <Route path="/more" element={<MorePage />} />
             </Routes>
           </main>

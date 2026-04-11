@@ -21,6 +21,7 @@ const CreateSchema = z.object({
   due_date: z.string().optional(),
   start_date: z.string().optional(),
   person_ids: z.array(z.number().int()).optional(),
+  recurrence: z.string().nullable().optional(),
 });
 
 const UpdateSchema = z.object({
@@ -35,6 +36,7 @@ const UpdateSchema = z.object({
   project_id: z.number().int().nullable().optional(),
   parent_id: z.number().int().nullable().optional(),
   person_ids: z.array(z.number().int()).optional(),
+  recurrence: z.string().nullable().optional(),
 });
 
 const MoveSchema = z.object({
@@ -63,10 +65,21 @@ function enrichTasksWithPeople(tasks: Record<string, unknown>[]): Record<string,
     if (!subByParent.has(pid)) subByParent.set(pid, []);
     subByParent.get(pid)!.push({ id: s.id, title: s.title, status: s.status });
   }
+  // Fetch tags
+  const tagRows = getDb()
+    .prepare(`SELECT tt.task_id, t.id, t.name, t.color FROM task_tags tt JOIN tags t ON t.id = tt.tag_id WHERE tt.task_id IN (${taskIds.map(() => '?').join(',')})`)
+    .all(...taskIds) as Array<{ task_id: number; id: number; name: string; color: string }>;
+  const tagsByTask = new Map<number, Array<{ id: number; name: string; color: string }>>();
+  for (const r of tagRows) {
+    if (!tagsByTask.has(r.task_id)) tagsByTask.set(r.task_id, []);
+    tagsByTask.get(r.task_id)!.push({ id: r.id, name: r.name, color: r.color });
+  }
+
   return tasks.map((t) => ({
     ...t,
     people: byTask.get(t['id'] as number) ?? [],
     subtasks: subByParent.get(t['id'] as number) ?? [],
+    tags: tagsByTask.get(t['id'] as number) ?? [],
   }));
 }
 
@@ -102,8 +115,8 @@ tasksRouter.get('/', (req: Request, res: Response) => {
 tasksRouter.post('/', async (req: Request, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const { project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, person_ids } = parsed.data;
-  const result = getDb().prepare('INSERT INTO tasks (project_id, parent_id, title, description, status, priority, urgency, due_date, start_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(project_id ?? null, parent_id ?? null, title, description, status, priority, urgency, due_date ?? null, start_date ?? null);
+  const { project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, person_ids, recurrence } = parsed.data;
+  const result = getDb().prepare('INSERT INTO tasks (project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(project_id ?? null, parent_id ?? null, title, description, status, priority, urgency, due_date ?? null, start_date ?? null, recurrence ?? null);
   const taskId = result.lastInsertRowid as number;
 
   // Auto-add self if no people specified
@@ -188,6 +201,34 @@ tasksRouter.delete('/:id', (req: Request, res: Response) => {
   // Move vault file to trash
   try { if (task?.vault_path) obsidian.deleteFile(task.vault_path); } catch {}
   res.json(ok({ archived: true }));
+});
+
+// Process recurring tasks
+tasksRouter.post('/process-recurring', (_req: Request, res: Response) => {
+  const db = getDb();
+  const doneTasks = db.prepare("SELECT * FROM tasks WHERE status = 'done' AND recurrence IS NOT NULL AND archived = 0").all() as Record<string, unknown>[];
+  const created: number[] = [];
+  for (const t of doneTasks) {
+    // Calculate next due_date
+    let nextDue: string | null = null;
+    if (t['due_date']) {
+      const d = new Date(t['due_date'] as string);
+      if (t['recurrence'] === 'daily') d.setDate(d.getDate() + 1);
+      else if (t['recurrence'] === 'weekly') d.setDate(d.getDate() + 7);
+      else if (t['recurrence'] === 'monthly') d.setMonth(d.getMonth() + 1);
+      nextDue = d.toISOString().split('T')[0];
+    }
+    const result = db.prepare(
+      'INSERT INTO tasks (project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      t['project_id'] ?? null, t['parent_id'] ?? null, t['title'], t['description'],
+      'todo', t['priority'], t['urgency'], nextDue, t['start_date'] ?? null, t['recurrence']
+    );
+    created.push(result.lastInsertRowid as number);
+    // Clear recurrence on original so it doesn't get processed again
+    db.prepare('UPDATE tasks SET recurrence = NULL WHERE id = ?').run(t['id']);
+  }
+  res.json(ok({ processed: doneTasks.length, created_ids: created }));
 });
 
 // Task comments

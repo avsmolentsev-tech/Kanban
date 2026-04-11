@@ -14,6 +14,7 @@ const items = [
   { to: '/dashboard', label: 'Дашборд', icon: '📊' },
   { to: '/journal', label: 'Ежедневник', icon: '📓' },
   { to: '/chat', label: 'Чат', icon: '💬' },
+  { to: '/stats', label: 'Статистика', icon: '📈' },
 ];
 
 export function MorePage() {

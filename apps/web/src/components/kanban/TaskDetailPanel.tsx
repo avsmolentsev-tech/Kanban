@@ -4,6 +4,19 @@ import type { Task, Project, Person, TaskStatus } from '@pis/shared';
 import { tasksApi } from '../../api/tasks.api';
 import { apiGet, apiPost, apiDelete } from '../../api/client';
 
+const RECURRENCE_OPTIONS: { value: string | null; label: string }[] = [
+  { value: null, label: 'Нет' },
+  { value: 'daily', label: 'Ежедневно' },
+  { value: 'weekly', label: 'Еженедельно' },
+  { value: 'monthly', label: 'Ежемесячно' },
+];
+
+interface Tag {
+  id: number;
+  name: string;
+  color: string;
+}
+
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'backlog', label: 'Бэклог' },
   { value: 'todo', label: 'К выполнению' },
@@ -29,6 +42,7 @@ type FormState = {
   urgency: number;
   due_date: string;
   project_id: number | null;
+  recurrence: string | null;
 };
 
 export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, onDeleted }: Props) {
@@ -40,10 +54,15 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
     urgency: 3,
     due_date: '',
     project_id: null,
+    recurrence: null,
   });
   const [saving, setSaving] = useState(false);
   const [assignedIdsLocal, setAssignedIdsLocal] = useState<number[]>([]);
   const [comments, setComments] = useState<Array<{id: number; text: string; created_at: string}>>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [taskTags, setTaskTags] = useState<Tag[]>([]);
+  const [newTagName, setNewTagName] = useState('');
+  const [showTagInput, setShowTagInput] = useState(false);
   const [commentText, setCommentText] = useState('');
 
   useEffect(() => {
@@ -56,10 +75,13 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
         urgency: task.urgency,
         due_date: task.due_date ?? '',
         project_id: task.project_id,
+        recurrence: (task as unknown as Record<string, unknown>)['recurrence'] as string | null ?? null,
       });
       setAssignedIdsLocal((task.people ?? []).map((p) => p.id));
       apiGet<Array<{id: number; text: string; created_at: string}>>(`/tasks/${task.id}/comments`).then(setComments).catch(() => {});
       setCommentText('');
+      setTaskTags((task.tags ?? []) as Tag[]);
+      apiGet<Tag[]>('/tags').then(setAllTags).catch(() => {});
     }
   }, [task]);
 
@@ -174,6 +196,61 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             </select>
           </div>
 
+          {/* Tags */}
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Метки</div>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {taskTags.map((tag) => (
+                <span key={tag.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-white"
+                  style={{ backgroundColor: tag.color }}>
+                  {tag.name}
+                  <button onClick={async () => {
+                    await apiDelete(`/tags/tasks/${task.id}/tags/${tag.id}`);
+                    setTaskTags((prev) => prev.filter((t) => t.id !== tag.id));
+                    onUpdated();
+                  }} className="hover:opacity-70 text-white/80 ml-0.5">&times;</button>
+                </span>
+              ))}
+            </div>
+            {/* Existing tags to attach */}
+            {allTags.filter((t) => !taskTags.some((tt) => tt.id === t.id)).length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {allTags.filter((t) => !taskTags.some((tt) => tt.id === t.id)).map((tag) => (
+                  <button key={tag.id} onClick={async () => {
+                    await apiPost(`/tags/tasks/${task.id}/tags/${tag.id}`);
+                    setTaskTags((prev) => [...prev, tag]);
+                    onUpdated();
+                  }} className="px-2 py-0.5 rounded-full text-xs border border-gray-200 hover:border-indigo-300 text-gray-600"
+                    style={{ borderColor: tag.color, color: tag.color }}>
+                    + {tag.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* Create new tag */}
+            {showTagInput ? (
+              <div className="flex gap-1.5">
+                <input autoFocus className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-300"
+                  placeholder="Название метки" value={newTagName} onChange={(e) => setNewTagName(e.target.value)}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter' && newTagName.trim()) {
+                      const tag = await apiPost<Tag>('/tags', { name: newTagName.trim() });
+                      await apiPost(`/tags/tasks/${task.id}/tags/${tag.id}`);
+                      setTaskTags((prev) => [...prev, tag]);
+                      setAllTags((prev) => [...prev, tag]);
+                      setNewTagName('');
+                      setShowTagInput(false);
+                      onUpdated();
+                    }
+                    if (e.key === 'Escape') { setShowTagInput(false); setNewTagName(''); }
+                  }} />
+                <button onClick={() => { setShowTagInput(false); setNewTagName(''); }} className="text-xs text-gray-400 hover:text-gray-600">Отмена</button>
+              </div>
+            ) : (
+              <button onClick={() => setShowTagInput(true)} className="text-xs text-indigo-500 hover:text-indigo-700">+ Новая метка</button>
+            )}
+          </div>
+
           {/* Priority & Urgency */}
           <div className="grid grid-cols-2 gap-3">
             <RatingField
@@ -201,6 +278,27 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
               onBlur={() => handleBlur('due_date')}
               disabled={saving}
             />
+          </div>
+
+          {/* Recurrence */}
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Повторение</div>
+            <div className="flex gap-1">
+              {RECURRENCE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value ?? 'none'}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => {
+                    setForm((f) => ({ ...f, recurrence: opt.value }));
+                    save({ recurrence: opt.value } as Partial<FormState>);
+                  }}
+                  className={`px-2.5 py-1 text-xs rounded border transition-colors ${form.recurrence === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Description */}

@@ -62,6 +62,14 @@ export function TaskCard({ task, project, onClick, onToggleDone, dragMode = 'sor
         />
         <div className="text-sm font-medium text-gray-800">{task.title}</div>
       </div>
+      {/* Tags */}
+      {task.tags && task.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-1.5">
+          {task.tags.map((tag) => (
+            <span key={tag.id} className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: tag.color }} title={tag.name} />
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap gap-1 items-center">
         {project && <Badge label={project.name} color={project.color} />}
         <span className={`text-xs px-1.5 py-0.5 rounded ${task.priority >= 4 ? 'bg-red-100 text-red-700' : task.priority === 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>
