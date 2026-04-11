@@ -265,13 +265,20 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 function SubtaskInput({ taskId, projectId, onCreated }: { taskId: number; projectId: number | null; onCreated: () => void }) {
   const [title, setTitle] = useState('');
   const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const submit = async () => {
-    if (!title.trim()) return;
-    await tasksApi.create({ title: title.trim(), parent_id: taskId, project_id: projectId ?? undefined, status: 'todo', priority: 3 });
-    setTitle('');
-    setAdding(false);
-    onCreated();
+    if (!title.trim() || saving) return;
+    setSaving(true);
+    try {
+      await tasksApi.create({ title: title.trim(), parent_id: taskId, project_id: projectId ?? undefined, status: 'todo', priority: 3 });
+      setTitle('');
+      onCreated();
+    } catch (err) {
+      alert('Ошибка: ' + (err instanceof Error ? err.message : 'unknown'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!adding) {
