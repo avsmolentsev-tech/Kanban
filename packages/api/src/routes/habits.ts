@@ -16,7 +16,8 @@ const UpdateSchema = z.object({
   title: z.string().min(1).optional(),
   icon: z.string().optional(),
   color: z.string().optional(),
-  frequency: z.enum(['daily', 'weekly']).optional(),
+  frequency: z.string().optional(),
+  remind_time: z.string().nullable().optional(),
 });
 
 const LogSchema = z.object({
