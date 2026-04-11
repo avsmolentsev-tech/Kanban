@@ -129,10 +129,10 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
     playStart();
   };
 
-  const stopRecording = (withSound = false) => {
+  const stopRecording = () => {
     recognitionRef.current?.stop();
     setRecording(false);
-    if (withSound) playStop();
+    playStop();
   };
 
   const executeCommand = async () => {
@@ -262,7 +262,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
                 </button>
               )}
               <button
-                onClick={() => { if (recording) stopRecording(true); setOpen(false); }}
+                onClick={() => { if (recording) stopRecording(); setOpen(false); }}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-indigo-700/50 hover:bg-indigo-800 text-white transition-colors"
                 title="Закрыть"
                 aria-label="Закрыть"
@@ -380,7 +380,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             />
 
             <button
-              onClick={() => { if (recording) stopRecording(true); executeCommand(); }}
+              onClick={() => { if (recording) stopRecording(); executeCommand(); }}
               disabled={processing || !transcript.trim()}
               className="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
