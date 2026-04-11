@@ -1,8 +1,10 @@
+import { useState, useCallback } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import type { Task, Project, TaskStatus } from '@pis/shared';
 import { Badge } from '../ui/Badge';
+import { apiClient } from '../../api/client';
 
 interface TaskCardProps {
   task: Task;
@@ -42,6 +44,9 @@ function useDragProps(id: number, mode: 'sortable' | 'draggable') {
 
 export function TaskCard({ task, project, onClick, onToggleDone, dragMode = 'sortable' }: TaskCardProps) {
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useDragProps(task.id, dragMode);
+  const [fileDragOver, setFileDragOver] = useState(false);
+  const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
+
   const style = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
     transition,
@@ -49,9 +54,45 @@ export function TaskCard({ task, project, onClick, onToggleDone, dragMode = 'sor
   };
   const overdue = task.due_date ? new Date(task.due_date) < new Date() : false;
 
+  const handleFileDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      e.stopPropagation();
+      setFileDragOver(true);
+    }
+  }, []);
+
+  const handleFileDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setFileDragOver(false);
+  }, []);
+
+  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
+    if (!e.dataTransfer.files.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setFileDragOver(false);
+    const file = e.dataTransfer.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      await apiClient.post(`/tasks/${task.id}/attachments`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setUploadFeedback('\u{1F4CE} Загружено');
+      setTimeout(() => setUploadFeedback(null), 2000);
+    } catch {
+      setUploadFeedback('\u274C Ошибка');
+      setTimeout(() => setUploadFeedback(null), 2000);
+    }
+  }, [task.id]);
+
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={onClick}
-      className={`rounded-lg border p-3 cursor-pointer hover:shadow-sm transition-all ${task.status === 'done' ? 'bg-green-50 border-green-300 hover:border-green-400' : 'bg-white border-gray-200 hover:border-indigo-300'}`}>
+      onDragOver={handleFileDragOver}
+      onDragLeave={handleFileDragLeave}
+      onDrop={handleFileDrop}
+      className={`rounded-lg border p-3 cursor-pointer hover:shadow-sm transition-all ${fileDragOver ? 'border-blue-400 border-2 bg-blue-50' : task.status === 'done' ? 'bg-green-50 border-green-300 hover:border-green-400' : 'bg-white border-gray-200 hover:border-indigo-300'}`}>
       <div className="flex items-start gap-2 mb-2">
         <input
           type="checkbox"

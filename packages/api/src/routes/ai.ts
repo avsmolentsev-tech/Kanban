@@ -354,6 +354,137 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
   }
 });
 
+aiRouter.post('/daily-plan', async (_req: Request, res: Response) => {
+  try {
+    const today = moscowDateString();
+    const db = getDb();
+
+    // Today's tasks by due_date and priority
+    const todayTasks = db.prepare(
+      "SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status != 'done' AND (due_date = ? OR status = 'in_progress') ORDER BY priority DESC"
+    ).all(today);
+
+    // All active tasks (for broader context)
+    const activeTasks = db.prepare(
+      "SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') ORDER BY priority DESC LIMIT 30"
+    ).all();
+
+    // Today's meetings
+    const meetings = db.prepare(
+      'SELECT title, date FROM meetings WHERE date = ? ORDER BY date ASC'
+    ).all(today);
+
+    // Habits not yet done today
+    const habits = db.prepare(`
+      SELECT h.title, h.icon FROM habits h
+      WHERE h.archived = 0 AND h.id NOT IN (
+        SELECT habit_id FROM habit_logs WHERE date = ? AND completed = 1
+      )
+    `).all(today);
+
+    // Goals progress
+    const goals = db.prepare(
+      "SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active'"
+    ).all();
+
+    const prompt = `Создай оптимальный план на день на русском. Учитывай приоритеты, дедлайны, встречи. Группируй задачи по энергии: утро=сложные, день=средние, вечер=лёгкие. Формат:
+🌅 Утро (8:00-12:00)
+- [ ] Задача 1
+- [ ] Задача 2
+
+☀️ День (12:00-17:00)
+...
+
+🌙 Вечер (17:00-21:00)
+...
+
+Данные:
+Задачи на сегодня: ${JSON.stringify(todayTasks)}
+Все активные задачи: ${JSON.stringify(activeTasks)}
+Встречи сегодня: ${JSON.stringify(meetings)}
+Привычки (не выполнены сегодня): ${JSON.stringify(habits)}
+Цели и прогресс: ${JSON.stringify(goals)}
+Дата: ${today}`;
+
+    const plan = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1');
+    res.json(ok({ plan }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
+  }
+});
+
+aiRouter.post('/productivity-analysis', async (_req: Request, res: Response) => {
+  try {
+    const today = moscowDateString();
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const db = getDb();
+
+    // Tasks completed in last 7 days
+    const completedTasks = db.prepare(
+      "SELECT title, priority, project_id, updated_at FROM tasks WHERE status = 'done' AND updated_at >= ? ORDER BY updated_at DESC"
+    ).all(weekAgo);
+
+    // Tasks created in last 7 days
+    const createdTasks = db.prepare(
+      "SELECT title, priority, project_id, created_at FROM tasks WHERE created_at >= ? ORDER BY created_at DESC"
+    ).all(weekAgo);
+
+    // Overdue tasks
+    const overdueTasks = db.prepare(
+      "SELECT title, priority, due_date, project_id FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < ? ORDER BY due_date ASC"
+    ).all(today);
+
+    // Task distribution by project
+    const projectDistribution = db.prepare(`
+      SELECT p.name as project, COUNT(t.id) as task_count
+      FROM tasks t
+      LEFT JOIN projects p ON t.project_id = p.id
+      WHERE t.archived = 0 AND t.status != 'done'
+      GROUP BY t.project_id
+      ORDER BY task_count DESC
+    `).all();
+
+    // Habit completion rate (last 7 days)
+    const habits = db.prepare("SELECT id, title FROM habits WHERE archived = 0").all() as Array<{ id: number; title: string }>;
+    const habitLogs = db.prepare(
+      "SELECT habit_id, COUNT(*) as completed_days FROM habit_logs WHERE date >= ? AND completed = 1 GROUP BY habit_id"
+    ).all(weekAgo) as Array<{ habit_id: number; completed_days: number }>;
+    const habitStats = habits.map(h => {
+      const log = habitLogs.find(l => l.habit_id === h.id);
+      return { title: h.title, completed_days: log?.completed_days ?? 0, total_days: 7 };
+    });
+
+    // Goals progress
+    const goals = db.prepare(
+      "SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active'"
+    ).all();
+
+    const prompt = `Проведи анализ продуктивности за последние 7 дней на русском языке.
+
+Выполнено задач: ${completedTasks.length}
+Создано задач: ${createdTasks.length}
+Просроченные задачи: ${JSON.stringify(overdueTasks)}
+Распределение по проектам: ${JSON.stringify(projectDistribution)}
+Привычки (за 7 дней): ${JSON.stringify(habitStats)}
+Цели: ${JSON.stringify(goals)}
+
+Период: ${weekAgo} — ${today}
+
+Сделай структурированный анализ:
+1. 📈 Общая статистика (выполнено vs создано)
+2. 📊 Распределение по проектам (% задач)
+3. ⏰ Просроченные задачи и рекомендации
+4. ✅ Привычки — процент выполнения
+5. 🎯 Прогресс по целям
+6. 💡 Рекомендации по улучшению продуктивности`;
+
+    const analysis = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1');
+    res.json(ok({ analysis }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
+  }
+});
+
 aiRouter.get('/search', async (req: Request, res: Response) => {
   const q = req.query['q'];
   if (typeof q !== 'string' || !q) { res.status(400).json(fail('Query parameter q is required')); return; }

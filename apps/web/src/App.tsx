@@ -25,6 +25,7 @@ import { SettingsMenu } from './components/layout/SettingsMenu';
 import { VoiceCommandButton } from './components/voice/VoiceCommandButton';
 import { PomodoroTimer } from './components/pomodoro/PomodoroTimer';
 import { isTelegramWebApp, initTelegramApp } from './lib/telegram';
+import { useHotkeys } from './lib/hotkeys';
 import { useTasksStore } from './store/tasks.store';
 import { useProjectsStore } from './store/projects.store';
 
@@ -46,6 +47,11 @@ const desktopNav = [
   { to: '/stats', label: 'Статистика' },
   { to: '/gantt', label: 'Гант' },
 ];
+
+function HotkeyProvider() {
+  useHotkeys();
+  return null;
+}
 
 export default function App() {
   const [isTg, setIsTg] = useState(false);
@@ -79,6 +85,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <HotkeyProvider />
       <div
         className="flex h-screen bg-gray-50 dark:bg-gray-900"
         style={isTg ? { height: 'var(--tg-vh, 100vh)' } : undefined}

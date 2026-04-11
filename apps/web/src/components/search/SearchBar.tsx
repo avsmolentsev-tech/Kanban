@@ -57,6 +57,13 @@ export function SearchBar() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // Listen for global hotkey-search event (from useHotkeys '/' shortcut)
+  useEffect(() => {
+    const onHotkeySearch = () => setOpen(true);
+    window.addEventListener('hotkey-search', onHotkeySearch);
+    return () => window.removeEventListener('hotkey-search', onHotkeySearch);
+  }, []);
+
   const handleClick = (hit: SearchHit) => {
     const route = TYPE_ROUTES[hit.type] ?? '/';
     navigate(route);
