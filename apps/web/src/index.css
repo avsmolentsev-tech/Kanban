@@ -23,6 +23,23 @@ html, body {
   overscroll-behavior: none;
 }
 
+/* Fix iOS keyboard pushing viewport */
+html {
+  height: 100%;
+  overflow: hidden;
+}
+body {
+  height: 100%;
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+}
+#root {
+  height: 100%;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Dark theme body */
 html.dark body {
   background: rgb(17 24 39);
