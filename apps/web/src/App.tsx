@@ -18,6 +18,7 @@ import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { TodaySwipePage } from './pages/TodaySwipePage';
 import { StatsPage } from './pages/StatsPage';
+import { GanttPage } from './pages/GanttPage';
 import { SearchBar } from './components/search/SearchBar';
 import { MobileNav } from './components/layout/MobileNav';
 import { SettingsMenu } from './components/layout/SettingsMenu';
@@ -43,6 +44,7 @@ const desktopNav = [
   { to: '/journal', label: 'Ежедневник' },
   { to: '/dashboard', label: 'Дашборд' },
   { to: '/stats', label: 'Статистика' },
+  { to: '/gantt', label: 'Гант' },
 ];
 
 export default function App() {
@@ -121,6 +123,7 @@ export default function App() {
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/stats" element={<StatsPage />} />
+              <Route path="/gantt" element={<GanttPage />} />
               <Route path="/more" element={<MorePage />} />
             </Routes>
           </main>

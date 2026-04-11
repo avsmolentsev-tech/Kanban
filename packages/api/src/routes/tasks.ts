@@ -75,11 +75,19 @@ function enrichTasksWithPeople(tasks: Record<string, unknown>[]): Record<string,
     tagsByTask.get(r.task_id)!.push({ id: r.id, name: r.name, color: r.color });
   }
 
+  // Fetch dependencies count
+  const depRows = getDb()
+    .prepare(`SELECT task_id, COUNT(*) as cnt FROM task_dependencies WHERE task_id IN (${taskIds.map(() => '?').join(',')}) GROUP BY task_id`)
+    .all(...taskIds) as Array<{ task_id: number; cnt: number }>;
+  const depsByTask = new Map<number, number>();
+  for (const r of depRows) depsByTask.set(r.task_id, r.cnt);
+
   return tasks.map((t) => ({
     ...t,
     people: byTask.get(t['id'] as number) ?? [],
     subtasks: subByParent.get(t['id'] as number) ?? [],
     tags: tagsByTask.get(t['id'] as number) ?? [],
+    dependencies_count: depsByTask.get(t['id'] as number) ?? 0,
   }));
 }
 
@@ -247,5 +255,34 @@ tasksRouter.post('/:id/comments', (req: Request, res: Response) => {
 
 tasksRouter.delete('/:id/comments/:commentId', (req: Request, res: Response) => {
   getDb().prepare('DELETE FROM task_comments WHERE id = ? AND task_id = ?').run(Number(req.params['commentId']), Number(req.params['id']));
+  res.json(ok({ deleted: true }));
+});
+
+// Task dependencies
+tasksRouter.get('/:id/dependencies', (req: Request, res: Response) => {
+  const taskId = Number(req.params['id']);
+  const deps = getDb().prepare(
+    'SELECT t.id, t.title, t.status, t.priority FROM task_dependencies td JOIN tasks t ON t.id = td.depends_on_id WHERE td.task_id = ?'
+  ).all(taskId);
+  res.json(ok(deps));
+});
+
+tasksRouter.post('/:id/dependencies', (req: Request, res: Response) => {
+  const taskId = Number(req.params['id']);
+  const { depends_on_id } = req.body;
+  if (!depends_on_id || typeof depends_on_id !== 'number') { res.status(400).json(fail('depends_on_id required')); return; }
+  if (depends_on_id === taskId) { res.status(400).json(fail('Cannot depend on itself')); return; }
+  try {
+    getDb().prepare('INSERT OR IGNORE INTO task_dependencies (task_id, depends_on_id) VALUES (?, ?)').run(taskId, depends_on_id);
+    res.json(ok({ task_id: taskId, depends_on_id }));
+  } catch (err) {
+    res.status(400).json(fail('Failed to add dependency'));
+  }
+});
+
+tasksRouter.delete('/:id/dependencies/:depId', (req: Request, res: Response) => {
+  const taskId = Number(req.params['id']);
+  const depId = Number(req.params['depId']);
+  getDb().prepare('DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?').run(taskId, depId);
   res.json(ok({ deleted: true }));
 });

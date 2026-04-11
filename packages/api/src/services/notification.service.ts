@@ -8,8 +8,8 @@ import { config } from '../config';
 
 let lastMorningBrief = '';
 let lastWeeklyReport = '';
-
 let lastDailyDigest = '';
+let lastDeadlineCheck = '';
 
 export function startNotificationScheduler(): void {
   // Check every 15 minutes
@@ -20,6 +20,7 @@ export function startNotificationScheduler(): void {
     checkWeeklyReport();
     checkDailyDigest();
     checkHabitReminders();
+    checkUpcomingDeadlines();
   }, 15 * 60 * 1000);
 
   setTimeout(checkOverdueTasks, 10000);
@@ -185,6 +186,33 @@ function checkHabitReminders(): void {
       telegramService.notify(`${h.icon} Напоминание: <b>${h.title}</b>\n\nОтметь в /habits или в приложении`);
     }
   } catch {}
+}
+
+/** Deadline reminder — notify about tasks due tomorrow (at 20:00 MSK) */
+function checkUpcomingDeadlines(): void {
+  const now = moscowNow();
+  const hour = now.getUTCHours();
+  const today = moscowDateString();
+  if (hour !== 20) return;
+  if (lastDeadlineCheck === today) return;
+  lastDeadlineCheck = today;
+
+  try {
+    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0]!;
+    const db = getDb();
+    const tasks = db.prepare(
+      "SELECT title FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND due_date = ? ORDER BY priority DESC"
+    ).all(tomorrowStr) as Array<{ title: string }>;
+
+    if (tasks.length === 0) return;
+
+    const lines = tasks.map(t => `• ${t.title}`);
+    const message = `⏰ Завтра дедлайн:\n\n${lines.join('\n')}`;
+    telegramService.notify(message);
+  } catch (err) {
+    console.warn('[notifications] deadline check failed:', err);
+  }
 }
 
 /** Remind about meetings today (once per meeting) */

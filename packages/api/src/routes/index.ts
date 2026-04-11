@@ -14,6 +14,7 @@ import { goalsRouter } from './goals';
 import { journalRouter } from './journal';
 import { exportRouter } from './export';
 import { tagsRouter } from './tags';
+import { templatesRouter } from './templates';
 
 export const router = Router();
 
@@ -32,3 +33,4 @@ router.use('/goals', goalsRouter);
 router.use('/journal', journalRouter);
 router.use('/export', exportRouter);
 router.use('/tags', tagsRouter);
+router.use('/templates', templatesRouter);

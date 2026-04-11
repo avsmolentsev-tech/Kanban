@@ -15,6 +15,7 @@ const items = [
   { to: '/journal', label: 'Ежедневник', icon: '📓' },
   { to: '/chat', label: 'Чат', icon: '💬' },
   { to: '/stats', label: 'Статистика', icon: '📈' },
+  { to: '/gantt', label: 'Диаграмма Ганта', icon: '📊' },
 ];
 
 export function MorePage() {

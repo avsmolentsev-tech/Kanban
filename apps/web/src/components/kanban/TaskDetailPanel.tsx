@@ -64,6 +64,9 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
   const [newTagName, setNewTagName] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [dependencies, setDependencies] = useState<Array<{id: number; title: string; status: string; priority: number}>>([]);
+  const [allTasks, setAllTasks] = useState<Task[]>([]);
+  const [depSelectOpen, setDepSelectOpen] = useState(false);
 
   useEffect(() => {
     if (task) {
@@ -82,6 +85,8 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
       setCommentText('');
       setTaskTags((task.tags ?? []) as Tag[]);
       apiGet<Tag[]>('/tags').then(setAllTags).catch(() => {});
+      apiGet<Array<{id: number; title: string; status: string; priority: number}>>(`/tasks/${task.id}/dependencies`).then(setDependencies).catch(() => setDependencies([]));
+      apiGet<Task[]>('/tasks').then(setAllTasks).catch(() => setAllTasks([]));
     }
   }, [task]);
 
@@ -248,6 +253,68 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
               </div>
             ) : (
               <button onClick={() => setShowTagInput(true)} className="text-xs text-indigo-500 hover:text-indigo-700">+ Новая метка</button>
+            )}
+          </div>
+
+          {/* Dependencies */}
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Зависимости</div>
+            {dependencies.some(d => d.status !== 'done') && (
+              <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/30 rounded px-2 py-1 mb-2 font-medium">
+                ⚠️ Заблокировано
+              </div>
+            )}
+            {dependencies.map(dep => (
+              <div key={dep.id} className="flex items-center justify-between py-1 group">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[10px] ${dep.status === 'done' ? 'bg-green-500 border-green-500 text-white' : dep.status === 'in_progress' ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-300 text-gray-400'}`}>
+                    {dep.status === 'done' ? '✓' : dep.status === 'in_progress' ? '►' : '○'}
+                  </span>
+                  <span className={dep.status === 'done' ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-200'}>{dep.title}</span>
+                </div>
+                <button
+                  onClick={async () => {
+                    await apiDelete(`/tasks/${task.id}/dependencies/${dep.id}`);
+                    setDependencies(prev => prev.filter(d => d.id !== dep.id));
+                    onUpdated();
+                  }}
+                  className="text-[10px] text-red-400 opacity-0 group-hover:opacity-100 hover:text-red-600"
+                >
+                  убрать
+                </button>
+              </div>
+            ))}
+            {depSelectOpen ? (
+              <div className="mt-1">
+                <select
+                  autoFocus
+                  className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
+                  value=""
+                  onChange={async (e) => {
+                    const depId = Number(e.target.value);
+                    if (!depId) return;
+                    await apiPost(`/tasks/${task.id}/dependencies`, { depends_on_id: depId });
+                    const depTask = allTasks.find(t => t.id === depId);
+                    if (depTask) {
+                      setDependencies(prev => [...prev, { id: depTask.id, title: depTask.title, status: depTask.status, priority: depTask.priority }]);
+                    }
+                    setDepSelectOpen(false);
+                    onUpdated();
+                  }}
+                  onBlur={() => setDepSelectOpen(false)}
+                >
+                  <option value="">Выберите задачу...</option>
+                  {allTasks
+                    .filter(t => t.id !== task.id && !dependencies.some(d => d.id === t.id))
+                    .map(t => (
+                      <option key={t.id} value={t.id}>{t.title}</option>
+                    ))}
+                </select>
+              </div>
+            ) : (
+              <button onClick={() => setDepSelectOpen(true)} className="text-xs text-indigo-500 hover:text-indigo-700 mt-1">
+                + Добавить зависимость
+              </button>
             )}
           </div>
 

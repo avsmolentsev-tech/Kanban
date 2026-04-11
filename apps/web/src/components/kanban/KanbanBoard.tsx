@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DndContext, rectIntersection, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -9,6 +9,17 @@ import { TaskDetailPanel } from './TaskDetailPanel';
 import { AddTaskModal } from './AddTaskModal';
 import { AddProjectForm } from './AddProjectForm';
 import { tasksApi } from '../../api/tasks.api';
+import { apiGet, apiPost } from '../../api/client';
+
+interface TaskTemplate {
+  id: number;
+  title: string;
+  description: string;
+  priority: number;
+  project_id: number | null;
+  tags: string;
+  created_at: string;
+}
 
 const COLUMNS: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'done', 'someday'];
 const COL_LABELS: Record<TaskStatus, string> = { backlog: 'Бэклог', todo: 'К выполнению', in_progress: 'В работе', done: 'Готово', someday: 'Когда-нибудь' };
@@ -23,6 +34,54 @@ interface Props {
   onReorderProjects: (items: Array<{ id: number; order_index: number }>) => void;
 }
 
+function TemplateDropdown({ onSelect, onRefresh }: { onSelect: (tpl: TaskTemplate) => void; onRefresh: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setLoading(true);
+      apiGet<TaskTemplate[]>('/templates').then(setTemplates).catch(() => {}).finally(() => setLoading(false));
+    }
+  }, [open]);
+
+  const handleSelect = async (tpl: TaskTemplate) => {
+    try {
+      await apiPost(`/templates/${tpl.id}/create-task`);
+      onRefresh();
+    } catch {}
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative inline-block">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-xs text-gray-400 hover:text-indigo-600 transition-colors"
+        title="Создать из шаблона"
+      >
+        Из шаблона
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 right-0">
+          {loading && <div className="px-3 py-2 text-xs text-gray-400">Загрузка...</div>}
+          {!loading && templates.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">Нет шаблонов</div>}
+          {templates.map((tpl) => (
+            <button
+              key={tpl.id}
+              className="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors"
+              onClick={() => handleSelect(tpl)}
+            >
+              {tpl.title}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskClick, onToggleDone, projectId, onRefresh, selectedIds }: {
   droppableId: string; status: TaskStatus; tasks: Task[]; projects: Project[]; people: Person[];
   onTaskClick: (t: Task, e: React.MouseEvent) => void; onToggleDone: (id: number, newStatus: TaskStatus) => void; projectId: number | null; onRefresh: () => void; selectedIds?: Set<number>;
@@ -32,7 +91,7 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
   const [adding, setAdding] = useState(false);
 
   return (
-    <div ref={setNodeRef} className={`flex flex-col w-64 min-w-[256px] bg-gray-100 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50' : ''}`}>
+    <div ref={setNodeRef} className={`flex flex-col w-64 min-w-[256px] bg-gray-100 dark:bg-gray-800 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
       <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
         {tasks.map((t) => (
           <div key={t.id}
@@ -56,7 +115,11 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
           <AddTaskModal status={status} projectId={projectId} people={people} onCreated={() => { setAdding(false); onRefresh(); }} onCancel={() => setAdding(false)} />
         </div>
       ) : (
-        <button onClick={() => setAdding(true)} className="mt-2 text-xs text-gray-400 hover:text-indigo-600 transition-colors self-center">+ Добавить</button>
+        <div className="mt-2 flex items-center justify-center gap-2">
+          <button onClick={() => setAdding(true)} className="text-xs text-gray-400 hover:text-indigo-600 transition-colors">+ Добавить</button>
+          <span className="text-gray-300 dark:text-gray-600">|</span>
+          <TemplateDropdown onSelect={() => {}} onRefresh={onRefresh} />
+        </div>
       )}
     </div>
   );

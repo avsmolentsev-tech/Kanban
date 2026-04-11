@@ -222,6 +222,32 @@ export function initDb(): void {
       )
     `);
   } catch {}
+
+  // Task dependencies
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS task_dependencies (
+        task_id INTEGER NOT NULL REFERENCES tasks(id),
+        depends_on_id INTEGER NOT NULL REFERENCES tasks(id),
+        PRIMARY KEY (task_id, depends_on_id)
+      )
+    `);
+  } catch {}
+
+  // Task templates
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS task_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        priority INTEGER NOT NULL DEFAULT 3,
+        project_id INTEGER REFERENCES projects(id),
+        tags TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
 }
 
 export function initTestDb(): void {
@@ -399,6 +425,32 @@ export function initTestDb(): void {
         task_id INTEGER NOT NULL REFERENCES tasks(id),
         tag_id INTEGER NOT NULL REFERENCES tags(id),
         PRIMARY KEY (task_id, tag_id)
+      )
+    `);
+  } catch {}
+
+  // Task dependencies
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS task_dependencies (
+        task_id INTEGER NOT NULL REFERENCES tasks(id),
+        depends_on_id INTEGER NOT NULL REFERENCES tasks(id),
+        PRIMARY KEY (task_id, depends_on_id)
+      )
+    `);
+  } catch {}
+
+  // Task templates
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS task_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        priority INTEGER NOT NULL DEFAULT 3,
+        project_id INTEGER REFERENCES projects(id),
+        tags TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
       )
     `);
   } catch {}

@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSettingsStore } from '../../store/settings.store';
+import { useLangStore, type Lang } from '../../store/lang.store';
 
 export function SettingsMenu() {
   const { theme, zoom, toggleTheme, setZoom } = useSettingsStore();
+  const { lang, setLang } = useLangStore();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -82,6 +84,21 @@ export function SettingsMenu() {
             >
               Сбросить
             </button>
+          </div>
+
+          {/* Language */}
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">Язык</div>
+            <div className="flex gap-1">
+              {(['ru', 'en'] as Lang[]).map(l => (
+                <button key={l} onClick={() => setLang(l)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    lang === l ? 'bg-indigo-600 text-white' : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                  }`}>
+                  {l === 'ru' ? 'RU' : 'EN'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
