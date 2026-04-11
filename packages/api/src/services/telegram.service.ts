@@ -48,7 +48,7 @@ export class TelegramService {
 
 ДАННЫЕ СИСТЕМЫ ПОЛЬЗОВАТЕЛЯ:
 Проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
-Задачи: ${JSON.stringify(tasks.slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
+Задачи: ${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
 Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.preview || '').slice(0, 200) })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 Цели и ключевые результаты (OKR):
