@@ -1,17 +1,23 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { getDb } from '../db/db';
+import type { AuthRequest } from '../middleware/auth';
+import { getUserId } from '../middleware/user-scope';
 
 export const exportRouter = Router();
 
-exportRouter.get('/tasks.csv', (_req: Request, res: Response) => {
+exportRouter.get('/tasks.csv', (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  const userFilter = userId != null ? ' AND user_id = ?' : '';
+  const userParams = userId != null ? [userId] : [];
+
   const tasks = getDb()
     .prepare(
-      "SELECT id, title, status, priority, due_date, project_id, created_at FROM tasks WHERE archived = 0"
+      `SELECT id, title, status, priority, due_date, project_id, created_at FROM tasks WHERE archived = 0${userFilter}`
     )
-    .all() as Array<Record<string, unknown>>;
+    .all(...userParams) as Array<Record<string, unknown>>;
   const projects = getDb()
-    .prepare("SELECT id, name FROM projects")
-    .all() as Array<{ id: number; name: string }>;
+    .prepare(`SELECT id, name FROM projects WHERE 1=1${userFilter}`)
+    .all(...userParams) as Array<{ id: number; name: string }>;
   const pMap = new Map(projects.map((p) => [p.id, p.name]));
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -25,12 +31,16 @@ exportRouter.get('/tasks.csv', (_req: Request, res: Response) => {
   res.send(csv);
 });
 
-exportRouter.get('/meetings.csv', (_req: Request, res: Response) => {
+exportRouter.get('/meetings.csv', (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  const userFilter = userId != null ? ' AND user_id = ?' : '';
+  const userParams = userId != null ? [userId] : [];
+
   const meetings = getDb()
     .prepare(
-      "SELECT id, title, date, summary_raw, created_at FROM meetings"
+      `SELECT id, title, date, summary_raw, created_at FROM meetings WHERE 1=1${userFilter}`
     )
-    .all() as Array<Record<string, unknown>>;
+    .all(...userParams) as Array<Record<string, unknown>>;
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename=meetings.csv');

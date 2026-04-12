@@ -60,7 +60,8 @@ documentsRouter.post('/', (req: AuthRequest, res: Response) => {
 });
 
 documentsRouter.get('/:id', (req: AuthRequest, res: Response) => {
-  const doc = getDb().prepare('SELECT * FROM documents WHERE id = ?').get(Number(req.params['id']));
+  const userId = getUserId(req);
+  const doc = getDb().prepare('SELECT * FROM documents WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(Number(req.params['id']), userId);
   if (!doc) { res.status(404).json(fail('Document not found')); return; }
   res.json(ok(doc));
 });
@@ -68,6 +69,9 @@ documentsRouter.get('/:id', (req: AuthRequest, res: Response) => {
 documentsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const userId = getUserId(req);
+  const existing = getDb().prepare('SELECT id FROM documents WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(Number(req.params['id']), userId);
+  if (!existing) { res.status(404).json(fail('Document not found')); return; }
   const fields = Object.entries(parsed.data)
     .filter(([, v]) => v !== undefined)
     .map(([k]) => `${k} = ?`);
@@ -119,6 +123,9 @@ documentsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
 
 documentsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
+  const userId = getUserId(req);
+  const existing = getDb().prepare('SELECT id FROM documents WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId);
+  if (!existing) { res.status(404).json(fail('Document not found')); return; }
   // Delete attachments
   const atts = getDb().prepare('SELECT filename FROM attachments WHERE document_id = ?').all(id) as Array<{ filename: string }>;
   for (const a of atts) { try { fs.unlinkSync(path.join(attachDir, a.filename)); } catch {} }

@@ -18,3 +18,7 @@ export const config = {
   googleClientSecret: process.env['GOOGLE_CLIENT_SECRET'] ?? '',
   jwtSecret: process.env['JWT_SECRET'] ?? 'pis-default-secret-change-me',
 } as const;
+
+if (config.jwtSecret === 'pis-default-secret-change-me') {
+  console.warn('[SECURITY] WARNING: Using default JWT secret! Set JWT_SECRET in .env');
+}

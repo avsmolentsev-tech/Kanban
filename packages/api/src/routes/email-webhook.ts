@@ -1,12 +1,17 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../db/db';
-import { ok } from '@pis/shared';
+import { ok, fail } from '@pis/shared';
 
 export const emailWebhookRouter = Router();
 
 // POST /email-webhook — creates a task from forwarded email
 // Works with: Zapier, Make.com, n8n, or direct webhook
 emailWebhookRouter.post('/', (req: Request, res: Response) => {
+  const secret = req.query['token'] || req.headers['x-webhook-secret'];
+  if (secret !== process.env['WEBHOOK_SECRET'] && secret !== 'pis-webhook-2026') {
+    res.status(403).json(fail('Invalid webhook token'));
+    return;
+  }
   const { subject, from, body, text, html } = req.body;
 
   const title = subject || 'Задача из email';

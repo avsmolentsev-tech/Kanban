@@ -101,7 +101,8 @@ meetingsRouter.post('/', async (req: AuthRequest, res: Response) => {
 
 meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
-  const existing = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id);
+  const userId = getUserId(req);
+  const existing = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId);
   if (!existing) { res.status(404).json(fail('Meeting not found')); return; }
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
@@ -125,7 +126,8 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
 });
 
 meetingsRouter.get('/:id', (req: AuthRequest, res: Response) => {
-  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(Number(req.params['id']));
+  const userId = getUserId(req);
+  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(Number(req.params['id']), userId);
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
   const agreements = getDb().prepare('SELECT * FROM agreements WHERE meeting_id = ?').all(Number(req.params['id']));
   const people = getDb().prepare('SELECT p.* FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(Number(req.params['id']));
@@ -134,7 +136,8 @@ meetingsRouter.get('/:id', (req: AuthRequest, res: Response) => {
 
 meetingsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
-  const meeting = getDb().prepare('SELECT vault_path FROM meetings WHERE id = ?').get(id) as { vault_path: string | null } | undefined;
+  const userId = getUserId(req);
+  const meeting = getDb().prepare('SELECT vault_path FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId) as { vault_path: string | null } | undefined;
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
   getDb().prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(id);
   getDb().prepare('DELETE FROM meeting_projects WHERE meeting_id = ?').run(id);

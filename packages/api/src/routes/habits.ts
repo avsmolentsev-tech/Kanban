@@ -125,7 +125,8 @@ habitsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const id = Number(req.params['id']);
-  const existing = getDb().prepare('SELECT * FROM habits WHERE id = ?').get(id);
+  const userId = getUserId(req);
+  const existing = getDb().prepare('SELECT * FROM habits WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId);
   if (!existing) { res.status(404).json(fail('Habit not found')); return; }
 
   const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
@@ -140,7 +141,10 @@ habitsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
 // DELETE /habits/:id — archive habit
 habitsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
-  getDb().prepare('UPDATE habits SET archived = 1 WHERE id = ?').run(id);
+  const userId = getUserId(req);
+  const existing = getDb().prepare('SELECT id FROM habits WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId);
+  if (!existing) { res.status(404).json(fail('Habit not found')); return; }
+  getDb().prepare('UPDATE habits SET archived = 1 WHERE id = ? AND (user_id = ? OR user_id IS NULL)').run(id, userId);
   res.json(ok({ archived: true }));
 });
 

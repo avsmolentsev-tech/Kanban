@@ -9,6 +9,25 @@ import { requireAuth } from '../middleware/auth';
 
 export const authRouter = Router();
 
+// --- In-memory rate limiting for login/register ---
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimitLogin(req: AuthRequest, res: Response, next: () => void): void {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (entry && entry.resetAt > now && entry.count >= 5) {
+    res.status(429).json({ success: false, error: 'Too many attempts. Try again in a minute.' });
+    return;
+  }
+  if (!entry || entry.resetAt <= now) {
+    loginAttempts.set(ip, { count: 1, resetAt: now + 60000 });
+  } else {
+    entry.count++;
+  }
+  next();
+}
+
 interface UserRow {
   id: number;
   email: string;
@@ -24,7 +43,7 @@ function signToken(user: UserRow): string {
 }
 
 // POST /auth/register
-authRouter.post('/register', (req: AuthRequest, res: Response) => {
+authRouter.post('/register', rateLimitLogin, (req: AuthRequest, res: Response) => {
   try {
     const { email, password, name } = req.body;
     if (!email || !password) {
@@ -65,7 +84,7 @@ authRouter.post('/register', (req: AuthRequest, res: Response) => {
 });
 
 // POST /auth/login
-authRouter.post('/login', (req: AuthRequest, res: Response) => {
+authRouter.post('/login', rateLimitLogin, (req: AuthRequest, res: Response) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {

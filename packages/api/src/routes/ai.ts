@@ -39,11 +39,14 @@ aiRouter.post('/chat', async (req: AuthRequest, res: Response) => {
   }
 });
 
-aiRouter.post('/daily-brief', async (_req: Request, res: Response) => {
+aiRouter.post('/daily-brief', async (req: AuthRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
+    const userParams = userId != null ? [userId] : [];
     const today = moscowDateString();
-    const tasks = getDb().prepare("SELECT title, status, priority, urgency, due_date FROM tasks WHERE archived = 0 AND status != 'done' ORDER BY priority DESC LIMIT 20").all();
-    const meetings = getDb().prepare('SELECT title, date FROM meetings WHERE date >= ? ORDER BY date ASC LIMIT 10').all(today);
+    const tasks = getDb().prepare(`SELECT title, status, priority, urgency, due_date FROM tasks WHERE archived = 0 AND status != 'done'${userFilter} ORDER BY priority DESC LIMIT 20`).all(...userParams);
+    const meetings = getDb().prepare(`SELECT title, date FROM meetings WHERE date >= ?${userFilter} ORDER BY date ASC LIMIT 10`).all(today, ...userParams);
     const brief = await claude.dailyBrief(JSON.stringify(tasks), JSON.stringify(meetings));
     res.json(ok({ brief }));
   } catch (err) {
@@ -51,16 +54,19 @@ aiRouter.post('/daily-brief', async (_req: Request, res: Response) => {
   }
 });
 
-aiRouter.post('/weekly-brief', async (_req: Request, res: Response) => {
+aiRouter.post('/weekly-brief', async (req: AuthRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
+    const userParams = userId != null ? [userId] : [];
     const today = moscowDateString();
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     const db = getDb();
-    const completedTasks = db.prepare("SELECT title, priority FROM tasks WHERE status = 'done' AND updated_at >= ? ORDER BY updated_at DESC").all(weekAgo);
-    const activeTasks = db.prepare("SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') ORDER BY priority DESC LIMIT 20").all();
-    const weekMeetings = db.prepare('SELECT title, date, summary_raw FROM meetings WHERE date >= ? AND date <= ? ORDER BY date DESC').all(weekAgo, today);
-    const upcomingMeetings = db.prepare('SELECT title, date FROM meetings WHERE date > ? ORDER BY date ASC LIMIT 5').all(today);
+    const completedTasks = db.prepare(`SELECT title, priority FROM tasks WHERE status = 'done' AND updated_at >= ?${userFilter} ORDER BY updated_at DESC`).all(weekAgo, ...userParams);
+    const activeTasks = db.prepare(`SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday')${userFilter} ORDER BY priority DESC LIMIT 20`).all(...userParams);
+    const weekMeetings = db.prepare(`SELECT title, date, summary_raw FROM meetings WHERE date >= ? AND date <= ?${userFilter} ORDER BY date DESC`).all(weekAgo, today, ...userParams);
+    const upcomingMeetings = db.prepare(`SELECT title, date FROM meetings WHERE date > ?${userFilter} ORDER BY date ASC LIMIT 5`).all(today, ...userParams);
 
     const prompt = `Создай еженедельный обзор на русском языке.
 
@@ -393,38 +399,41 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
   }
 });
 
-aiRouter.post('/daily-plan', async (_req: Request, res: Response) => {
+aiRouter.post('/daily-plan', async (req: AuthRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
+    const userParams = userId != null ? [userId] : [];
     const today = moscowDateString();
     const db = getDb();
 
     // Today's tasks by due_date and priority
     const todayTasks = db.prepare(
-      "SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status != 'done' AND (due_date = ? OR status = 'in_progress') ORDER BY priority DESC"
-    ).all(today);
+      `SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status != 'done' AND (due_date = ? OR status = 'in_progress')${userFilter} ORDER BY priority DESC`
+    ).all(today, ...userParams);
 
     // All active tasks (for broader context)
     const activeTasks = db.prepare(
-      "SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') ORDER BY priority DESC LIMIT 30"
-    ).all();
+      `SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday')${userFilter} ORDER BY priority DESC LIMIT 30`
+    ).all(...userParams);
 
     // Today's meetings
     const meetings = db.prepare(
-      'SELECT title, date FROM meetings WHERE date = ? ORDER BY date ASC'
-    ).all(today);
+      `SELECT title, date FROM meetings WHERE date = ?${userFilter} ORDER BY date ASC`
+    ).all(today, ...userParams);
 
     // Habits not yet done today
     const habits = db.prepare(`
       SELECT h.title, h.icon FROM habits h
-      WHERE h.archived = 0 AND h.id NOT IN (
+      WHERE h.archived = 0${userFilter} AND h.id NOT IN (
         SELECT habit_id FROM habit_logs WHERE date = ? AND completed = 1
       )
-    `).all(today);
+    `).all(...userParams, today);
 
     // Goals progress
     const goals = db.prepare(
-      "SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active'"
-    ).all();
+      `SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active'${userFilter}`
+    ).all(...userParams);
 
     const prompt = `Создай оптимальный план на день на русском. Учитывай приоритеты, дедлайны, встречи. Группируй задачи по энергии: утро=сложные, день=средние, вечер=лёгкие. Формат:
 🌅 Утро (8:00-12:00)
@@ -452,39 +461,42 @@ aiRouter.post('/daily-plan', async (_req: Request, res: Response) => {
   }
 });
 
-aiRouter.post('/productivity-analysis', async (_req: Request, res: Response) => {
+aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) => {
   try {
+    const userId = getUserId(req);
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
+    const userParams = userId != null ? [userId] : [];
     const today = moscowDateString();
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const db = getDb();
 
     // Tasks completed in last 7 days
     const completedTasks = db.prepare(
-      "SELECT title, priority, project_id, updated_at FROM tasks WHERE status = 'done' AND updated_at >= ? ORDER BY updated_at DESC"
-    ).all(weekAgo);
+      `SELECT title, priority, project_id, updated_at FROM tasks WHERE status = 'done' AND updated_at >= ?${userFilter} ORDER BY updated_at DESC`
+    ).all(weekAgo, ...userParams);
 
     // Tasks created in last 7 days
     const createdTasks = db.prepare(
-      "SELECT title, priority, project_id, created_at FROM tasks WHERE created_at >= ? ORDER BY created_at DESC"
-    ).all(weekAgo);
+      `SELECT title, priority, project_id, created_at FROM tasks WHERE created_at >= ?${userFilter} ORDER BY created_at DESC`
+    ).all(weekAgo, ...userParams);
 
     // Overdue tasks
     const overdueTasks = db.prepare(
-      "SELECT title, priority, due_date, project_id FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < ? ORDER BY due_date ASC"
-    ).all(today);
+      `SELECT title, priority, due_date, project_id FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < ?${userFilter} ORDER BY due_date ASC`
+    ).all(today, ...userParams);
 
     // Task distribution by project
     const projectDistribution = db.prepare(`
       SELECT p.name as project, COUNT(t.id) as task_count
       FROM tasks t
       LEFT JOIN projects p ON t.project_id = p.id
-      WHERE t.archived = 0 AND t.status != 'done'
+      WHERE t.archived = 0 AND t.status != 'done'${userId != null ? ' AND t.user_id = ?' : ''}
       GROUP BY t.project_id
       ORDER BY task_count DESC
-    `).all();
+    `).all(...userParams);
 
     // Habit completion rate (last 7 days)
-    const habits = db.prepare("SELECT id, title FROM habits WHERE archived = 0").all() as Array<{ id: number; title: string }>;
+    const habits = db.prepare(`SELECT id, title FROM habits WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; title: string }>;
     const habitLogs = db.prepare(
       "SELECT habit_id, COUNT(*) as completed_days FROM habit_logs WHERE date >= ? AND completed = 1 GROUP BY habit_id"
     ).all(weekAgo) as Array<{ habit_id: number; completed_days: number }>;
@@ -495,8 +507,8 @@ aiRouter.post('/productivity-analysis', async (_req: Request, res: Response) => 
 
     // Goals progress
     const goals = db.prepare(
-      "SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active'"
-    ).all();
+      `SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active'${userFilter}`
+    ).all(...userParams);
 
     const prompt = `Проведи анализ продуктивности за последние 7 дней на русском языке.
 
@@ -524,7 +536,7 @@ aiRouter.post('/productivity-analysis', async (_req: Request, res: Response) => 
   }
 });
 
-aiRouter.get('/search', async (req: Request, res: Response) => {
+aiRouter.get('/search', async (req: AuthRequest, res: Response) => {
   const q = req.query['q'];
   if (typeof q !== 'string' || !q) { res.status(400).json(fail('Query parameter q is required')); return; }
   try {

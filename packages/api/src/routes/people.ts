@@ -84,6 +84,9 @@ peopleRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const parsed = UpdatePersonSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const id = Number(req.params['id']);
+  const userId = getUserId(req);
+  const owner = getDb().prepare('SELECT id FROM people WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId);
+  if (!owner) { res.status(404).json(fail('Person not found')); return; }
   const { project_ids, ...rest } = parsed.data;
 
   // Update people_projects if project_ids supplied
@@ -117,7 +120,8 @@ peopleRouter.patch('/:id', (req: AuthRequest, res: Response) => {
 
 peopleRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
-  const person = getDb().prepare('SELECT * FROM people WHERE id = ?').get(id);
+  const userId = getUserId(req);
+  const person = getDb().prepare('SELECT * FROM people WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId);
   if (!person) { res.status(404).json(fail('Person not found')); return; }
   getDb().prepare('DELETE FROM task_people WHERE person_id = ?').run(id);
   getDb().prepare('DELETE FROM meeting_people WHERE person_id = ?').run(id);

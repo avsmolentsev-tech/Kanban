@@ -164,10 +164,13 @@ tasksRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { person_ids, ...rest } = parsed.data;
   const taskId = Number(req.params['id']);
+  const userId = getUserId(req);
+  const owner = getDb().prepare('SELECT id FROM tasks WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(taskId, userId);
+  if (!owner) { res.status(404).json(fail('Task not found')); return; }
   const fields = Object.entries(rest).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
   const values = Object.values(rest).filter((v) => v !== undefined);
   if (fields.length > 0) {
-    getDb().prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, taskId);
+    getDb().prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND (user_id = ? OR user_id IS NULL)`).run(...values, taskId, userId);
   } else if (person_ids === undefined) {
     res.status(400).json(fail('No fields')); return;
   }
@@ -215,8 +218,10 @@ tasksRouter.patch('/:id/move', (req: AuthRequest, res: Response) => {
 });
 
 tasksRouter.delete('/:id', (req: AuthRequest, res: Response) => {
-  const task = getDb().prepare('SELECT vault_path FROM tasks WHERE id = ?').get(Number(req.params['id'])) as { vault_path: string | null } | undefined;
-  getDb().prepare(`UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(Number(req.params['id']));
+  const userId = getUserId(req);
+  const task = getDb().prepare('SELECT vault_path FROM tasks WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(Number(req.params['id']), userId) as { vault_path: string | null } | undefined;
+  if (!task) { res.status(404).json(fail('Task not found')); return; }
+  getDb().prepare(`UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND (user_id = ? OR user_id IS NULL)`).run(Number(req.params['id']), userId);
   // Move vault file to trash
   try { if (task?.vault_path) obsidian.forUser(getUserId(req)).deleteFile(task.vault_path); } catch {}
   res.json(ok({ archived: true }));

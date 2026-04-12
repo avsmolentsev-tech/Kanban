@@ -11,7 +11,10 @@ import { authMiddleware } from './middleware/auth';
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: ['https://kanban.myaipro.ru', 'http://localhost:5173', 'http://localhost:3000'],
+  credentials: true,
+}));
 app.use(express.json({ limit: `${config.maxFileSizeMb}mb` }));
 app.use(express.urlencoded({ extended: true }));
 app.use(authMiddleware);

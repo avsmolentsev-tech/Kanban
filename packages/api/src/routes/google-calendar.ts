@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { config } from '../config';
@@ -32,8 +33,8 @@ googleCalendarRouter.get('/auth', (req: AuthRequest, res: Response) => {
   if (!userId) { res.status(401).json(fail('Not authenticated. Add ?uid=YOUR_USER_ID')); return; }
 
   const redirectUri = `${config.webappUrl}/v1/google-calendar/callback`;
-  const state = String(userId);
-  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(SCOPES)}&access_type=offline&prompt=consent&state=${state}`;
+  const state = jwt.sign({ userId }, config.jwtSecret, { expiresIn: '10m' });
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(SCOPES)}&access_type=offline&prompt=consent&state=${encodeURIComponent(state)}`;
   res.redirect(url);
 });
 
@@ -42,8 +43,16 @@ googleCalendarRouter.get('/callback', async (req: AuthRequest, res: Response) =>
   const code = req.query['code'] as string;
   const state = req.query['state'] as string;
   if (!code) { res.status(400).json(fail('No code')); return; }
+  if (!state) { res.status(400).json(fail('No state')); return; }
 
-  const userId = state ? Number(state) : getUserId(req);
+  let userId: number;
+  try {
+    const payload = jwt.verify(state, config.jwtSecret) as { userId: number };
+    userId = payload.userId;
+  } catch {
+    res.status(403).json(fail('Invalid or expired OAuth state'));
+    return;
+  }
   if (!userId) { res.status(401).json(fail('No user')); return; }
 
   try {

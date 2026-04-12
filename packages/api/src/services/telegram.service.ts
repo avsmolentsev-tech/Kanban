@@ -12,9 +12,14 @@ import { generateAllFormats } from './converter.service';
 
 export class TelegramService {
   private bot: Telegraf | null = null;
-  private chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  private chatHistories = new Map<number, Array<{ role: 'user' | 'assistant'; content: string }>>();
   private pendingLogins = new Map<number, 'email' | 'password'>(); // tg_id → waiting state
   private pendingEmails = new Map<number, string>(); // tg_id → email entered
+
+  private getChatHistory(tgId: number): Array<{ role: 'user' | 'assistant'; content: string }> {
+    if (!this.chatHistories.has(tgId)) this.chatHistories.set(tgId, []);
+    return this.chatHistories.get(tgId)!;
+  }
 
   /** Resolve internal user id from Telegram user id. Auto-creates account if not found. */
   private resolveUserId(tgId: number, tgName?: string): number | null {
@@ -144,7 +149,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 }`;
 
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
-      ...this.chatHistory.slice(-200), // last 100 exchanges
+      ...this.getChatHistory(tgUserId ?? 0).slice(-200), // last 100 exchanges
       { role: 'user', content: text },
     ];
 
@@ -349,10 +354,11 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     const responseText = command.response + (results.length > 0 ? '\n\n' + results.join('\n') : '');
 
-    // Save to history
-    this.chatHistory.push({ role: 'user', content: text });
-    this.chatHistory.push({ role: 'assistant', content: responseText });
-    if (this.chatHistory.length > 200) this.chatHistory = this.chatHistory.slice(-200);
+    // Save to history (per-user)
+    const history = this.getChatHistory(tgUserId ?? 0);
+    history.push({ role: 'user', content: text });
+    history.push({ role: 'assistant', content: responseText });
+    if (history.length > 200) history.splice(0, history.length - 200);
 
     // Check if there are files to send (bundle etc)
     const files = (command as Record<string, unknown>)['_files'] as Array<{ path: string; filename: string }> | undefined;
@@ -361,12 +367,12 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
   }
 
   /** Classify message — chat/command vs ingest (for long content) */
-  private async classifyMessage(text: string): Promise<'command' | 'ingest' | 'chat'> {
+  private async classifyMessage(text: string, tgUserId?: number): Promise<'command' | 'ingest' | 'chat'> {
     // Ingest signals: explicit meeting/transcription content
     const ingestPatterns = /^(стенограмма|транскрип|запись встречи|текст встречи|протокол|заметки со встречи)/i;
     if (ingestPatterns.test(text.trim())) return 'ingest';
     // Very long text without context → probably content (e.g. pasted transcript)
-    if (text.length > 500 && this.chatHistory.length === 0) return 'ingest';
+    if (text.length > 500 && this.getChatHistory(tgUserId ?? 0).length === 0) return 'ingest';
     // Everything else → chat/command routing through AI
     return 'command';
   }
@@ -404,6 +410,10 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     }
 
     this.bot = new Telegraf(config.telegramBotToken);
+
+    this.bot.catch((err: unknown) => {
+      console.error('[telegram] bot error:', err instanceof Error ? err.message : err);
+    });
 
     // /start
     this.bot.command('start', (ctx) => {
@@ -595,9 +605,11 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       if (!url) { ctx.reply('Формат: /transcribe <ссылка на аудио>\n\nЗалей файл в Google Drive/Яндекс Диск, сделай публичную ссылку и отправь.'); return; }
       try {
         ctx.reply('⬇️ Скачиваю файл...');
-        const { execSync } = require('child_process');
         const tmpFile = `/tmp/tg-download-${Date.now()}.mp3`;
-        execSync(`wget -q "${url}" -O "${tmpFile}" --max-redirect=5 --timeout=300`, { timeout: 600000 });
+        const downloadRes = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(300000) });
+        if (!downloadRes.ok) throw new Error(`Download failed: ${downloadRes.status}`);
+        const buffer_dl = Buffer.from(await downloadRes.arrayBuffer());
+        require('fs').writeFileSync(tmpFile, buffer_dl);
 
         const stats = require('fs').statSync(tmpFile);
         ctx.reply(`✅ Скачано (${Math.round(stats.size / 1024 / 1024)} MB). 🎤 Транскрибирую... (может занять 15-60 мин для длинных записей)`);
@@ -899,7 +911,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       }
 
       try {
-        const intent = await this.classifyMessage(text);
+        const intent = await this.classifyMessage(text, ctx.from?.id);
         if (intent === 'command' || intent === 'chat') {
           const response = await this.executeCommand(text, ctx.from?.id);
           await sendCommandResult(ctx, response);
@@ -943,7 +955,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         }
 
         // Route: short = command, long = ingest as meeting
-        const intent = await this.classifyMessage(transcript);
+        const intent = await this.classifyMessage(transcript, ctx.from?.id);
         if (intent === 'command' || intent === 'chat') {
           const cmdResponse = await this.executeCommand(transcript, ctx.from?.id);
             await sendCommandResult(ctx, cmdResponse);
