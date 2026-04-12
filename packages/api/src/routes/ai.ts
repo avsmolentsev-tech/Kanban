@@ -96,7 +96,7 @@ const VoiceCommandSchema = z.object({
   history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).optional().default([]),
 });
 
-aiRouter.post('/voice-command', async (req: Request, res: Response) => {
+aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
   const parsed = VoiceCommandSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
 
@@ -178,10 +178,18 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
     {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?},
     {"type": "delete_meeting", "meeting_id": number},
     {"type": "create_person", "name": "string", "company": "string?", "role": "string?"},
-    {"type": "delete_person", "person_id": number}
+    {"type": "delete_person", "person_id": number},
+    {"type": "send_to_telegram", "content": "текст для файла", "filename": "name.md", "message": "сопроводительное сообщение"}
   ],
   "response": "Ответ пользователю — кратко и дружелюбно"
-}`;
+}
+
+ВАЖНО про файлы:
+- Если пользователь просит "сохрани в файл", "отправь в ТГ", "пришли файл" — используй action send_to_telegram
+- content = полный текст для файла (markdown)
+- filename = имя файла (например "report.md", "tasks.md")
+- message = что написать в сообщении при отправке
+- Файл будет отправлен пользователю в Telegram`;
 
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
       ...parsed.data.history,
@@ -337,6 +345,35 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             db.prepare('DELETE FROM people_projects WHERE person_id = ?').run(action['person_id']);
             db.prepare('DELETE FROM people WHERE id = ?').run(action['person_id']);
             results.push({ type: 'delete_person', success: true, detail: `Контакт #${action['person_id']} удалён` });
+            break;
+          }
+          case 'send_to_telegram': {
+            const content = (action['content'] as string) ?? '';
+            const filename = (action['filename'] as string) ?? 'file.md';
+            const message = (action['message'] as string) ?? '';
+            if (!content) {
+              results.push({ type: 'send_to_telegram', success: false, detail: 'Нет содержимого для файла' });
+              break;
+            }
+            // Write temp file and send via telegram
+            const fs = require('fs');
+            const tmpPath = `/tmp/pis-file-${Date.now()}-${filename}`;
+            fs.writeFileSync(tmpPath, content, 'utf-8');
+            // Find user's tg_id
+            const userId = getUserId(req as AuthRequest);
+            if (userId) {
+              const userRow = db.prepare('SELECT tg_id FROM users WHERE id = ?').get(userId) as { tg_id: string | null } | undefined;
+              if (userRow?.tg_id) {
+                const { telegramService } = require('../services/telegram.service');
+                await telegramService.sendFileToUser(userRow.tg_id, tmpPath, filename, message || `📄 ${filename}`);
+                results.push({ type: 'send_to_telegram', success: true, detail: `📤 Файл "${filename}" отправлен в Telegram` });
+              } else {
+                results.push({ type: 'send_to_telegram', success: false, detail: 'Telegram не привязан к аккаунту' });
+              }
+            } else {
+              results.push({ type: 'send_to_telegram', success: false, detail: 'Не авторизован' });
+            }
+            try { fs.unlinkSync(tmpPath); } catch {}
             break;
           }
           default:

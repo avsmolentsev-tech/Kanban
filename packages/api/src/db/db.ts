@@ -288,6 +288,25 @@ export function initDb(): void {
   // Settings: add user_id for per-user settings
   try { _db.exec("ALTER TABLE settings ADD COLUMN user_id INTEGER REFERENCES users(id)"); } catch {}
 
+  // Migrate settings to composite key (key + user_id) for per-user Google Calendar
+  try {
+    const hasOldPk = (_db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='settings'").get() as { sql: string } | undefined);
+    if (hasOldPk && hasOldPk.sql.includes('PRIMARY KEY') && !hasOldPk.sql.includes('user_id')) {
+      // Old schema: key is sole PK. Recreate with composite.
+      _db.exec(`
+        CREATE TABLE IF NOT EXISTS settings_new (
+          key     TEXT NOT NULL,
+          value   TEXT NOT NULL DEFAULT '',
+          user_id INTEGER REFERENCES users(id),
+          PRIMARY KEY (key, user_id)
+        );
+        INSERT OR IGNORE INTO settings_new (key, value, user_id) SELECT key, value, user_id FROM settings;
+        DROP TABLE settings;
+        ALTER TABLE settings_new RENAME TO settings;
+      `);
+    }
+  } catch {}
+
   // Users: telegram id
   try { _db.exec("ALTER TABLE users ADD COLUMN tg_id TEXT"); } catch {}
 

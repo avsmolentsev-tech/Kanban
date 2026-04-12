@@ -1,14 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSettingsStore } from '../../store/settings.store';
 import { useLangStore, type Lang } from '../../store/lang.store';
-import { apiGet, apiPost } from '../../api/client';
+// import { apiGet, apiPost } from '../../api/client';
 
 export function SettingsMenu() {
   const { theme, zoom, toggleTheme, setZoom } = useSettingsStore();
   const { lang, setLang, t } = useLangStore();
   const [open, setOpen] = useState(false);
-  const [gcalConnected, setGcalConnected] = useState<boolean | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,11 +18,6 @@ export function SettingsMenu() {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  useEffect(() => {
-    if (open && gcalConnected === null) {
-      apiGet<{ connected: boolean }>('/google-calendar/status').then(d => setGcalConnected(d.connected)).catch(() => setGcalConnected(false));
-    }
-  }, [open, gcalConnected]);
 
   return (
     <div className="relative" ref={ref}>
@@ -110,39 +103,6 @@ export function SettingsMenu() {
             </div>
           </div>
 
-          {/* Google Calendar */}
-          <div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">Google Calendar</div>
-            {gcalConnected ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                  <span>✓</span> {t('Подключён', 'Connected')}
-                </div>
-                <button
-                  onClick={async () => {
-                    setSyncing(true);
-                    try {
-                      const res = await apiPost<{ synced: number; total: number }>('/google-calendar/sync', {});
-                      alert(t(`Синхронизировано ${res.synced} из ${res.total} встреч`, `Synced ${res.synced} of ${res.total} meetings`));
-                    } catch (e) {
-                      alert(t('Ошибка синхронизации', 'Sync error'));
-                    } finally { setSyncing(false); }
-                  }}
-                  disabled={syncing}
-                  className="w-full py-2 px-3 rounded-lg text-sm bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 disabled:opacity-50"
-                >
-                  {syncing ? '...' : t('Синхронизировать встречи', 'Sync meetings')}
-                </button>
-              </div>
-            ) : (
-              <a
-                href="/v1/google-calendar/auth"
-                className="block w-full py-2 px-3 rounded-lg text-sm text-center bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50"
-              >
-                {t('Подключить Google Calendar', 'Connect Google Calendar')}
-              </a>
-            )}
-          </div>
         </div>
       )}
     </div>

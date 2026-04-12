@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useLangStore } from '../../store/lang.store';
-import { BarChart3, Flame, MessageCircle, Users, Menu } from 'lucide-react';
+import { BarChart3, Flame, MessageCircle, CalendarDays, Menu } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface Tab {
@@ -13,8 +13,8 @@ interface Tab {
 const getTabs = (t: (ru: string, en: string) => string): Tab[] => [
   { to: '/timeline', label: t('Таймлайн', 'Timeline'), icon: BarChart3 },
   { to: '/habits', label: t('Привычки', 'Habits'), icon: Flame },
-  { to: '/chat', label: t('Чат', 'Chat'), icon: MessageCircle, isCenter: true },
-  { to: '/meetings', label: t('Встречи', 'Meetings'), icon: Users },
+  { to: '/chat', label: t('AI Чат', 'AI Chat'), icon: MessageCircle, isCenter: true },
+  { to: '/calendar', label: t('Календарь', 'Calendar'), icon: CalendarDays },
   { to: '/more', label: t('Ещё', 'More'), icon: Menu },
 ];
 

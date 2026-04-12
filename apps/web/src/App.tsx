@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { KanbanPage } from './pages/KanbanPage';
 import { TimelinePage } from './pages/TimelinePage';
 import { ProjectsPage } from './pages/ProjectsPage';
@@ -97,6 +97,12 @@ const getDesktopNav = (t: (ru: string, en: string) => string): NavSection[] => [
 function HotkeyProvider() {
   useHotkeys();
   return null;
+}
+
+function HideOnChat({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  if (location.pathname === '/chat') return null;
+  return <>{children}</>;
 }
 
 export default function App() {
@@ -257,8 +263,8 @@ export default function App() {
           {useMobileLayout && <MobileNav />}
         </div>
 
-        {/* Voice command FAB */}
-        <VoiceCommandButton onActionDone={refreshAll} />
+        {/* Voice command FAB — hidden on chat page */}
+        <HideOnChat><VoiceCommandButton onActionDone={refreshAll} /></HideOnChat>
         <PomodoroTimer />
       </div>
     </BrowserRouter>

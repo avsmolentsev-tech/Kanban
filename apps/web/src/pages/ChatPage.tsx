@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { apiPost, apiClient } from '../api/client';
 import { useLangStore } from '../store/lang.store';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, Copy, Check } from 'lucide-react';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -43,6 +43,19 @@ const SUGGESTIONS_EN = [
   'Show today\'s tasks',
   'What goals are active?',
 ];
+
+function CopyButton({ text, side }: { text: string; side: 'left' | 'right' }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {});
+  };
+  return (
+    <button onClick={copy}
+      className={`absolute top-1 ${side === 'left' ? '-left-8' : '-right-8'} p-1 rounded-lg opacity-0 group-hover:opacity-100 active:opacity-100 transition-opacity text-gray-400 hover:text-gray-600 dark:hover:text-gray-300`}>
+      {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+    </button>
+  );
+}
 
 export function ChatPage() {
   const { t } = useLangStore();
@@ -161,13 +174,16 @@ export function ChatPage() {
         )}
 
         {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
-              msg.role === 'user'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
-            }`}>
-              {msg.content}
+          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group`}>
+            <div className="relative max-w-[80%]">
+              <div className={`rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
+                msg.role === 'user'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
+              }`}>
+                {msg.content}
+              </div>
+              <CopyButton text={msg.content} side={msg.role === 'user' ? 'left' : 'right'} />
             </div>
           </div>
         ))}

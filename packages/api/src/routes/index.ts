@@ -28,6 +28,7 @@ export const router = Router();
 router.use('/auth', authRouter);
 router.use('/widget', widgetRouter);
 router.use('/email-webhook', emailWebhookRouter);
+router.use('/google-calendar', googleCalendarRouter);
 
 // All routes below require authentication
 router.use(requireAuth);
@@ -48,5 +49,4 @@ router.use('/journal', journalRouter);
 router.use('/export', exportRouter);
 router.use('/tags', tagsRouter);
 router.use('/templates', templatesRouter);
-router.use('/google-calendar', googleCalendarRouter);
 router.use('/admin', adminRouter);

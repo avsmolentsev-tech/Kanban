@@ -1,30 +1,50 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { config } from '../config';
 import { moscowDateString } from '../utils/time';
+import type { AuthRequest } from '../middleware/auth';
+import { getUserId } from '../middleware/user-scope';
 
 export const googleCalendarRouter = Router();
 
-// Google Calendar OAuth flow
-// Step 1: User visits /google-calendar/auth → redirects to Google
-// Step 2: Google redirects back to /google-calendar/callback with code
-// Step 3: We exchange code for tokens and store them
-
 const SCOPES = 'https://www.googleapis.com/auth/calendar';
 
-googleCalendarRouter.get('/auth', (_req: Request, res: Response) => {
+// Per-user settings helpers
+function getUserSetting(userId: number, key: string): string | null {
+  const db = getDb();
+  const row = db.prepare("SELECT value FROM settings WHERE key = ? AND user_id = ?").get(key, userId) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+function setUserSetting(userId: number, key: string, value: string): void {
+  const db = getDb();
+  db.prepare("INSERT OR REPLACE INTO settings (key, value, user_id) VALUES (?, ?, ?)").run(key, value, userId);
+}
+
+// Step 1: Redirect to Google OAuth — user_id passed via query param or JWT
+googleCalendarRouter.get('/auth', (req: AuthRequest, res: Response) => {
   const clientId = config.googleClientId;
   if (!clientId) { res.status(400).json(fail('GOOGLE_CLIENT_ID not configured')); return; }
 
+  // Get user_id from JWT or query param
+  const userId = getUserId(req) || (req.query['uid'] ? Number(req.query['uid']) : null);
+  if (!userId) { res.status(401).json(fail('Not authenticated. Add ?uid=YOUR_USER_ID')); return; }
+
   const redirectUri = `${config.webappUrl}/v1/google-calendar/callback`;
-  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(SCOPES)}&access_type=offline&prompt=consent`;
+  const state = String(userId);
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(SCOPES)}&access_type=offline&prompt=consent&state=${state}`;
   res.redirect(url);
 });
 
-googleCalendarRouter.get('/callback', async (req: Request, res: Response) => {
+// Step 2: Google redirects back with code + state(user_id)
+googleCalendarRouter.get('/callback', async (req: AuthRequest, res: Response) => {
   const code = req.query['code'] as string;
+  const state = req.query['state'] as string;
   if (!code) { res.status(400).json(fail('No code')); return; }
+
+  const userId = state ? Number(state) : getUserId(req);
+  if (!userId) { res.status(401).json(fail('No user')); return; }
 
   try {
     const redirectUri = `${config.webappUrl}/v1/google-calendar/callback`;
@@ -46,11 +66,10 @@ googleCalendarRouter.get('/callback', async (req: Request, res: Response) => {
       return;
     }
 
-    // Store tokens
-    const db = getDb();
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('google_access_token', ?)").run(tokens.access_token);
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('google_refresh_token', ?)").run(tokens.refresh_token || '');
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('google_token_expiry', ?)").run(String(Date.now() + (tokens.expires_in || 3600) * 1000));
+    // Store tokens per user
+    setUserSetting(userId, 'google_access_token', tokens.access_token);
+    setUserSetting(userId, 'google_refresh_token', tokens.refresh_token || '');
+    setUserSetting(userId, 'google_token_expiry', String(Date.now() + (tokens.expires_in || 3600) * 1000));
 
     res.send('<html><body><h2>Google Calendar подключён!</h2><p>Можете закрыть эту вкладку.</p><script>setTimeout(()=>window.close(),2000)</script></body></html>');
   } catch (err) {
@@ -58,18 +77,16 @@ googleCalendarRouter.get('/callback', async (req: Request, res: Response) => {
   }
 });
 
-// Helper: get valid access token (refresh if needed)
-async function getAccessToken(): Promise<string | null> {
-  const db = getDb();
-  const token = db.prepare("SELECT value FROM settings WHERE key = 'google_access_token'").get() as { value: string } | undefined;
-  const expiry = db.prepare("SELECT value FROM settings WHERE key = 'google_token_expiry'").get() as { value: string } | undefined;
-  const refresh = db.prepare("SELECT value FROM settings WHERE key = 'google_refresh_token'").get() as { value: string } | undefined;
+// Helper: get valid access token for a specific user
+async function getAccessTokenForUser(userId: number): Promise<string | null> {
+  const token = getUserSetting(userId, 'google_access_token');
+  const expiry = getUserSetting(userId, 'google_token_expiry');
+  const refresh = getUserSetting(userId, 'google_refresh_token');
 
-  if (!token?.value) return null;
+  if (!token) return null;
 
   // Check if expired
-  if (expiry && Number(expiry.value) < Date.now() && refresh?.value) {
-    // Refresh token
+  if (expiry && Number(expiry) < Date.now() && refresh) {
     try {
       const res = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
@@ -77,45 +94,56 @@ async function getAccessToken(): Promise<string | null> {
         body: new URLSearchParams({
           client_id: config.googleClientId,
           client_secret: config.googleClientSecret,
-          refresh_token: refresh.value,
+          refresh_token: refresh,
           grant_type: 'refresh_token',
         }),
       });
       const data = await res.json();
       if (data.access_token) {
-        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('google_access_token', ?)").run(data.access_token);
-        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('google_token_expiry', ?)").run(String(Date.now() + (data.expires_in || 3600) * 1000));
+        setUserSetting(userId, 'google_access_token', data.access_token);
+        setUserSetting(userId, 'google_token_expiry', String(Date.now() + (data.expires_in || 3600) * 1000));
         return data.access_token;
       }
     } catch {}
   }
 
-  return token.value;
+  return token;
 }
 
-// GET /google-calendar/status — check if connected
-googleCalendarRouter.get('/status', async (_req: Request, res: Response) => {
-  const token = await getAccessToken();
+// GET /google-calendar/status
+googleCalendarRouter.get('/status', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.json(ok({ connected: false })); return; }
+  const token = await getAccessTokenForUser(userId);
   res.json(ok({ connected: !!token }));
 });
 
-// POST /google-calendar/sync — sync meetings to Google Calendar
-googleCalendarRouter.post('/sync', async (_req: Request, res: Response) => {
-  const token = await getAccessToken();
-  if (!token) { res.status(401).json(fail('Google Calendar не подключён. Перейдите на /v1/google-calendar/auth')); return; }
+// POST /google-calendar/disconnect
+googleCalendarRouter.post('/disconnect', (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Not authenticated')); return; }
+  const db = getDb();
+  db.prepare("DELETE FROM settings WHERE user_id = ? AND key IN ('google_access_token', 'google_refresh_token', 'google_token_expiry')").run(userId);
+  res.json(ok({ disconnected: true }));
+});
+
+// POST /google-calendar/sync — sync user's meetings to their Google Calendar
+googleCalendarRouter.post('/sync', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Not authenticated')); return; }
+  const token = await getAccessTokenForUser(userId);
+  if (!token) { res.status(400).json(fail('Google Calendar не подключён')); return; }
 
   try {
     const db = getDb();
     const today = moscowDateString();
-    const meetings = db.prepare("SELECT id, title, date FROM meetings WHERE date >= ? ORDER BY date LIMIT 50").all(today) as Array<{ id: number; title: string; date: string }>;
+    const meetings = db.prepare("SELECT id, title, date FROM meetings WHERE date >= ? AND user_id = ? ORDER BY date LIMIT 50").all(today, userId) as Array<{ id: number; title: string; date: string }>;
 
     let synced = 0;
     for (const m of meetings) {
-      // Check if already synced
-      const existing = db.prepare("SELECT value FROM settings WHERE key = ?").get(`gcal_event_${m.id}`) as { value: string } | undefined;
+      const existing = getUserSetting(userId, `gcal_event_${m.id}`);
       if (existing) continue;
 
-      // Create event in Google Calendar
       const event = {
         summary: m.title,
         start: { date: m.date },
@@ -124,16 +152,13 @@ googleCalendarRouter.post('/sync', async (_req: Request, res: Response) => {
 
       const gcRes = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(event),
       });
 
       if (gcRes.ok) {
         const gcEvent = await gcRes.json();
-        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(`gcal_event_${m.id}`, gcEvent.id);
+        setUserSetting(userId, `gcal_event_${m.id}`, gcEvent.id);
         synced++;
       }
     }
@@ -144,9 +169,11 @@ googleCalendarRouter.post('/sync', async (_req: Request, res: Response) => {
   }
 });
 
-// GET /google-calendar/events — list events from Google Calendar
-googleCalendarRouter.get('/events', async (_req: Request, res: Response) => {
-  const token = await getAccessToken();
+// GET /google-calendar/events — list events from user's Google Calendar
+googleCalendarRouter.get('/events', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.json(ok([])); return; }
+  const token = await getAccessTokenForUser(userId);
   if (!token) { res.json(ok([])); return; }
 
   try {
