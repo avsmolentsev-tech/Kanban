@@ -1,8 +1,61 @@
 import { useState } from 'react';
-import { apiPatch } from '../api/client';
+import { apiGet, apiPatch } from '../api/client';
 import { useAuthStore, type AuthUser } from '../store/auth.store';
 import { useLangStore } from '../store/lang.store';
-import { User, Lock, MessageCircle, Save, CheckCircle } from 'lucide-react';
+import { User, Lock, MessageCircle, Save, CheckCircle, Smartphone, Copy, Check } from 'lucide-react';
+
+function WidgetKeySection() {
+  const { t } = useLangStore();
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const generate = async () => {
+    setLoading(true);
+    try {
+      const res = await apiGet<{ api_key: string }>('/widget/key');
+      setApiKey(res.api_key);
+    } catch {} finally { setLoading(false); }
+  };
+
+  const copy = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  };
+
+  return (
+    <div className="p-4 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50">
+      <div className="flex items-center gap-2 mb-2">
+        <Smartphone size={14} className="text-indigo-500" />
+        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('Виджет iPhone', 'iPhone Widget')}</span>
+      </div>
+      {apiKey ? (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">{t('API ключ для Scriptable виджета:', 'API key for Scriptable widget:')}</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-[11px] bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded-xl text-gray-700 dark:text-gray-300 truncate">{apiKey}</code>
+            <button onClick={() => copy(apiKey)} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 transition-colors">
+              {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+            </button>
+          </div>
+          <button onClick={() => copy(`https://kanban.myaipro.ru/v1/widget/today?key=${apiKey}`)}
+            className="w-full text-xs text-indigo-600 hover:text-indigo-700 py-1">
+            {copied ? t('Скопировано!', 'Copied!') : t('Скопировать URL для виджета', 'Copy widget URL')}
+          </button>
+        </div>
+      ) : (
+        <div>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
+            {t('Установи Scriptable из App Store, получи API ключ и добавь виджет на домашний экран.', 'Install Scriptable from App Store, get API key and add widget to home screen.')}
+          </p>
+          <button onClick={generate} disabled={loading}
+            className="w-full py-2 px-3 rounded-xl text-sm font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 disabled:opacity-50">
+            {loading ? '...' : t('Получить API ключ', 'Get API key')}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ProfilePage() {
   const { t } = useLangStore();
@@ -85,6 +138,9 @@ export function ProfilePage() {
             className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-2xl bg-gray-50 dark:bg-gray-700/50 text-gray-800 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
           />
         </div>
+
+        {/* iPhone Widget */}
+        <WidgetKeySection />
 
         {/* Telegram ID */}
         <div className="p-4 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50">

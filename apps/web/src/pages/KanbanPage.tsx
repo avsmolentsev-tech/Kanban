@@ -46,7 +46,7 @@ export function KanbanPage() {
           <ProjectFilter projects={projects} />
         </div>
       </div>
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-hidden">
         <KanbanBoard
           tasks={filteredTasks}
           projects={filteredProjects}

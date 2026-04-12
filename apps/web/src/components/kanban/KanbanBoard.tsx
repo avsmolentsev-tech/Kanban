@@ -241,7 +241,7 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
         <div className="relative overflow-auto h-full">
           {/* Sticky column headers */}
           <div className="sticky top-0 z-30 flex bg-gray-50 border-b border-gray-200 py-2">
-            <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-gray-50 pl-4" />
+            <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md pl-4" />
             {COLUMNS.map((s) => (
               <div key={s} className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-500 text-center">
                 {COL_LABELS[s]}
@@ -257,7 +257,7 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
                   {(dragHandleProps) => (
                     <div className="flex mb-4">
                       {/* Sticky project label (left) */}
-                      <div className="sticky left-0 top-12 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-gray-50 border-r border-gray-100 self-start">
+                      <div className="sticky left-0 top-12 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-r border-gray-100 dark:border-gray-700/50 self-start">
                         <div className="flex items-center gap-2">
                           {project && (
                             <div

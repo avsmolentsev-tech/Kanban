@@ -129,7 +129,7 @@ export function TimelinePage() {
           <ProjectFilter projects={projects} />
         </div>
       </div>
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-hidden">
         <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <TimelineView
             tasks={applyFilterCriteria(
