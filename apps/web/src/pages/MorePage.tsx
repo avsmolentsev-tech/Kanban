@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { SettingsMenu } from '../components/layout/SettingsMenu';
 import { useLangStore } from '../store/lang.store';
 import { useAuthStore } from '../store/auth.store';
@@ -48,17 +49,23 @@ export function MorePage() {
       </div>
 
       <div className="grid grid-cols-2 gap-2.5">
-        {items.map(({ to, label, icon: Icon, color }) => (
-          <NavLink
+        {items.map(({ to, label, icon: Icon, color }, i) => (
+          <motion.div
             key={to}
-            to={to}
-            className="flex items-center gap-3 p-3.5 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50 active:scale-[0.97] transition-all"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: i * 0.03, duration: 0.2 }}
           >
-            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center shadow-sm flex-shrink-0`}>
-              <Icon size={18} className="text-white" strokeWidth={2} />
-            </div>
-            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">{label}</span>
-          </NavLink>
+            <NavLink
+              to={to}
+              className="flex items-center gap-3 p-3.5 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50 active:scale-[0.97] transition-all"
+            >
+              <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center shadow-sm flex-shrink-0`}>
+                <Icon size={18} className="text-white" strokeWidth={2} />
+              </div>
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">{label}</span>
+            </NavLink>
+          </motion.div>
         ))}
       </div>
 

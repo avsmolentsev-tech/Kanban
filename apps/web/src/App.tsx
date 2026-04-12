@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { KanbanPage } from './pages/KanbanPage';
 import { TimelinePage } from './pages/TimelinePage';
 import { ProjectsPage } from './pages/ProjectsPage';
@@ -93,6 +94,20 @@ const getDesktopNav = (t: (ru: string, en: string) => string): NavSection[] => [
     ],
   },
 ];
+
+function AnimatedPage({ children }: { children: React.ReactNode }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="h-full"
+    >
+      {children}
+    </motion.div>
+  );
+}
 
 function HotkeyProvider() {
   useHotkeys();
@@ -237,25 +252,25 @@ export default function App() {
           {/* Main content */}
           <main className={`flex-1 overflow-auto ${useMobileLayout ? 'pb-16' : ''}`}>
             <Routes>
-              <Route path="/" element={useMobileLayout ? <TodaySwipePage /> : <KanbanPage />} />
-              <Route path="/kanban" element={<KanbanPage />} />
-              <Route path="/timeline" element={<TimelinePage />} />
-              <Route path="/projects" element={<ProjectsPage />} />
-              <Route path="/meetings" element={<MeetingsPage />} />
-              <Route path="/people" element={<PeoplePage />} />
-              <Route path="/brief" element={<DailyBriefPage />} />
-              <Route path="/calendar" element={<CalendarPage />} />
-              <Route path="/ideas" element={<IdeasPage />} />
-              <Route path="/habits" element={useMobileLayout ? <HabitsSwipePage /> : <HabitsPage />} />
-              <Route path="/goals" element={<GoalsPage />} />
-              <Route path="/journal" element={<JournalPage />} />
-              <Route path="/documents" element={<DocumentsPage />} />
-              <Route path="/chat" element={<ChatPage />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/stats" element={<StatsPage />} />
-              <Route path="/gantt" element={<GanttPage />} />
-              <Route path="/more" element={<MorePage />} />
-              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/" element={<AnimatedPage>{useMobileLayout ? <TodaySwipePage /> : <KanbanPage />}</AnimatedPage>} />
+              <Route path="/kanban" element={<AnimatedPage><KanbanPage /></AnimatedPage>} />
+              <Route path="/timeline" element={<AnimatedPage><TimelinePage /></AnimatedPage>} />
+              <Route path="/projects" element={<AnimatedPage><ProjectsPage /></AnimatedPage>} />
+              <Route path="/meetings" element={<AnimatedPage><MeetingsPage /></AnimatedPage>} />
+              <Route path="/people" element={<AnimatedPage><PeoplePage /></AnimatedPage>} />
+              <Route path="/brief" element={<AnimatedPage><DailyBriefPage /></AnimatedPage>} />
+              <Route path="/calendar" element={<AnimatedPage><CalendarPage /></AnimatedPage>} />
+              <Route path="/ideas" element={<AnimatedPage><IdeasPage /></AnimatedPage>} />
+              <Route path="/habits" element={<AnimatedPage>{useMobileLayout ? <HabitsSwipePage /> : <HabitsPage />}</AnimatedPage>} />
+              <Route path="/goals" element={<AnimatedPage><GoalsPage /></AnimatedPage>} />
+              <Route path="/journal" element={<AnimatedPage><JournalPage /></AnimatedPage>} />
+              <Route path="/documents" element={<AnimatedPage><DocumentsPage /></AnimatedPage>} />
+              <Route path="/chat" element={<AnimatedPage><ChatPage /></AnimatedPage>} />
+              <Route path="/dashboard" element={<AnimatedPage><DashboardPage /></AnimatedPage>} />
+              <Route path="/stats" element={<AnimatedPage><StatsPage /></AnimatedPage>} />
+              <Route path="/gantt" element={<AnimatedPage><GanttPage /></AnimatedPage>} />
+              <Route path="/more" element={<AnimatedPage><MorePage /></AnimatedPage>} />
+              <Route path="/profile" element={<AnimatedPage><ProfilePage /></AnimatedPage>} />
             </Routes>
           </main>
 

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../api/client';
 import { useLangStore } from '../store/lang.store';
 import {
@@ -198,19 +199,29 @@ export function HabitsSwipePage() {
           </div>
         )}
 
-        {habits.map(h => {
+        {habits.map((h, i) => {
           const done = doneIds.has(h.id);
           const logs = logMap[h.id] || new Set();
           return (
-            <div key={h.id}
+            <motion.div
+              key={h.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05, duration: 0.2 }}
+            >
+            <div
               className={`flex items-center gap-3 p-3 rounded-2xl transition-all active:scale-[0.98] ${
                 done
                   ? 'bg-green-50 dark:bg-green-900/15 border border-green-200 dark:border-green-800/40'
                   : 'bg-white dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700/50'
               }`}>
               {/* Icon */}
-              <button onClick={() => toggle(h.id)}
-                className="rounded-2xl flex items-center justify-center flex-shrink-0 transition-all"
+              <motion.button
+                onClick={() => toggle(h.id)}
+                whileTap={{ scale: 0.88 }}
+                animate={done ? { scale: [1, 1.15, 1] } : { scale: 1 }}
+                transition={{ duration: 0.2 }}
+                className="rounded-2xl flex items-center justify-center flex-shrink-0"
                 style={{
                   width: 48, height: 48,
                   background: done ? 'linear-gradient(135deg, #22c55e, #10b981)' : `linear-gradient(135deg, ${h.color}20, ${h.color}08)`,
@@ -218,7 +229,7 @@ export function HabitsSwipePage() {
                   boxShadow: done ? '0 4px 12px rgba(34,197,94,0.3)' : 'none',
                 }}>
                 {done ? <Check size={22} strokeWidth={3} /> : <HIcon icon={h.icon} size={22} />}
-              </button>
+              </motion.button>
 
               {/* Title + dots */}
               <div className="flex-1 min-w-0" onClick={() => toggle(h.id)}>
@@ -257,6 +268,7 @@ export function HabitsSwipePage() {
                 </button>
               </div>
             </div>
+            </motion.div>
           );
         })}
 
