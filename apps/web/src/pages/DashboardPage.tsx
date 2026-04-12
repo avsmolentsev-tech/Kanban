@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { apiGet, apiPost } from '../api/client';
 import { useLangStore } from '../store/lang.store';
+import { LayoutDashboard } from 'lucide-react';
 
 interface Task {
   id: string;
@@ -150,7 +151,12 @@ export function DashboardPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
-      <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-5">{t('Дашборд', 'Dashboard')}</h1>
+      <div className="flex items-center gap-2.5 mb-5">
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-lg shadow-purple-500/25">
+          <LayoutDashboard size={20} className="text-white" />
+        </div>
+        <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Дашборд', 'Dashboard')}</h1>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* AI Daily Plan */}

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { apiPost, apiClient } from '../api/client';
 import { useLangStore } from '../store/lang.store';
+import { MessageCircle } from 'lucide-react';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -133,6 +134,13 @@ export function ChatPage() {
 
   return (
     <div className="flex flex-col h-full pb-16 md:pb-0">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 pt-4 pb-2 border-b border-gray-200 dark:border-gray-700">
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+          <MessageCircle size={20} className="text-white" />
+        </div>
+        <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Чат с ассистентом', 'AI Assistant')}</h1>
+      </div>
       {/* Messages */}
       <div className="flex-1 overflow-auto px-4 py-4 space-y-4">
         {messages.length === 0 && !loading && (

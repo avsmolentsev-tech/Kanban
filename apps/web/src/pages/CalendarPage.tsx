@@ -7,6 +7,7 @@ import { peopleApi } from '../api/people.api';
 import { apiGet } from '../api/client';
 import type { Task, Person } from '@pis/shared';
 import { useLangStore } from '../store/lang.store';
+import { CalendarDays } from 'lucide-react';
 
 interface GCalEvent {
   id: string;
@@ -101,7 +102,12 @@ export function CalendarPage() {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 pt-4 pb-2 bg-white dark:bg-gray-900 border-b dark:border-gray-700">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('Календарь', 'Calendar')}</h1>
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-cyan-500/25">
+              <CalendarDays size={20} className="text-white" />
+            </div>
+            <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Календарь', 'Calendar')}</h1>
+          </div>
           <div className="flex items-center gap-1">
             <button onClick={prevMonth} className="w-7 h-7 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 text-sm">←</button>
             <span className="text-sm font-medium text-gray-700 dark:text-gray-200 capitalize w-40 text-center">{monthName}</span>

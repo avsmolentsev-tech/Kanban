@@ -12,17 +12,20 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-// Redirect to login on 401
+// Redirect to login on 401 — only for auth-related failures, not business logic 401s
 apiClient.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401 && !window.location.pathname.includes('/login')) {
-      // Only redirect if we actually have a token (expired) or the route requires auth
+      const url = err.config?.url || '';
+      // Don't logout on google-calendar or other endpoints that use 401 for "not connected"
+      const isAuthFailure = !url.includes('google-calendar') && !url.includes('widget');
       const token = localStorage.getItem('auth_token');
-      if (token) {
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('auth_user');
-        window.location.href = '/login';
+      if (token && isAuthFailure) {
+        // Verify token is actually invalid by checking /auth/me
+        fetch('/v1/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+          .then(r => { if (r.status === 401) { localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); window.location.href = '/login'; } })
+          .catch(() => {});
       }
     }
     return Promise.reject(err);

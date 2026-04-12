@@ -13,12 +13,32 @@ import { generateAllFormats } from './converter.service';
 export class TelegramService {
   private bot: Telegraf | null = null;
   private chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  private pendingLogins = new Map<number, 'email' | 'password'>(); // tg_id → waiting state
+  private pendingEmails = new Map<number, string>(); // tg_id → email entered
 
-  /** Resolve internal user id from Telegram user id */
-  private resolveUserId(tgId: number): number | null {
+  /** Resolve internal user id from Telegram user id. Auto-creates account if not found. */
+  private resolveUserId(tgId: number, tgName?: string): number | null {
+    if (!tgId) return null;
     const db = getDb();
     const row = db.prepare("SELECT id FROM users WHERE tg_id = ?").get(String(tgId)) as { id: number } | undefined;
-    return row?.id ?? null;
+    if (row) return row.id;
+
+    // Auto-create user from Telegram
+    try {
+      const name = tgName || `tg_${tgId}`;
+      const bcrypt = require('bcryptjs');
+      const randomPass = require('crypto').randomBytes(16).toString('hex');
+      const hash = bcrypt.hashSync(randomPass, 10);
+      const result = db.prepare('INSERT INTO users (email, password_hash, name, role, tg_id) VALUES (?, ?, ?, ?, ?)').run(
+        `tg_${tgId}@telegram.local`, hash, name, 'user', String(tgId)
+      );
+      const newId = Number(result.lastInsertRowid);
+      console.log(`[telegram] auto-created user #${newId} for tg_id ${tgId} (${name})`);
+      return newId;
+    } catch (err) {
+      console.error('[telegram] auto-create user failed:', err);
+      return null;
+    }
   }
 
   /** Execute a command via AI — same as web voice commands */
@@ -387,36 +407,55 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     // /start
     this.bot.command('start', (ctx) => {
-      const tgId = ctx.from?.id;
-      const linked = tgId ? this.resolveUserId(tgId) : null;
-      const linkStatus = linked
-        ? '✅ Аккаунт привязан'
-        : `⚠️ Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.`;
-      const text =
-        '🚀 Бот готов к работе!\n\n' +
-        `🆔 Ваш Telegram ID: ${tgId}\n${linkStatus}\n\n` +
-        '📋 Команды:\n' +
-        '/tasks — активные задачи\n' +
-        '/all — все задачи по статусам\n' +
-        '/meetings — последние встречи\n' +
-        '/projects — список проектов\n' +
-        '/add <название> — быстро добавить задачу\n' +
-        '/cmd <текст> — выполнить команду\n' +
-        '/brief — дневной брифинг\n' +
-        '/search <запрос> — поиск\n' +
-        '/app — открыть приложение\n\n' +
-        '🧠 Умный ввод:\n' +
-        '• Команды: «создай задачу...», «перенеси...», «удали...»\n' +
-        '• Контент: текст встречи, голосовое, файл → автоматически определит тип\n' +
-        '• Голосовое → транскрибация + создание встречи/задачи';
+      const tgId = ctx.from?.id ?? 0;
+      const db = getDb();
+      const existing = db.prepare("SELECT id, name FROM users WHERE tg_id = ?").get(String(tgId)) as { id: number; name: string } | undefined;
 
-      if (config.webappUrl) {
-        ctx.reply(text, Markup.inlineKeyboard([
-          Markup.button.webApp('📱 Открыть приложение', config.webappUrl),
-        ]));
+      if (existing) {
+        // Already linked — show welcome
+        const text =
+          `🚀 Привет, ${existing.name}!\n\n` +
+          '📋 Команды:\n' +
+          '/tasks — активные задачи\n' +
+          '/meetings — последние встречи\n' +
+          '/habits — привычки\n' +
+          '/add <название> — быстро добавить задачу\n' +
+          '/brief — дневной брифинг\n' +
+          '/search <запрос> — поиск\n\n' +
+          '🧠 Или просто напиши — я пойму!';
+
+        if (config.webappUrl) {
+          ctx.reply(text, Markup.inlineKeyboard([
+            Markup.button.webApp('📱 Открыть приложение', config.webappUrl),
+          ]));
+        } else {
+          ctx.reply(text);
+        }
       } else {
-        ctx.reply(text);
+        // Not linked — offer choice
+        ctx.reply(
+          '👋 Добро пожаловать в PIS!\n\nВыбери вариант:',
+          Markup.inlineKeyboard([
+            [Markup.button.callback('🆕 Новый аккаунт', 'onboard_new')],
+            [Markup.button.callback('🔑 У меня есть аккаунт', 'onboard_login')],
+          ])
+        );
       }
+    });
+
+    // Callback: new account
+    this.bot.action('onboard_new', (ctx) => {
+      const tgId = ctx.from?.id ?? 0;
+      const tgName = [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username || `tg_${tgId}`;
+      this.resolveUserId(tgId, tgName); // auto-creates
+      ctx.editMessageText(`✅ Аккаунт создан!\n\n👤 Имя: ${tgName}\n\nТеперь можешь пользоваться — просто напиши что нужно.`);
+    });
+
+    // Callback: existing account → ask email
+    this.bot.action('onboard_login', (ctx) => {
+      const tgId = ctx.from?.id ?? 0;
+      this.pendingLogins.set(tgId, 'email');
+      ctx.editMessageText('📧 Введи email, на который регистрировался:');
     });
 
     // /app — open Mini App
@@ -430,12 +469,47 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       ]));
     });
 
+    // /login email password — link Telegram to web account via credentials
+    this.bot.command('login', (ctx) => {
+      const parts = ctx.message.text.replace(/^\/login\s*/, '').trim().split(/\s+/);
+      const email = (parts[0] || '').toLowerCase();
+      const password = parts[1] || '';
+      if (!email || !password) {
+        ctx.reply('Формат: /login email пароль\n\nПример: /login alex@mail.com 123456\n\nПривяжет Telegram к аккаунту на сайте. Все данные подтянутся автоматически.');
+        return;
+      }
+      const db = getDb();
+      const tgId = String(ctx.from?.id ?? '');
+      const existingUser = db.prepare('SELECT id, name, email, password_hash, tg_id FROM users WHERE email = ?').get(email) as { id: number; name: string; email: string; password_hash: string; tg_id: string | null } | undefined;
+      if (!existingUser) {
+        ctx.reply(`❌ Аккаунт с email ${email} не найден.`);
+        return;
+      }
+      const bcrypt = require('bcryptjs');
+      if (!bcrypt.compareSync(password, existingUser.password_hash)) {
+        ctx.reply('❌ Неверный пароль.');
+        return;
+      }
+      // Remove auto-created tg account if exists and merge data
+      const autoAccount = db.prepare("SELECT id FROM users WHERE tg_id = ? AND email LIKE '%@telegram.local'").get(tgId) as { id: number } | undefined;
+      if (autoAccount && autoAccount.id !== existingUser.id) {
+        for (const table of ['tasks', 'projects', 'meetings', 'people', 'ideas', 'documents', 'habits', 'goals', 'journal']) {
+          try { db.prepare(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`).run(existingUser.id, autoAccount.id); } catch {}
+        }
+        db.prepare('DELETE FROM users WHERE id = ?').run(autoAccount.id);
+      }
+      db.prepare('UPDATE users SET tg_id = ? WHERE id = ?').run(tgId, existingUser.id);
+      ctx.reply(`✅ Готово! Telegram привязан к ${existingUser.name} (${existingUser.email}).\n\nВсе данные подтянулись. Можешь пользоваться!`);
+      // Delete the message with password for security
+      try { ctx.deleteMessage(ctx.message.message_id); } catch {}
+    });
+
     // /cmd — execute command via AI
     this.bot.command('cmd', async (ctx) => {
       const text = ctx.message.text.replace(/^\/cmd\s*/, '').trim();
       if (!text) { ctx.reply('Формат: /cmd создай задачу купить молоко'); return; }
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
       try {
         const response = await this.executeCommand(text, ctx.from?.id);
           await sendCommandResult(ctx, response);
@@ -448,8 +522,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // /bundle — generate NotebookLM bundle for project
     // /bundle — generate and SEND bundle in all formats
     this.bot.command('bundle', async (ctx) => {
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
       const text = ctx.message.text.replace(/^\/bundle\s*/, '').trim();
       if (!text) {
         ctx.reply('Формат:\n/bundle <название проекта>\n/bundle все\n\nПримеры:\n/bundle Атланты\n/bundle Robots\n\nОтправлю файлы: PDF, DOCX, MD');
@@ -515,8 +589,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     // /transcribe <url> — download and transcribe large audio from URL
     this.bot.command('transcribe', async (ctx) => {
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
       const url = ctx.message.text.replace(/^\/transcribe\s*/, '').trim();
       if (!url) { ctx.reply('Формат: /transcribe <ссылка на аудио>\n\nЗалей файл в Google Drive/Яндекс Диск, сделай публичную ссылку и отправь.'); return; }
       try {
@@ -560,8 +634,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // /habits — today's habits
     this.bot.command('habits', (ctx) => {
       const db = getDb();
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
       const habits = db.prepare("SELECT id, title, icon FROM habits WHERE archived = 0 AND user_id = ?").all(userId) as Array<{ id: number; title: string; icon: string }>;
       if (habits.length === 0) { ctx.reply('🔥 Нет привычек. Добавь в /app → Привычки'); return; }
       const today = moscowDateString();
@@ -573,8 +647,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     this.bot.command('meetings', (ctx) => {
       const db = getDb();
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
       const meetings = db.prepare("SELECT m.title, m.date, p.name as project_name FROM meetings m LEFT JOIN projects p ON m.project_id = p.id WHERE m.user_id = ? ORDER BY m.date DESC LIMIT 10").all(userId) as Array<{ title: string; date: string; project_name: string | null }>;
       if (meetings.length === 0) { ctx.reply('Нет встреч'); return; }
       const lines = meetings.map(m => `📅 ${m.date} — ${m.title}${m.project_name ? ` [${m.project_name}]` : ''}`);
@@ -584,8 +658,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // /tasks — today's tasks
     this.bot.command('tasks', (ctx) => {
       const db = getDb();
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
       const tasks = db.prepare(
         "SELECT title, status, priority, due_date, project_id FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND user_id = ? ORDER BY priority DESC LIMIT 20"
       ).all(userId) as Array<{ title: string; status: string; priority: number; due_date: string | null; project_id: number | null }>;
@@ -613,8 +687,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // /all — all tasks grouped by status
     this.bot.command('all', (ctx) => {
       const db = getDb();
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
       const tasks = db.prepare(
         "SELECT title, status, priority FROM tasks WHERE archived = 0 AND user_id = ? ORDER BY status, priority DESC"
       ).all(userId) as Array<{ title: string; status: string; priority: number }>;
@@ -639,8 +713,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     // /projects
     this.bot.command('projects', (ctx) => {
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
       const projects = getDb().prepare(
         "SELECT name, status, color FROM projects WHERE archived = 0 AND user_id = ? ORDER BY order_index ASC"
       ).all(userId) as Array<{ name: string; status: string }>;
@@ -653,8 +727,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     this.bot.command('add', (ctx) => {
       const text = ctx.message.text.replace(/^\/add\s*/, '').trim();
       if (!text) { ctx.reply('Формат: /add Название задачи'); return; }
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
 
       const r = getDb().prepare('INSERT INTO tasks (title, status, priority, user_id) VALUES (?, ?, ?, ?)').run(text, 'todo', 3, userId);
       const tid = Number(r.lastInsertRowid);
@@ -666,8 +740,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // /brief — daily brief
     this.bot.command('brief', async (ctx) => {
       const db = getDb();
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
       const today = moscowDateString();
       const tasks = db.prepare(
         "SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND user_id = ? ORDER BY priority DESC LIMIT 10"
@@ -694,8 +768,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     this.bot.command('search', (ctx) => {
       const query = ctx.message.text.replace(/^\/search\s*/, '').trim();
       if (!query) { ctx.reply('Формат: /search ключевое слово'); return; }
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.'); return; }
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
 
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { searchService } = require('./search.service');
@@ -772,8 +846,47 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       const text = ctx.message.text;
       if (text.startsWith('/')) return;
 
-      const userId = this.resolveUserId(ctx.from?.id ?? 0);
-      if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.\n\n🆔 Ваш Telegram ID: ' + ctx.from?.id); return; }
+      const tgId = ctx.from?.id ?? 0;
+
+      // Handle login flow (email → password)
+      const loginState = this.pendingLogins.get(tgId);
+      if (loginState === 'email') {
+        const email = text.trim().toLowerCase();
+        if (!email.includes('@')) { ctx.reply('❌ Введи корректный email:'); return; }
+        const db = getDb();
+        const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: number } | undefined;
+        if (!user) { ctx.reply(`❌ Аккаунт ${email} не найден. Попробуй ещё раз или нажми /start`); this.pendingLogins.delete(tgId); return; }
+        this.pendingEmails.set(tgId, email);
+        this.pendingLogins.set(tgId, 'password');
+        ctx.reply('🔑 Теперь введи пароль:');
+        return;
+      }
+      if (loginState === 'password') {
+        const email = this.pendingEmails.get(tgId) ?? '';
+        this.pendingLogins.delete(tgId);
+        this.pendingEmails.delete(tgId);
+        const db = getDb();
+        const user = db.prepare('SELECT id, name, email, password_hash FROM users WHERE email = ?').get(email) as { id: number; name: string; email: string; password_hash: string } | undefined;
+        if (!user) { ctx.reply('❌ Ошибка. Нажми /start'); return; }
+        const bcrypt = require('bcryptjs');
+        if (!bcrypt.compareSync(text, user.password_hash)) { ctx.reply('❌ Неверный пароль. Нажми /start чтобы попробовать снова.'); return; }
+        // Link tg_id and merge auto-account if exists
+        const autoAccount = db.prepare("SELECT id FROM users WHERE tg_id = ? AND email LIKE '%@telegram.local'").get(String(tgId)) as { id: number } | undefined;
+        if (autoAccount && autoAccount.id !== user.id) {
+          for (const table of ['tasks', 'projects', 'meetings', 'people', 'ideas', 'documents', 'habits', 'goals', 'journal']) {
+            try { db.prepare(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`).run(user.id, autoAccount.id); } catch {}
+          }
+          db.prepare('DELETE FROM users WHERE id = ?').run(autoAccount.id);
+        }
+        db.prepare('UPDATE users SET tg_id = ? WHERE id = ?').run(String(tgId), user.id);
+        // Delete password message
+        try { ctx.deleteMessage(ctx.message.message_id); } catch {}
+        ctx.reply(`✅ Готово! Привет, ${user.name}!\n\nТвой аккаунт привязан. Все данные подтянулись.\n\nПросто пиши — я пойму!`);
+        return;
+      }
+
+      const userId = this.resolveUserId(tgId, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      // userId auto-created by resolveUserId
 
       // Check for claude/клод prefix → save for Claude Code processing
       const claudeMatch = text.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
@@ -803,8 +916,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // Voice message → transcribe first, then decide
     this.bot.on(message('voice'), async (ctx) => {
       try {
-        const userId = this.resolveUserId(ctx.from?.id ?? 0);
-        if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.\n\n🆔 Ваш Telegram ID: ' + ctx.from?.id); return; }
+        const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+        // userId auto-created by resolveUserId
 
         ctx.reply('🎤 Транскрибирую...');
         const fileId = ctx.message.voice.file_id;
@@ -847,8 +960,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // Document → check if audio, transcribe; otherwise ingest
     this.bot.on(message('document'), async (ctx) => {
       try {
-        const userId = this.resolveUserId(ctx.from?.id ?? 0);
-        if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.\n\n🆔 Ваш Telegram ID: ' + ctx.from?.id); return; }
+        const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+        // userId auto-created by resolveUserId
         const doc = ctx.message.document;
         const filename = doc.file_name ?? 'file';
         const mime = doc.mime_type ?? '';
@@ -886,8 +999,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     // Audio message (mp3 etc sent as audio, not voice)
     this.bot.on(message('audio'), async (ctx) => {
       try {
-        const userId = this.resolveUserId(ctx.from?.id ?? 0);
-        if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.\n\n🆔 Ваш Telegram ID: ' + ctx.from?.id); return; }
+        const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+        // userId auto-created by resolveUserId
         ctx.reply('🎤 Транскрибирую аудио...');
         const audio = ctx.message.audio;
         const fileLink = await ctx.telegram.getFileLink(audio.file_id);
@@ -910,8 +1023,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
     this.bot.on(message('photo'), async (ctx) => {
       try {
-        const userId = this.resolveUserId(ctx.from?.id ?? 0);
-        if (!userId) { ctx.reply('⚠️ Ваш Telegram не привязан к аккаунту. Зарегистрируйтесь на kanban.myaipro.ru и привяжите Telegram ID в настройках.\n\n🆔 Ваш Telegram ID: ' + ctx.from?.id); return; }
+        const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+        // userId auto-created by resolveUserId
         const photo = ctx.message.photo[ctx.message.photo.length - 1]!;
         const fileLink = await ctx.telegram.getFileLink(photo.file_id);
         const response = await fetch(fileLink.href);

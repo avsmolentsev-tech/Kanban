@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTasksStore, useProjectsStore } from '../store';
 import { tasksApi } from '../api/tasks.api';
 import { useLangStore } from '../store/lang.store';
+import { Zap } from 'lucide-react';
 import type { Task } from '@pis/shared';
 
 export function TodaySwipePage() {
@@ -81,6 +82,13 @@ export function TodaySwipePage() {
 
   return (
     <div className="flex flex-col h-full p-4">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 mb-3">
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+          <Zap size={20} className="text-white" />
+        </div>
+        <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Сегодня', 'Today')}</h1>
+      </div>
       {/* Counter */}
       <div className="text-center mb-4">
         <div className="text-xs text-gray-400 dark:text-gray-500">{t('Задача', 'Task')} {index + 1} {t('из', 'of')} {todayTasks.length}</div>

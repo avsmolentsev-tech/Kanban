@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { aiApi } from '../api/ai.api';
 import { useTasksStore, useProjectsStore } from '../store';
 import { useLangStore } from '../store/lang.store';
+import { Sun } from 'lucide-react';
 import type { Task } from '@pis/shared';
 
 export function DailyBriefPage() {
@@ -60,7 +61,12 @@ export function DailyBriefPage() {
     <div className="p-6 max-w-3xl">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-800">{t('Дневной брифинг', 'Daily Brief')}</h1>
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-yellow-500 to-yellow-600 flex items-center justify-center shadow-lg shadow-yellow-500/25">
+              <Sun size={20} className="text-white" />
+            </div>
+            <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Дневной брифинг', 'Daily Brief')}</h1>
+          </div>
           <p className="text-sm text-gray-400">{new Date().toLocaleDateString(t('ru-RU', 'en-US'), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
         <button onClick={generateBrief} disabled={loading}

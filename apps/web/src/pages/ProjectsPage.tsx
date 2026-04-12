@@ -8,6 +8,7 @@ import { apiGet } from '../api/client';
 import { ProjectDetailPanel } from '../components/projects/ProjectDetailPanel';
 import type { Project } from '@pis/shared';
 import { useLangStore } from '../store/lang.store';
+import { FolderKanban } from 'lucide-react';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 
@@ -188,7 +189,12 @@ export function ProjectsPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-6 py-4 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('Проекты', 'Projects')}</h1>
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center shadow-lg shadow-violet-500/25">
+            <FolderKanban size={20} className="text-white" />
+          </div>
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Проекты', 'Projects')}</h1>
+        </div>
         {!adding && (
           <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
             {t('+ Новый проект', '+ New Project')}

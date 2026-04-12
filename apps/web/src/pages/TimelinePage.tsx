@@ -10,6 +10,7 @@ import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { SavedFilters, applyFilterCriteria, type SavedFilter } from '../components/filters/SavedFilters';
 import type { Task, Person, TaskStatus } from '@pis/shared';
 import { useLangStore } from '../store/lang.store';
+import { BarChart3 } from 'lucide-react';
 
 function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -117,7 +118,12 @@ export function TimelinePage() {
   return (
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('Таймлайн', 'Timeline')}</h1>
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
+            <BarChart3 size={20} className="text-white" />
+          </div>
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Таймлайн', 'Timeline')}</h1>
+        </div>
         <div className="flex items-center gap-3">
           <SavedFilters active={activeFilter?.id ?? null} onApply={setActiveFilter} />
           <ProjectFilter projects={projects} />

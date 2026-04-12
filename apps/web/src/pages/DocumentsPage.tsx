@@ -18,6 +18,7 @@ import { DocumentDetailPanel } from '../components/documents/DocumentDetailPanel
 import type { Document } from '../components/documents/DocumentDetailPanel';
 import type { Project } from '@pis/shared';
 import { useLangStore } from '../store/lang.store';
+import { FileText } from 'lucide-react';
 
 const CATEGORIES = ['note', 'reference', 'template', 'archive'] as const;
 type Category = typeof CATEGORIES[number];
@@ -293,7 +294,12 @@ export function DocumentsPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('Документы', 'Documents')}</h1>
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-500 to-slate-600 flex items-center justify-center shadow-lg shadow-slate-500/25">
+            <FileText size={20} className="text-white" />
+          </div>
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Документы', 'Documents')}</h1>
+        </div>
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
           {!adding && (

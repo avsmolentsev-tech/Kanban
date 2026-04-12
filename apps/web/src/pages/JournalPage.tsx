@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiGet, apiPost, apiPatch } from '../api/client';
 import { useLangStore } from '../store/lang.store';
+import { BookOpen } from 'lucide-react';
 
 interface JournalEntry {
   id: number;
@@ -80,7 +81,12 @@ export function JournalPage() {
   return (
     <div className="flex flex-col h-full pb-20">
       <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('📓 Ежедневник', '📓 Journal')}</h1>
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-pink-500 to-pink-600 flex items-center justify-center shadow-lg shadow-pink-500/25">
+            <BookOpen size={20} className="text-white" />
+          </div>
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Ежедневник', 'Journal')}</h1>
+        </div>
         <div className="text-xs text-gray-400">{saving ? t('Сохранение...', 'Saving...') : t('✓ Сохранено', '✓ Saved')}</div>
       </div>
 

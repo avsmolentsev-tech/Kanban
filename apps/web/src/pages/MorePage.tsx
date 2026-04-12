@@ -1,45 +1,86 @@
 import { NavLink } from 'react-router-dom';
 import { SettingsMenu } from '../components/layout/SettingsMenu';
 import { useLangStore } from '../store/lang.store';
+import { useAuthStore } from '../store/auth.store';
+import {
+  Columns3, BarChart3, CalendarDays, Users, Lightbulb, Flame,
+  Target, FileText, LayoutDashboard, BookOpen, MessageCircle,
+  PieChart, GanttChart, FolderKanban, Sun, LogOut
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
-const getItems = (t: (ru: string, en: string) => string) => [
-  { to: '/kanban', label: t('Kanban-доска', 'Kanban Board'), icon: '📋' },
-  { to: '/timeline', label: t('Таймлайн', 'Timeline'), icon: '📊' },
-  { to: '/calendar', label: t('Календарь', 'Calendar'), icon: '📅' },
-  { to: '/meetings', label: t('Встречи', 'Meetings'), icon: '🤝' },
-  { to: '/people', label: t('Люди', 'People'), icon: '👥' },
-  { to: '/ideas', label: t('Идеи', 'Ideas'), icon: '💡' },
-  { to: '/habits', label: t('Привычки', 'Habits'), icon: '🔥' },
-  { to: '/goals', label: t('Цели', 'Goals'), icon: '🎯' },
-  { to: '/documents', label: t('Документы', 'Documents'), icon: '📄' },
-  { to: '/dashboard', label: t('Дашборд', 'Dashboard'), icon: '📊' },
-  { to: '/journal', label: t('Ежедневник', 'Journal'), icon: '📓' },
-  { to: '/chat', label: t('Чат', 'Chat'), icon: '💬' },
-  { to: '/stats', label: t('Статистика', 'Statistics'), icon: '📈' },
-  { to: '/gantt', label: t('Диаграмма Ганта', 'Gantt Chart'), icon: '📊' },
+interface MenuItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  color: string;
+}
+
+const getItems = (t: (ru: string, en: string) => string): MenuItem[] => [
+  { to: '/kanban', label: t('Kanban', 'Kanban'), icon: Columns3, color: 'from-indigo-500 to-indigo-600' },
+  { to: '/timeline', label: t('Таймлайн', 'Timeline'), icon: BarChart3, color: 'from-blue-500 to-blue-600' },
+  { to: '/projects', label: t('Проекты', 'Projects'), icon: FolderKanban, color: 'from-violet-500 to-violet-600' },
+  { to: '/calendar', label: t('Календарь', 'Calendar'), icon: CalendarDays, color: 'from-cyan-500 to-cyan-600' },
+  { to: '/meetings', label: t('Встречи', 'Meetings'), icon: Users, color: 'from-emerald-500 to-emerald-600' },
+  { to: '/people', label: t('Люди', 'People'), icon: Users, color: 'from-teal-500 to-teal-600' },
+  { to: '/ideas', label: t('Идеи', 'Ideas'), icon: Lightbulb, color: 'from-amber-500 to-amber-600' },
+  { to: '/habits', label: t('Привычки', 'Habits'), icon: Flame, color: 'from-orange-500 to-orange-600' },
+  { to: '/goals', label: t('Цели', 'Goals'), icon: Target, color: 'from-rose-500 to-rose-600' },
+  { to: '/documents', label: t('Документы', 'Docs'), icon: FileText, color: 'from-slate-500 to-slate-600' },
+  { to: '/dashboard', label: t('Дашборд', 'Dashboard'), icon: LayoutDashboard, color: 'from-purple-500 to-purple-600' },
+  { to: '/journal', label: t('Дневник', 'Journal'), icon: BookOpen, color: 'from-pink-500 to-pink-600' },
+  { to: '/brief', label: t('Брифинг', 'Brief'), icon: Sun, color: 'from-yellow-500 to-yellow-600' },
+  { to: '/chat', label: t('AI Чат', 'AI Chat'), icon: MessageCircle, color: 'from-indigo-500 to-purple-600' },
+  { to: '/stats', label: t('Статистика', 'Stats'), icon: PieChart, color: 'from-sky-500 to-sky-600' },
+  { to: '/gantt', label: t('Гант', 'Gantt'), icon: GanttChart, color: 'from-green-500 to-green-600' },
 ];
 
 export function MorePage() {
   const { t } = useLangStore();
+  const { user, logout } = useAuthStore();
   const items = getItems(t);
+
   return (
-    <div className="p-4">
-      <div className="flex items-center justify-between mb-4">
+    <div className="p-4 pb-24">
+      <div className="flex items-center justify-between mb-5">
         <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Разделы', 'Sections')}</h1>
         <SettingsMenu />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        {items.map(({ to, label, icon }) => (
+
+      <div className="grid grid-cols-2 gap-2.5">
+        {items.map(({ to, label, icon: Icon, color }) => (
           <NavLink
             key={to}
             to={to}
-            className="flex items-center gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 active:bg-gray-50 dark:active:bg-gray-700 text-gray-800 dark:text-gray-100"
+            className="flex items-center gap-3 p-3.5 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50 active:scale-[0.97] transition-all"
           >
-            <span className="text-2xl">{icon}</span>
-            <span className="font-medium">{label}</span>
+            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center shadow-sm flex-shrink-0`}>
+              <Icon size={18} className="text-white" strokeWidth={2} />
+            </div>
+            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">{label}</span>
           </NavLink>
         ))}
       </div>
+
+      {/* User card */}
+      <NavLink to="/profile" className="mt-6 p-4 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50 block active:scale-[0.98] transition-all">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white font-bold flex-shrink-0">
+            {(user?.name || user?.email || '?')[0]?.toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{user?.name}</div>
+            <div className="text-xs text-gray-400 truncate">{user?.email}</div>
+          </div>
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); logout(); window.location.href = '/login'; }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          >
+            <LogOut size={14} />
+            {t('Выйти', 'Sign out')}
+          </button>
+        </div>
+      </NavLink>
     </div>
   );
 }

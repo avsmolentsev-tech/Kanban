@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
 import { useLangStore } from '../store/lang.store';
+import { PieChart } from 'lucide-react';
 
 interface Task {
   id: number;
@@ -176,9 +177,12 @@ export function StatsPage() {
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-8">
       {/* Header with export buttons */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-          {t('Статистика', 'Statistics')}
-        </h1>
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 flex items-center justify-center shadow-lg shadow-sky-500/25">
+            <PieChart size={20} className="text-white" />
+          </div>
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Статистика', 'Statistics')}</h1>
+        </div>
         <div className="flex gap-2">
           <a
             href="/v1/export/tasks.csv"

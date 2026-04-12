@@ -7,6 +7,7 @@ import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { useFiltersStore } from '../store';
 import type { Meeting, Project } from '@pis/shared';
 import { useLangStore } from '../store/lang.store';
+import { Users } from 'lucide-react';
 
 type TimePeriod = 'today' | 'week' | 'month' | 'year';
 
@@ -180,7 +181,12 @@ export function MeetingsPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{t('Встречи', 'Meetings')}</h1>
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/25">
+            <Users size={20} className="text-white" />
+          </div>
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Встречи', 'Meetings')}</h1>
+        </div>
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
           {!adding && (

@@ -147,7 +147,7 @@ googleCalendarRouter.post('/sync', async (_req: Request, res: Response) => {
 // GET /google-calendar/events — list events from Google Calendar
 googleCalendarRouter.get('/events', async (_req: Request, res: Response) => {
   const token = await getAccessToken();
-  if (!token) { res.status(401).json(fail('Not connected')); return; }
+  if (!token) { res.json(ok([])); return; }
 
   try {
     const today = new Date().toISOString();

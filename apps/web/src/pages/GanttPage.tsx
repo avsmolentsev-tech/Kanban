@@ -4,6 +4,7 @@ import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
 import { peopleApi } from '../api/people.api';
 import type { Task, Project, Person } from '@pis/shared';
 import { useLangStore } from '../store/lang.store';
+import { GanttChart } from 'lucide-react';
 
 function formatShortDate(d: Date, lang: 'ru' | 'en'): string {
   const day = d.getDate();
@@ -86,7 +87,12 @@ export function GanttPage() {
   return (
     <div className="h-full flex flex-col">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Диаграмма Ганта', 'Gantt Chart')}</h1>
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-lg shadow-green-500/25">
+            <GanttChart size={20} className="text-white" />
+          </div>
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Диаграмма Ганта', 'Gantt Chart')}</h1>
+        </div>
         <p className="text-xs text-gray-500 dark:text-gray-400">{t('Ближайшие 30 дней', 'Next 30 days')}</p>
       </div>
 
