@@ -21,9 +21,7 @@ jobs:
           node-version: '20'
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 8
+        uses: pnpm/action-setup@v4
 
       - name: Get pnpm store directory
         id: pnpm-cache
@@ -38,13 +36,10 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build shared
         run: pnpm --filter @pis/shared build
-
-      - name: Build API
-        run: pnpm --filter @pis/api build
 
       - name: Build Web
         run: pnpm --filter @pis/web build

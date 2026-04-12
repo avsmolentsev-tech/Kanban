@@ -158,7 +158,7 @@ export function IdeasPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
+      <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b bg-white dark:bg-gray-900 dark:border-gray-700">
         <div className="flex items-center gap-2.5">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/25">
             <Lightbulb size={20} className="text-white" />
@@ -206,8 +206,8 @@ export function IdeasPage() {
           onDragEnd={handleDragEnd}>
 
           {/* Sticky column headers */}
-          <div className="sticky top-0 z-30 flex bg-gray-50 border-b border-gray-200 py-2">
-            <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md pl-4" />
+          <div className="sticky top-0 z-30 flex bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 py-2">
+            <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 pl-4" style={{ background: 'inherit' }} />
             {STATUSES.map(s => (
               <div key={s} className={`w-56 min-w-[224px] mx-1.5 text-sm font-semibold text-center ${STATUS_COLORS[s]}`}>
                 {STATUS_LABELS[s]}
@@ -223,7 +223,7 @@ export function IdeasPage() {
 
               return (
                 <div key={project?.id ?? 'none'} className="flex mb-4">
-                  <div className="sticky left-0 top-12 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-r border-gray-100 dark:border-gray-700/50 self-start">
+                  <div className="sticky left-0 top-12 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 border-r border-gray-100 dark:border-gray-700/50 self-start" style={{ background: 'inherit' }}>
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
                       <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? t('Без проекта', 'No project')}</span>

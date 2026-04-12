@@ -180,7 +180,7 @@ export function MeetingsPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
+      <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b bg-white dark:bg-gray-900 dark:border-gray-700">
         <div className="flex items-center gap-2.5">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/25">
             <Users size={20} className="text-white" />
@@ -198,7 +198,7 @@ export function MeetingsPage() {
       </div>
 
       {adding && (
-        <div className="bg-white border-b p-4">
+        <div className="bg-white dark:bg-gray-900 border-b dark:border-gray-700 p-4">
           <div className="max-w-md space-y-3">
             <input autoFocus className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
               placeholder={t('Название встречи *', 'Meeting title *')} value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
