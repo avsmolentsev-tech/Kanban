@@ -239,38 +239,32 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
     <>
       <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragEnd={handleDragEnd}>
         <div className="relative overflow-auto h-full">
-          {/* Sticky column headers */}
-          <div className="sticky top-0 z-30 flex bg-gray-50 border-b border-gray-200 py-2">
-            <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md pl-4" />
+          {/* Column headers */}
+          <div className="sticky top-0 z-30 flex bg-gray-50/90 dark:bg-gray-900/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 py-2">
+            <div className="sticky left-0 z-40 w-36 min-w-[144px] flex-shrink-0 pl-3" style={{ background: 'inherit' }} />
             {COLUMNS.map((s) => (
-              <div key={s} className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-500 text-center">
+              <div key={s} className="w-64 min-w-[256px] mx-2 text-sm font-semibold text-gray-500 dark:text-gray-400 text-center">
                 {COL_LABELS[s]}
               </div>
             ))}
           </div>
 
-          <div className="p-4 pt-2">
-            {/* Project swimlanes */}
+          <div className="p-3 pt-2">
             <SortableContext items={projectOrder.map((p) => `project-row-${p.project?.id ?? 'none'}`)} strategy={verticalListSortingStrategy}>
               {projectOrder.map(({ project, tasks: pTasks }) => (
                 <SortableProjectRow key={project?.id ?? 'none'} id={`project-row-${project?.id ?? 'none'}`}>
                   {(dragHandleProps) => (
-                    <div className="flex mb-4">
-                      {/* Sticky project label (left) */}
-                      <div className="sticky left-0 top-12 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-r border-gray-100 dark:border-gray-700/50 self-start">
-                        <div className="flex items-center gap-2">
+                    <div className="flex mb-3">
+                      {/* Project label */}
+                      <div className="sticky left-0 z-20 w-36 min-w-[144px] flex-shrink-0 pr-2 pt-2 self-start" style={{ background: 'inherit' }}>
+                        <div className="flex items-center gap-1.5">
                           {project && (
-                            <div
-                              className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-base leading-none flex-shrink-0 select-none"
-                              {...dragHandleProps}
-                            >
-                              ⠿
-                            </div>
+                            <div className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-sm leading-none flex-shrink-0 select-none" {...dragHandleProps}>⠿</div>
                           )}
-                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-                          <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? t('Без проекта', 'No project')}</span>
+                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                          <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 truncate">{project?.name ?? t('Без проекта', 'No project')}</span>
                         </div>
-                        <div className="text-xs text-gray-400 mt-1 ml-5">{pTasks.length} {t('задач', 'tasks')}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5 ml-4">{pTasks.length} {t('задач', 'tasks')}</div>
                       </div>
                       <div className="flex gap-4">
                         {COLUMNS.map((status) => (
@@ -294,8 +288,6 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
                 </SortableProjectRow>
               ))}
             </SortableContext>
-
-            {/* Add project button */}
             <AddProjectForm onCreated={onRefresh} />
           </div>
         </div>
