@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PIS</string>
+    <string name="title_activity_main">PIS</string>
+    <string name="package_name">ru.myaipro.pis</string>
+    <string name="custom_url_scheme">ru.myaipro.pis</string>
+</resources>
