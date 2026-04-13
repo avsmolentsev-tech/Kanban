@@ -1,10 +1,15 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
+import * as fs from 'fs';
+import * as path from 'path';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
 import { ObsidianService } from '../services/obsidian.service';
+import { ClaudeService } from '../services/claude.service';
+import { mdToPdf, mdToDocx } from '../services/converter.service';
+import { telegramService } from '../services/telegram.service';
 import { config } from '../config';
 import OpenAI from 'openai';
 import type { AuthRequest } from '../middleware/auth';
@@ -13,6 +18,7 @@ import { getUserId, userScopeWhere } from '../middleware/user-scope';
 const obsidian = new ObsidianService(config.vaultPath);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 const openai = new OpenAI({ apiKey: config.openaiApiKey });
+const claude = new ClaudeService();
 
 export const meetingsRouter = Router();
 
@@ -230,5 +236,83 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthR
     res.json(ok({ ...updated as object, transcript }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Transcription error'));
+  }
+});
+
+// Send meeting summary or full transcription to user's Telegram
+const SendToTelegramSchema = z.object({
+  type: z.enum(['summary', 'full']),
+  format: z.enum(['md', 'pdf', 'docx']),
+});
+
+async function buildMeetingFile(meetingId: number, type: 'summary' | 'full', format: 'md' | 'pdf' | 'docx'): Promise<{ path: string; filename: string }> {
+  const db = getDb();
+  const m = db.prepare('SELECT id, title, date, project_id, summary_raw FROM meetings WHERE id = ?').get(meetingId) as { id: number; title: string; date: string; project_id: number | null; summary_raw: string | null } | undefined;
+  if (!m) throw new Error('Meeting not found');
+  const projectName = m.project_id ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(m.project_id) as { name: string } | undefined)?.name : undefined;
+  const people = (db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map((x) => x.name);
+
+  let body: string;
+  if (type === 'summary') {
+    const raw = (m.summary_raw ?? '').trim();
+    if (!raw) throw new Error('No content to summarize');
+    const sys = 'Ты редактор. Сделай компактное структурированное резюме встречи в markdown: цели, ключевые решения, договорённости, задачи, следующие шаги. 200-500 слов, без воды.';
+    const summary = await claude.chat([{ role: 'user', content: raw }], sys, 'gpt-4.1-mini', false, false);
+    body = summary.trim();
+  } else {
+    body = m.summary_raw ?? '(пусто)';
+  }
+
+  const header = [
+    `# ${m.title}`,
+    '',
+    `**Дата:** ${m.date}`,
+    projectName ? `**Проект:** ${projectName}` : '',
+    people.length ? `**Участники:** ${people.join(', ')}` : '',
+    '',
+    '---',
+    '',
+  ].filter((l) => l !== '').join('\n');
+
+  const slug = m.title.toLowerCase().replace(/[^a-zа-я0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 60);
+  const baseName = `${m.date}-${slug}-${type === 'summary' ? 'rezume' : 'polnaya'}`;
+  const tmpMd = path.join('/tmp', `${baseName}-${Date.now()}.md`);
+  fs.writeFileSync(tmpMd, `${header}\n\n${body}\n`, 'utf-8');
+
+  if (format === 'md') return { path: tmpMd, filename: `${baseName}.md` };
+  if (format === 'pdf') return { path: mdToPdf(tmpMd), filename: `${baseName}.pdf` };
+  return { path: mdToDocx(tmpMd), filename: `${baseName}.docx` };
+}
+
+export async function sendMeetingToTelegram(meetingId: number, userId: number, type: 'summary' | 'full', format: 'md' | 'pdf' | 'docx'): Promise<void> {
+  const db = getDb();
+  const user = db.prepare('SELECT tg_id FROM users WHERE id = ?').get(userId) as { tg_id: string | null } | undefined;
+  if (!user?.tg_id) throw new Error('Telegram не привязан к аккаунту (зайди в Telegram-бот и пришли /start)');
+  const { path: filePath, filename } = await buildMeetingFile(meetingId, type, format);
+  const caption = type === 'summary' ? '📄 Резюме встречи' : '📄 Полная транскрипция';
+  try {
+    await telegramService.sendFileToUser(user.tg_id, filePath, filename, caption);
+  } finally {
+    try { fs.unlinkSync(filePath); } catch {}
+    if (filePath.endsWith('.pdf') || filePath.endsWith('.docx')) {
+      const mdPath = filePath.replace(/\.(pdf|docx)$/, '.md');
+      try { fs.unlinkSync(mdPath); } catch {}
+    }
+  }
+}
+
+meetingsRouter.post('/:id/send-to-telegram', async (req: AuthRequest, res: Response) => {
+  const parsed = SendToTelegramSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const id = Number(req.params['id']);
+  const userId = getUserId(req);
+  if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
+  const exists = getDb().prepare('SELECT id FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId);
+  if (!exists) { res.status(404).json(fail('Meeting not found')); return; }
+  try {
+    await sendMeetingToTelegram(id, userId, parsed.data.type, parsed.data.format);
+    res.json(ok({ sent: true, format: parsed.data.format, type: parsed.data.type }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Send failed'));
   }
 });

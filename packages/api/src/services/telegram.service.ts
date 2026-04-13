@@ -151,10 +151,17 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     {"type": "update_goal", "goal_id": number, "current_value": number?, "status": "active|completed?"},
     {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number], "summary_raw": "string?"},
     {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?, "person_ids": [number]?, "summary_raw": "string?"},
-    {"type": "delete_meeting", "meeting_id": number}
+    {"type": "delete_meeting", "meeting_id": number},
+    {"type": "send_meeting", "meeting_id": number, "kind": "summary|full", "format": "md|pdf|docx"}
   ],
   "response": "Ответ пользователю — будь кратким и дружелюбным"
-}`;
+}
+
+Про send_meeting:
+- «пришли резюме встречи N» / «отправь полную транскрипцию» → используй send_meeting
+- kind="summary" — AI-резюме (ключевые решения, задачи, следующие шаги)
+- kind="full" — полный summary_raw
+- format — по запросу пользователя: «в пдф» → pdf, «ворд»/«докс»/«docx» → docx, иначе → md`;
 
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
       ...this.getChatHistory(tgUserId ?? 0).slice(-200), // last 100 exchanges
@@ -347,6 +354,20 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
             db.prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(action['meeting_id']);
             db.prepare('DELETE FROM meetings WHERE id = ?').run(action['meeting_id']);
             results.push(`🗑 Встреча #${action['meeting_id']} удалена`);
+            break;
+          }
+          case 'send_meeting': {
+            if (userId == null) { results.push('❌ Не авторизован'); break; }
+            const mid = Number(action['meeting_id']);
+            const kind = (action['kind'] === 'full' ? 'full' : 'summary') as 'summary' | 'full';
+            const format = (['md', 'pdf', 'docx'].includes(String(action['format'])) ? action['format'] : 'pdf') as 'md' | 'pdf' | 'docx';
+            const { sendMeetingToTelegram } = require('../routes/meetings');
+            try {
+              await sendMeetingToTelegram(mid, userId, kind, format);
+              results.push(`📤 ${kind === 'summary' ? 'Резюме' : 'Полная транскрипция'} встречи #${mid} отправлена (${format.toUpperCase()})`);
+            } catch (err) {
+              results.push(`❌ Не смог отправить встречу #${mid}: ${err instanceof Error ? err.message : 'ошибка'}`);
+            }
             break;
           }
         }
