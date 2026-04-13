@@ -123,6 +123,14 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 6. Контекст предыдущих сообщений — используй для «её», «эту», «ту»
 7. НЕ создавай встречи/задачи просто так — только когда явно просят
 
+🚨 ЖЕЛЕЗНОЕ ПРАВИЛО про создание сущностей:
+- Списки «Проекты», «Задачи», «Встречи», «Люди», «Цели» выше — это ПОЛНЫЙ список того, что есть у пользователя в БД прямо сейчас.
+- Если в списке стоит [] (пустая скобка) — у пользователя НИЧЕГО не заведено.
+- Если пользователь просит «создай проекты X, Y, Z» или «заведи задачи A, B, C» и этих названий НЕТ в списке выше — ТЫ ОБЯЗАН вернуть соответствующие create_* actions в массиве actions. По одной action на каждый объект.
+- НИКОГДА не отвечай «проекты уже существуют», «создано ✅», «добавлено», если в actions не вернул соответствующий create_*. Иначе ты обманешь пользователя — в БД ничего не появится.
+- Если название совпадает с уже существующим проектом/задачей из списка — не дублируй, но скажи об этом явно в response.
+- Принцип: если в response пишешь «создал ✅ X» — в actions ОБЯЗАТЕЛЬНО должна быть соответствующая create_* запись.
+
 ВАЖНО: Всегда отвечай в формате JSON с полями "actions" (массив) и "response" (строка).
 Для вопросов actions = [], а ответ в response.
 
@@ -1067,11 +1075,22 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       { command: 'start', description: '🚀 Справка' },
     ]).catch(() => {});
 
-    this.bot.launch().then(() => {
-      console.log('[telegram] bot started');
-    }).catch((err) => {
-      console.error('[telegram] bot failed to start:', err.message);
-    });
+    const tryLaunch = (attempt = 0): void => {
+      this.bot!.launch().then(() => {
+        console.log('[telegram] bot started');
+      }).catch((err) => {
+        const is409 = /409|Conflict|getUpdates/.test(err.message);
+        const maxAttempts = 12;
+        if (is409 && attempt < maxAttempts) {
+          const delay = Math.min(60000, 5000 * Math.pow(1.4, attempt));
+          console.warn(`[telegram] launch 409 (attempt ${attempt + 1}/${maxAttempts}), retry in ${Math.round(delay / 1000)}s`);
+          setTimeout(() => tryLaunch(attempt + 1), delay);
+        } else {
+          console.error('[telegram] bot failed to start:', err.message);
+        }
+      });
+    };
+    tryLaunch();
 
     // Graceful shutdown
     process.once('SIGINT', () => this.bot?.stop('SIGINT'));

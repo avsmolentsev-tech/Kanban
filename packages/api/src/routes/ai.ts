@@ -108,6 +108,9 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
 
   try {
     const db = getDb();
+    const userId = getUserId(req);
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
+    const userParams: unknown[] = userId != null ? [userId] : [];
 
     // Check for claude/клод prefix → save as Claude note
     const claudeMatch = parsed.data.text.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
@@ -122,9 +125,9 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
       }));
       return;
     }
-    const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
-    const tasks = db.prepare("SELECT id, title, status, project_id FROM tasks WHERE archived = 0").all() as Array<{ id: number; title: string; status: string; project_id: number | null }>;
-    const people = db.prepare("SELECT id, name FROM people").all() as Array<{ id: number; name: string }>;
+    const projects = db.prepare(`SELECT id, name FROM projects WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; name: string }>;
+    const tasks = db.prepare(`SELECT id, title, status, project_id FROM tasks WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; title: string; status: string; project_id: number | null }>;
+    const people = db.prepare(`SELECT id, name FROM people WHERE 1=1${userFilter}`).all(...userParams) as Array<{ id: number; name: string }>;
 
     // Auto-detect if question is about meetings → include full content
     const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
@@ -135,13 +138,13 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
     let fullMeetingContent = '';
 
     if (needsFullMeetings) {
-      const fullMeetings = db.prepare("SELECT id, title, date, project_id, summary_raw FROM meetings ORDER BY date DESC LIMIT 5").all() as Array<MeetingWithContent>;
+      const fullMeetings = db.prepare(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 5`).all(...userParams) as Array<MeetingWithContent>;
       fullMeetingContent = fullMeetings.map(m =>
         `## Встреча #${m.id}: ${m.title} (${m.date})\n${(m.summary_raw || '').slice(0, 8000)}`
       ).join('\n\n---\n\n');
       meetings = fullMeetings;
     } else {
-      meetings = db.prepare("SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20").all() as Array<MeetingWithContent>;
+      meetings = db.prepare(`SELECT id, title, date, project_id FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 20`).all(...userParams) as Array<MeetingWithContent>;
     }
 
     const systemPrompt = `Ты — персональный ассистент. Умный, дружелюбный, вдумчивый собеседник. Можешь разговаривать на любые темы, советовать, обсуждать идеи.
@@ -224,8 +227,8 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
       try {
         switch (action['type']) {
           case 'create_task': {
-            const r = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, due_date) VALUES (?, ?, ?, ?, ?, ?)').run(
-              action['project_id'] ?? null, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null
+            const r = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+              action['project_id'] ?? null, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId
             );
             const taskId = Number(r.lastInsertRowid);
             // Auto-add self if no people specified
@@ -260,14 +263,14 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             break;
           }
           case 'create_project': {
-            db.prepare('INSERT INTO projects (name, color) VALUES (?, ?)').run(action['name'], action['color'] ?? '#6366f1');
+            db.prepare('INSERT INTO projects (name, color, user_id) VALUES (?, ?, ?)').run(action['name'], action['color'] ?? '#6366f1', userId);
             results.push({ type: 'create_project', success: true, detail: `Проект "${action['name']}" создан` });
             break;
           }
           case 'create_idea': {
-            const r = db.prepare('INSERT INTO ideas (title, body, category, project_id, status) VALUES (?, ?, ?, ?, ?)').run(
+            const r = db.prepare('INSERT INTO ideas (title, body, category, project_id, status, user_id) VALUES (?, ?, ?, ?, ?, ?)').run(
               action['title'], (action['body'] as string) ?? '', (action['category'] as string) ?? 'personal',
-              action['project_id'] ?? null, 'backlog'
+              action['project_id'] ?? null, 'backlog', userId
             );
             const ideaId = Number(r.lastInsertRowid);
             const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
@@ -276,9 +279,9 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             break;
           }
           case 'create_goal': {
-            db.prepare('INSERT INTO goals (title, description, type, project_id, target_value, unit) VALUES (?, ?, ?, ?, ?, ?)').run(
+            db.prepare('INSERT INTO goals (title, description, type, project_id, target_value, unit, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
               action['title'], (action['description'] as string) ?? '', 'goal',
-              action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%'
+              action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%', userId
             );
             results.push({ type: 'create_goal', success: true, detail: `🎯 Цель "${action['title']}"` });
             break;
@@ -317,7 +320,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             break;
           }
           case 'create_meeting': {
-            const r = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw) VALUES (?, ?, ?, ?)').run(action['title'], action['date'], action['project_id'] ?? null, '');
+            const r = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES (?, ?, ?, ?, ?)').run(action['title'], action['date'], action['project_id'] ?? null, '', userId);
             const meetingId = Number(r.lastInsertRowid);
             if (Array.isArray(action['person_ids'])) {
               for (const pid of action['person_ids'] as number[]) db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, pid);
@@ -341,7 +344,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             break;
           }
           case 'create_person': {
-            const r = db.prepare('INSERT INTO people (name, company, role) VALUES (?, ?, ?)').run(action['name'], action['company'] ?? '', action['role'] ?? '');
+            const r = db.prepare('INSERT INTO people (name, company, role, user_id) VALUES (?, ?, ?, ?)').run(action['name'], action['company'] ?? '', action['role'] ?? '', userId);
             results.push({ type: 'create_person', success: true, detail: `Контакт "${action['name']}" создан` });
             break;
           }
