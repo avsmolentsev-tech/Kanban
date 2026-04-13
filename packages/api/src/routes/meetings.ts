@@ -92,7 +92,8 @@ meetingsRouter.post('/', async (req: AuthRequest, res: Response) => {
   // Sync to vault
   try {
     const projectName = effectiveIds[0] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(effectiveIds[0]) as { name: string } | undefined)?.name : undefined;
-    const vaultPath = await obsidian.forUser(getUserId(req)).writeMeeting({ title, date, project: projectName, summary: summary_raw, people: [] });
+    const peopleNames = (getDb().prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map(x => x.name);
+    const vaultPath = await obsidian.forUser(getUserId(req)).writeMeeting({ title, date, project: projectName, summary: summary_raw, people: peopleNames });
     getDb().prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultPath, meetingId);
   } catch {}
   const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId) as Record<string, unknown>;
@@ -131,12 +132,13 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
         const projectName = projectId != null
           ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as { name: string } | undefined)?.name
           : undefined;
+        const peopleNames = (getDb().prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(id) as Array<{ name: string }>).map(x => x.name);
         const vaultPath = await obsidian.forUser(userId).writeMeeting({
           title: updated['title'] as string,
           date: updated['date'] as string,
           project: projectName,
           summary: (updated['summary_raw'] as string) ?? '',
-          people: [],
+          people: peopleNames,
         });
         const currentPath = updated['vault_path'] as string | null;
         if (vaultPath && vaultPath !== currentPath) {
@@ -213,12 +215,13 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthR
       const vp = meeting['vault_path'] as string | null;
       if (vp) {
         const projectName = meeting['project_id'] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(meeting['project_id'] as number) as { name: string } | undefined)?.name : undefined;
+        const peopleNames = (getDb().prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(id) as Array<{ name: string }>).map(x => x.name);
         await obsidian.forUser(getUserId(req)).writeMeeting({
           title: meeting['title'] as string,
           date: meeting['date'] as string,
           project: projectName,
           summary: newSummary,
-          people: [],
+          people: peopleNames,
         });
       }
     } catch {}

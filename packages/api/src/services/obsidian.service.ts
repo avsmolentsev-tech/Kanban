@@ -28,6 +28,18 @@ interface WritePersonParams {
   company?: string;
   role?: string;
   tags?: string[];
+  projects?: string[];
+  meetings?: Array<{ title: string; date: string; vault_path?: string | null }>;
+}
+
+interface WriteProjectParams {
+  name: string;
+  description?: string;
+  status?: string;
+  color?: string;
+  tags?: string[];
+  people?: string[];
+  meetings?: Array<{ title: string; date: string; vault_path?: string | null }>;
 }
 
 interface WriteIdeaParams {
@@ -123,14 +135,48 @@ export class ObsidianService {
     const filename = `${this.toSlug(params.name)}.md`;
     const dir = this.userPath('People');
     this.ensureDir(dir);
+    const projects = (params.projects ?? []).map((p) => this.wikiLink(p));
     const frontmatter = [
       '---', 'type: person', `name: "${params.name}"`,
       `company: "${params.company ?? ''}"`, `role: "${params.role ?? ''}"`,
+      `projects: [${projects.join(', ')}]`,
       `tags: [${(params.tags ?? ['person']).join(', ')}]`,
-      `created_at: ${this.now()}`, '---',
+      `updated_at: ${this.now()}`, '---',
     ].join('\n');
-    fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.name}\n\n`, 'utf-8');
+    const meetingsSection = (params.meetings && params.meetings.length > 0)
+      ? `## Встречи\n\n${params.meetings.map((m) => `- ${m.date} — ${this.wikiLink(m.title)}`).join('\n')}\n`
+      : '';
+    const projectsSection = (params.projects && params.projects.length > 0)
+      ? `## Проекты\n\n${params.projects.map((p) => `- ${this.wikiLink(p)}`).join('\n')}\n`
+      : '';
+    const body = `# ${params.name}\n\n${params.role ? `**Роль:** ${params.role}  \n` : ''}${params.company ? `**Компания:** ${params.company}  \n` : ''}\n${projectsSection}\n${meetingsSection}`;
+    fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n${body}`, 'utf-8');
     return this.userRelative('People', filename);
+  }
+
+  async writeProject(params: WriteProjectParams): Promise<string> {
+    const filename = `${this.toSlug(params.name)}.md`;
+    const dir = this.userPath('Projects');
+    this.ensureDir(dir);
+    const people = (params.people ?? []).map((p) => this.wikiLink(p));
+    const frontmatter = [
+      '---', 'type: project', `name: "${params.name}"`,
+      `status: ${params.status ?? 'active'}`,
+      `color: "${params.color ?? '#6366f1'}"`,
+      `people: [${people.join(', ')}]`,
+      `tags: [${(params.tags ?? ['project']).join(', ')}]`,
+      `updated_at: ${this.now()}`, '---',
+    ].join('\n');
+    const peopleSection = (params.people && params.people.length > 0)
+      ? `## Команда\n\n${params.people.map((p) => `- ${this.wikiLink(p)}`).join('\n')}\n`
+      : '';
+    const meetingsSection = (params.meetings && params.meetings.length > 0)
+      ? `## Встречи\n\n${params.meetings.map((m) => `- ${m.date} — ${this.wikiLink(m.title)}`).join('\n')}\n`
+      : '';
+    const descSection = params.description ? `\n${params.description}\n` : '';
+    const body = `# ${params.name}\n${descSection}\n${peopleSection}\n${meetingsSection}`;
+    fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n${body}`, 'utf-8');
+    return this.userRelative('Projects', filename);
   }
 
   async writeIdea(params: WriteIdeaParams): Promise<string> {

@@ -5,8 +5,33 @@ import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
+import { ObsidianService } from '../services/obsidian.service';
+import { config } from '../config';
 
 export const peopleRouter = Router();
+const obsidian = new ObsidianService(config.vaultPath);
+
+function syncPersonToVault(personId: number, userId: number | null): void {
+  if (userId == null) return;
+  void (async () => {
+    try {
+      const db = getDb();
+      const p = db.prepare('SELECT name, company, role FROM people WHERE id = ?').get(personId) as { name: string; company: string | null; role: string | null } | undefined;
+      if (!p) return;
+      const projects = db.prepare('SELECT p.name FROM projects p JOIN people_projects pp ON p.id = pp.project_id WHERE pp.person_id = ? ORDER BY p.name').all(personId) as Array<{ name: string }>;
+      const meetings = db.prepare('SELECT m.title, m.date FROM meetings m JOIN meeting_people mp ON m.id = mp.meeting_id WHERE mp.person_id = ? ORDER BY m.date DESC').all(personId) as Array<{ title: string; date: string }>;
+      await obsidian.forUser(userId).writePerson({
+        name: p.name,
+        company: p.company ?? '',
+        role: p.role ?? '',
+        projects: projects.map((x) => x.name),
+        meetings,
+      });
+    } catch (err) {
+      console.error('[people] vault sync failed:', err instanceof Error ? err.message : err);
+    }
+  })();
+}
 
 const CreateSchema = z.object({
   name: z.string().min(1), company: z.string().optional().default(''), role: z.string().optional().default(''),
@@ -63,6 +88,7 @@ peopleRouter.post('/', (req: AuthRequest, res: Response) => {
 
   const person = getDb().prepare('SELECT * FROM people WHERE id = ?').get(newId) as Record<string, unknown>;
   searchService.indexRecord('person', newId, name, notes ?? '');
+  syncPersonToVault(newId, userId);
   const [withProjects] = attachProjects([person]);
   res.status(201).json(ok(withProjects));
 });
@@ -114,6 +140,7 @@ peopleRouter.patch('/:id', (req: AuthRequest, res: Response) => {
 
   const person = getDb().prepare('SELECT * FROM people WHERE id = ?').get(id) as Record<string, unknown>;
   if (person) searchService.indexRecord('person', person['id'] as number, person['name'] as string, (person['notes'] as string) ?? '');
+  syncPersonToVault(id, userId);
   const [withProjects] = attachProjects([person]);
   res.json(ok(withProjects));
 });

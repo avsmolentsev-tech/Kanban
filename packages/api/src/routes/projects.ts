@@ -4,8 +4,34 @@ import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
+import { ObsidianService } from '../services/obsidian.service';
+import { config } from '../config';
 
 export const projectsRouter = Router();
+const obsidian = new ObsidianService(config.vaultPath);
+
+function syncProjectToVault(projectId: number, userId: number | null): void {
+  if (userId == null) return;
+  void (async () => {
+    try {
+      const db = getDb();
+      const p = db.prepare('SELECT name, description, status, color FROM projects WHERE id = ?').get(projectId) as { name: string; description: string | null; status: string | null; color: string | null } | undefined;
+      if (!p) return;
+      const people = db.prepare('SELECT DISTINCT pe.name FROM people pe JOIN people_projects pp ON pe.id = pp.person_id WHERE pp.project_id = ?').all(projectId) as Array<{ name: string }>;
+      const meetings = db.prepare('SELECT title, date FROM meetings WHERE project_id = ? ORDER BY date DESC').all(projectId) as Array<{ title: string; date: string }>;
+      await obsidian.forUser(userId).writeProject({
+        name: p.name,
+        description: p.description ?? '',
+        status: p.status ?? 'active',
+        color: p.color ?? '#6366f1',
+        people: people.map((x) => x.name),
+        meetings,
+      });
+    } catch (err) {
+      console.error('[projects] vault sync failed:', err instanceof Error ? err.message : err);
+    }
+  })();
+}
 
 const CreateSchema = z.object({
   name: z.string().min(1),
@@ -48,6 +74,7 @@ projectsRouter.post('/', (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   const result = getDb().prepare('INSERT INTO projects (name, description, status, color, user_id) VALUES (?, ?, ?, ?, ?)').run(name, description, status, color, userId);
   const project = getDb().prepare('SELECT * FROM projects WHERE id = ?').get(result.lastInsertRowid);
+  syncProjectToVault(Number(result.lastInsertRowid), userId);
   res.status(201).json(ok(project));
 });
 
@@ -71,6 +98,7 @@ projectsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   if (fields.length === 0) { res.status(400).json(fail('No fields to update')); return; }
   getDb().prepare(`UPDATE projects SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND (user_id = ? OR user_id IS NULL)`).run(...values, Number(req.params['id']), userId);
   const updated = getDb().prepare('SELECT * FROM projects WHERE id = ?').get(Number(req.params['id']));
+  syncProjectToVault(Number(req.params['id']), userId);
   res.json(ok(updated));
 });
 
