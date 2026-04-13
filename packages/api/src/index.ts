@@ -9,6 +9,14 @@ import { telegramService } from './services/telegram.service';
 import { startNotificationScheduler } from './services/notification.service';
 import { authMiddleware } from './middleware/auth';
 
+// Catch-all crash protection — log and keep running
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL uncaughtException]', err?.stack || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL unhandledRejection]', reason);
+});
+
 const app = express();
 
 app.use(cors({

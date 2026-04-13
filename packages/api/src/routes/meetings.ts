@@ -222,18 +222,29 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthR
       const useOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
 
       if (useOpenAI) {
+        // Write to temp file and stream it to OpenAI (most reliable across SDK versions)
+        const tmp = path.join(require('os').tmpdir(), `oa-${Date.now()}-${audioName}`);
+        fs.writeFileSync(tmp, audioBuffer);
         try {
-          console.log(`[transcribe] OpenAI whisper-1 for ${finalMb.toFixed(1)}MB`);
-          const file = new File([audioBuffer], audioName, { type: 'audio/mpeg' });
-          const result = await openai.audio.transcriptions.create({ model: 'whisper-1', file, language: 'ru' });
+          console.log(`[transcribe] OpenAI whisper-1 for ${finalMb.toFixed(1)}MB (streaming from ${tmp})`);
+          const result = await openai.audio.transcriptions.create({
+            model: 'whisper-1',
+            file: fs.createReadStream(tmp),
+            language: 'ru',
+          });
           transcript = result.text;
+          console.log(`[transcribe] OpenAI returned ${transcript.length} chars`);
         } catch (err) {
-          console.warn('[transcribe] OpenAI failed, fallback to local:', err instanceof Error ? err.message : err);
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error('[transcribe] OpenAI failed:', msg);
           if (isLocalWhisperAvailable()) {
+            console.log('[transcribe] falling back to local whisper');
             transcript = await transcribeLocal(audioBuffer, audioName);
           } else {
             throw err;
           }
+        } finally {
+          try { fs.unlinkSync(tmp); } catch {}
         }
       } else if (isLocalWhisperAvailable()) {
         console.log(`[transcribe] local whisper.cpp for ${finalMb.toFixed(1)}MB (OpenAI limit exceeded)`);
