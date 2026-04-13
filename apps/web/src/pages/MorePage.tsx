@@ -6,7 +6,7 @@ import { useAuthStore } from '../store/auth.store';
 import {
   Columns3, BarChart3, CalendarDays, Users, Lightbulb, Flame,
   Target, FileText, LayoutDashboard, BookOpen, MessageCircle,
-  PieChart, GanttChart, FolderKanban, Sun, LogOut
+  PieChart, GanttChart, FolderKanban, Sun, LogOut, Shield
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -79,6 +79,18 @@ export function MorePage() {
             <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{user?.name}</div>
             <div className="text-xs text-gray-400 truncate">{user?.email}</div>
           </div>
+          {user?.role === 'admin' && (
+            <a
+              href="/admin.html"
+              target="_blank"
+              rel="noopener"
+              onClick={(e) => { e.stopPropagation(); }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+            >
+              <Shield size={14} />
+              {t('Админка', 'Admin')}
+            </a>
+          )}
           <button
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); logout(); window.location.href = '/login'; }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
