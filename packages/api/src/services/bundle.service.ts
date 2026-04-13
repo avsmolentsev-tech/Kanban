@@ -17,8 +17,9 @@ export interface BundleResult {
   sections: Record<string, number>;
 }
 
-/** Generate a NotebookLM-ready bundle markdown for a specific project, or all projects */
-export function generateBundle(projectIdOrAll: number | 'all'): BundleResult {
+/** Generate a NotebookLM-ready bundle markdown for a specific project, or all projects.
+ *  brief=true omits full meeting transcripts — only title, date, and 1-line TL;DR. */
+export function generateBundle(projectIdOrAll: number | 'all', brief = false): BundleResult {
   const db = getDb();
   const bundleDate = moscowDateString();
 
@@ -43,7 +44,7 @@ export function generateBundle(projectIdOrAll: number | 'all'): BundleResult {
 
   // Fetch all related data
   const meetings = projectIds.length > 0
-    ? db.prepare(`SELECT m.id, m.title, m.date, m.summary_raw, m.project_id FROM meetings m LEFT JOIN meeting_projects mp ON mp.meeting_id = m.id WHERE m.project_id IN (${idsPlaceholders}) OR mp.project_id IN (${idsPlaceholders}) GROUP BY m.id ORDER BY m.date DESC`).all(...projectIds, ...projectIds) as Meeting[]
+    ? db.prepare(`SELECT m.id, m.title, m.date, m.summary_raw, m.summary_structured, m.project_id FROM meetings m LEFT JOIN meeting_projects mp ON mp.meeting_id = m.id WHERE m.project_id IN (${idsPlaceholders}) OR mp.project_id IN (${idsPlaceholders}) GROUP BY m.id ORDER BY m.date DESC`).all(...projectIds, ...projectIds) as Array<Meeting & { summary_structured: string | null }>
     : [];
 
   const tasks = projectIds.length > 0
@@ -99,19 +100,32 @@ export function generateBundle(projectIdOrAll: number | 'all'): BundleResult {
     lines.push('');
   }
 
-  // Meetings with full transcripts
+  // Meetings — full transcripts (NotebookLM) or brief TL;DR (weekly digest)
   if (meetings.length > 0) {
     lines.push(`## Встречи (${meetings.length})`);
     lines.push('');
-    for (const m of meetings) {
-      lines.push(`### ${m.date} — ${m.title}`);
-      lines.push('');
-      if (m.summary_raw) {
-        lines.push(m.summary_raw);
+    if (brief) {
+      for (const m of meetings) {
+        let tldr = '';
+        if (m.summary_structured) {
+          try { tldr = (JSON.parse(m.summary_structured) as { summary?: string }).summary ?? ''; } catch {}
+        }
+        lines.push(`- **${m.date}** — ${m.title}${tldr ? `: ${tldr}` : ''}`);
       }
       lines.push('');
       lines.push('---');
       lines.push('');
+    } else {
+      for (const m of meetings) {
+        lines.push(`### ${m.date} — ${m.title}`);
+        lines.push('');
+        if (m.summary_raw) {
+          lines.push(m.summary_raw);
+        }
+        lines.push('');
+        lines.push('---');
+        lines.push('');
+      }
     }
   }
 
@@ -171,7 +185,7 @@ export function generateBundle(projectIdOrAll: number | 'all'): BundleResult {
   const bundleDir = path.join(config.vaultPath, 'NotebookLM-Bundles');
   if (!fs.existsSync(bundleDir)) fs.mkdirSync(bundleDir, { recursive: true });
 
-  const filename = `${bundleDate}-${filenameSuffix}.md`;
+  const filename = `${bundleDate}-${filenameSuffix}${brief ? '-brief' : ''}.md`;
   const filepath = path.join(bundleDir, filename);
   fs.writeFileSync(filepath, content, 'utf-8');
 

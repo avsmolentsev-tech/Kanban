@@ -118,7 +118,7 @@ function checkWeeklyReport(): void {
       // Generate and send PDF bundle for admin users
       if (user.id === getUsers()[0]?.id) {
         try {
-          const result = generateBundle('all');
+          const result = generateBundle('all', true);
           const fullPath = path.join(config.vaultPath, result.vaultPath);
           const formats = generateAllFormats(fullPath);
           if (formats.pdf) {
