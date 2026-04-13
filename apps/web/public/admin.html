@@ -67,6 +67,47 @@
 
     <div class="top-cards" id="top-cards"></div>
 
+    <!-- User edit modal -->
+    <div id="user-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;align-items:center;justify-content:center">
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;width:100%;max-width:440px;margin:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0">Редактировать пользователя</h3>
+          <button onclick="closeUserModal()" style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer">×</button>
+        </div>
+        <div id="user-modal-error" class="error" style="display:none;margin-bottom:12px"></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <label style="font-size:12px;color:#94a3b8">ID <span id="um-id" style="color:#fff"></span></label>
+          <label style="font-size:12px;color:#94a3b8">Имя
+            <input id="um-name" style="width:100%;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#fff;margin-top:4px" />
+          </label>
+          <label style="font-size:12px;color:#94a3b8">Email
+            <input id="um-email" type="email" style="width:100%;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#fff;margin-top:4px" />
+          </label>
+          <label style="font-size:12px;color:#94a3b8">Роль
+            <select id="um-role" style="width:100%;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#fff;margin-top:4px">
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+            </select>
+          </label>
+          <label style="font-size:12px;color:#94a3b8">Telegram ID
+            <input id="um-tg" style="width:100%;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#fff;margin-top:4px" placeholder="пусто — отвязать" />
+          </label>
+          <hr style="border:none;border-top:1px solid #334155;margin:8px 0" />
+          <label style="font-size:12px;color:#94a3b8">Сбросить пароль (необязательно)
+            <input id="um-password" type="text" placeholder="новый пароль (мин 4 символа)"
+              style="width:100%;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#fff;margin-top:4px" />
+          </label>
+          <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px">
+            <button class="btn" onclick="deleteUser()" style="background:#ef4444">🗑 Удалить</button>
+            <div style="display:flex;gap:8px">
+              <button class="refresh-btn" onclick="closeUserModal()">Отмена</button>
+              <button class="btn" onclick="saveUser()" style="background:#10b981">Сохранить</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <h2 style="font-size:18px;margin-bottom:16px">Users</h2>
     <div style="overflow-x:auto">
       <table>
@@ -185,7 +226,7 @@ function render(d) {
   `;
 
   document.getElementById('users-table').innerHTML = d.users.map(u => `
-    <tr>
+    <tr style="cursor:pointer" onclick="openUserModal(${u.id})" title="Клик — открыть редактор">
       <td>${u.id}</td>
       <td><strong>${u.name || '—'}</strong></td>
       <td>${u.email}</td>
@@ -210,6 +251,87 @@ function render(d) {
       <td style="font-size:12px;color:#64748b">${formatDate(u.created_at)}</td>
     </tr>
   `).join('');
+}
+
+let editingUserId = null;
+
+async function openUserModal(id) {
+  editingUserId = id;
+  document.getElementById('user-modal-error').style.display = 'none';
+  document.getElementById('um-password').value = '';
+  try {
+    const res = await fetch(API + '/admin/users/' + id, { headers: { Authorization: 'Bearer ' + token } });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    const u = data.data;
+    document.getElementById('um-id').textContent = u.id;
+    document.getElementById('um-name').value = u.name || '';
+    document.getElementById('um-email').value = u.email || '';
+    document.getElementById('um-role').value = u.role || 'user';
+    document.getElementById('um-tg').value = u.tg_id || '';
+    document.getElementById('user-modal').style.display = 'flex';
+  } catch (e) {
+    alert('Не удалось загрузить: ' + e.message);
+  }
+}
+
+function closeUserModal() {
+  editingUserId = null;
+  document.getElementById('user-modal').style.display = 'none';
+}
+
+async function saveUser() {
+  if (!editingUserId) return;
+  const errEl = document.getElementById('user-modal-error');
+  errEl.style.display = 'none';
+  const body = {
+    name: document.getElementById('um-name').value.trim() || undefined,
+    email: document.getElementById('um-email').value.trim() || undefined,
+    role: document.getElementById('um-role').value,
+    tg_id: document.getElementById('um-tg').value.trim() || null,
+  };
+  const newPassword = document.getElementById('um-password').value.trim();
+  try {
+    const r = await fetch(API + '/admin/users/' + editingUserId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error);
+
+    if (newPassword) {
+      const r2 = await fetch(API + '/admin/users/' + editingUserId + '/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      const d2 = await r2.json();
+      if (!d2.success) throw new Error(d2.error);
+    }
+    closeUserModal();
+    loadStats();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+async function deleteUser() {
+  if (!editingUserId) return;
+  if (!confirm('Удалить пользователя #' + editingUserId + ' со всеми его данными? Это необратимо.')) return;
+  try {
+    const r = await fetch(API + '/admin/users/' + editingUserId, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error);
+    closeUserModal();
+    loadStats();
+  } catch (e) {
+    alert('Ошибка: ' + e.message);
+  }
 }
 
 function showLogin() {

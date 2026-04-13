@@ -1,7 +1,17 @@
 import { Router, Response } from 'express';
+import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest } from '../middleware/auth';
+
+function requireAdmin(req: AuthRequest, res: Response): boolean {
+  if (!req.user || req.user.role !== 'admin') {
+    res.status(403).json(fail('Admin access required'));
+    return false;
+  }
+  return true;
+}
 
 export const adminRouter = Router();
 
@@ -102,4 +112,66 @@ adminRouter.get('/stats', (req: AuthRequest, res: Response) => {
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Error'));
   }
+});
+
+// GET /admin/users/:id — full user card for edit modal
+adminRouter.get('/users/:id', (req: AuthRequest, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const user = getDb().prepare('SELECT id, email, name, role, tg_id, created_at FROM users WHERE id = ?').get(Number(req.params['id']));
+  if (!user) { res.status(404).json(fail('User not found')); return; }
+  res.json(ok(user));
+});
+
+// PATCH /admin/users/:id — edit user fields (name, email, role, tg_id)
+const UpdateUserSchema = z.object({
+  name: z.string().min(1).optional(),
+  email: z.string().email().optional(),
+  role: z.enum(['user', 'admin']).optional(),
+  tg_id: z.string().nullable().optional(),
+});
+
+adminRouter.patch('/users/:id', (req: AuthRequest, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const parsed = UpdateUserSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const id = Number(req.params['id']);
+  const existing = getDb().prepare('SELECT id FROM users WHERE id = ?').get(id);
+  if (!existing) { res.status(404).json(fail('User not found')); return; }
+  const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
+  const values = Object.values(parsed.data).filter((v) => v !== undefined);
+  if (fields.length === 0) { res.status(400).json(fail('No fields to update')); return; }
+  getDb().prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values, id);
+  const updated = getDb().prepare('SELECT id, email, name, role, tg_id, created_at FROM users WHERE id = ?').get(id);
+  res.json(ok(updated));
+});
+
+// POST /admin/users/:id/reset-password — set a new password for a user
+adminRouter.post('/users/:id/reset-password', (req: AuthRequest, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const parsed = z.object({ password: z.string().min(4) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json(fail('Password too short (min 4 chars)')); return; }
+  const id = Number(req.params['id']);
+  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(id);
+  if (!user) { res.status(404).json(fail('User not found')); return; }
+  const hash = bcrypt.hashSync(parsed.data.password, 10);
+  getDb().prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id);
+  res.json(ok({ updated: true }));
+});
+
+// DELETE /admin/users/:id — delete user + all their data (cascade)
+adminRouter.delete('/users/:id', (req: AuthRequest, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const id = Number(req.params['id']);
+  if (req.user && req.user.id === id) { res.status(400).json(fail('Нельзя удалить себя')); return; }
+  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(id);
+  if (!user) { res.status(404).json(fail('User not found')); return; }
+  const db = getDb();
+  const tx = db.transaction(() => {
+    for (const t of ['tasks', 'projects', 'meetings', 'people', 'ideas', 'documents', 'habits', 'goals']) {
+      try { db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(id); } catch {}
+    }
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  });
+  tx();
+  res.json(ok({ deleted: true }));
 });
