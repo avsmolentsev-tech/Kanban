@@ -262,6 +262,7 @@ export function initDb(): void {
   // Habits: remind_time column
   try { _db.exec("ALTER TABLE habits ADD COLUMN remind_time TEXT"); } catch {}
   try { _db.exec("ALTER TABLE meetings ADD COLUMN sync_vault INTEGER NOT NULL DEFAULT 1"); } catch {}
+  try { _db.exec("ALTER TABLE meetings ADD COLUMN updated_at TEXT"); } catch {}
 
   // Users table
   try {
@@ -547,6 +548,7 @@ export function initTestDb(): void {
   // Habits: remind_time column
   try { _db.exec("ALTER TABLE habits ADD COLUMN remind_time TEXT"); } catch {}
   try { _db.exec("ALTER TABLE meetings ADD COLUMN sync_vault INTEGER NOT NULL DEFAULT 1"); } catch {}
+  try { _db.exec("ALTER TABLE meetings ADD COLUMN updated_at TEXT"); } catch {}
 }
 
 export function closeDb(): void {
