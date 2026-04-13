@@ -166,7 +166,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
         <div className="space-y-4">
           {/* Title */}
           <input
-            className="w-full text-lg font-semibold border-b border-transparent hover:border-gray-300 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
+            className="w-full text-lg font-semibold bg-transparent text-gray-800 dark:text-gray-100 border-b border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
             value={form.title}
             onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
             onBlur={() => handleBlur('title')}
@@ -177,7 +177,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
           <div>
             <div className="text-xs text-gray-500 mb-1">{t('Статус', 'Status')}</div>
             <select
-              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
+              className="w-full text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
               value={form.status}
               onChange={(e) => handleSelectChange('status', e.target.value as TaskStatus)}
               disabled={saving}
@@ -192,7 +192,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
           <div>
             <div className="text-xs text-gray-500 mb-1">{t('Проект', 'Project')}</div>
             <select
-              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
+              className="w-full text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
               value={form.project_id ?? ''}
               onChange={(e) => handleSelectChange('project_id', e.target.value === '' ? null : Number(e.target.value))}
               disabled={saving}
@@ -228,7 +228,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
                     await apiPost(`/tags/tasks/${task.id}/tags/${tag.id}`);
                     setTaskTags((prev) => [...prev, tag]);
                     onUpdated();
-                  }} className="px-2 py-0.5 rounded-full text-xs border border-gray-200 hover:border-indigo-300 text-gray-600"
+                  }} className="px-2 py-0.5 rounded-full text-xs border border-gray-200 dark:border-gray-600 hover:border-indigo-300 text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700"
                     style={{ borderColor: tag.color, color: tag.color }}>
                     + {tag.name}
                   </button>
@@ -238,7 +238,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             {/* Create new tag */}
             {showTagInput ? (
               <div className="flex gap-1.5">
-                <input autoFocus className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-300"
+                <input autoFocus className="flex-1 text-xs border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1 focus:outline-none focus:border-indigo-300"
                   placeholder={t('Название метки', 'Tag name')} value={newTagName} onChange={(e) => setNewTagName(e.target.value)}
                   onKeyDown={async (e) => {
                     if (e.key === 'Enter' && newTagName.trim()) {
@@ -270,7 +270,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             {dependencies.map(dep => (
               <div key={dep.id} className="flex items-center justify-between py-1 group">
                 <div className="flex items-center gap-2 text-sm">
-                  <span className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[10px] ${dep.status === 'done' ? 'bg-green-500 border-green-500 text-white' : dep.status === 'in_progress' ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-300 text-gray-400'}`}>
+                  <span className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[10px] ${dep.status === 'done' ? 'bg-green-500 border-green-500 text-white' : dep.status === 'in_progress' ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-300 dark:border-gray-600 text-gray-400'}`}>
                     {dep.status === 'done' ? '✓' : dep.status === 'in_progress' ? '►' : '○'}
                   </span>
                   <span className={dep.status === 'done' ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-200'}>{dep.title}</span>
@@ -291,7 +291,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
               <div className="mt-1">
                 <select
                   autoFocus
-                  className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
+                  className="w-full text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
                   value=""
                   onChange={async (e) => {
                     const depId = Number(e.target.value);
@@ -342,7 +342,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             <div className="text-xs text-gray-500 mb-1">{t('Дедлайн', 'Deadline')}</div>
             <input
               type="date"
-              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
+              className="w-full text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
               value={form.due_date}
               onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
               onBlur={() => handleBlur('due_date')}
@@ -363,7 +363,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
                     setForm((f) => ({ ...f, recurrence: opt.value }));
                     save({ recurrence: opt.value } as Partial<FormState>);
                   }}
-                  className={`px-2.5 py-1 text-xs rounded border transition-colors ${form.recurrence === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}
+                  className={`px-2.5 py-1 text-xs rounded border transition-colors ${form.recurrence === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-indigo-300'}`}
                 >
                   {opt.label}
                 </button>
@@ -375,7 +375,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
           <div>
             <div className="text-xs text-gray-500 mb-1">{t('Описание', 'Description')}</div>
             <textarea
-              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-none"
+              className="w-full text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-none"
               rows={4}
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
@@ -393,8 +393,8 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
                   const assigned = assignedIds.has(p.id);
                   return (
                     <button key={p.id} onClick={() => togglePerson(p.id)} disabled={saving}
-                      className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs border transition-colors ${assigned ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'}`}>
-                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${assigned ? 'bg-indigo-400' : 'bg-gray-200'}`}>
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs border transition-colors ${assigned ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-indigo-400'}`}>
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${assigned ? 'bg-indigo-400' : 'bg-gray-200 dark:bg-gray-600 dark:text-gray-200'}`}>
                         {p.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
                       </span>
                       {p.name}
@@ -436,7 +436,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
                     await tasksApi.update(sub.id, { status: next });
                     onUpdated();
                   }}
-                  className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[10px] ${sub.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300'}`}
+                  className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[10px] ${sub.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 dark:border-gray-600'}`}
                 >
                   {sub.status === 'done' ? '✓' : ''}
                 </button>
@@ -500,7 +500,7 @@ function SubtaskInput({ taskId, projectId, onCreated }: { taskId: number; projec
     <div className="flex gap-2 mt-1">
       <input
         autoFocus
-        className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-300"
+        className="flex-1 text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1 focus:outline-none focus:border-indigo-300"
         placeholder={t('Название подзадачи', 'Subtask title')}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
@@ -522,7 +522,7 @@ function RatingField({ label, value, onChange, disabled }: { label: string; valu
             type="button"
             disabled={disabled}
             onClick={() => onChange(n)}
-            className={`w-7 h-7 text-xs rounded border transition-colors ${n <= value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-400 border-gray-200 hover:border-indigo-300'}`}
+            className={`w-7 h-7 text-xs rounded border transition-colors ${n <= value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-600 hover:border-indigo-300'}`}
           >
             {n}
           </button>
