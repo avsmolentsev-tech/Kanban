@@ -7,18 +7,19 @@ import type { Task, Project, Person } from '@pis/shared';
 import { TaskCard } from '../kanban/TaskCard';
 import { AddTaskModal } from '../kanban/AddTaskModal';
 
-export type TimePeriod = 'today' | 'week' | 'month' | 'year';
+export type TimePeriod = 'today' | 'tomorrow' | 'week' | 'month' | 'year';
 
 export { classifyTask };
 
 const PERIOD_LABELS: Record<TimePeriod, string> = {
   today: 'Сегодня',
+  tomorrow: 'Завтра',
   week: 'На неделе',
   month: 'В этом месяце',
   year: 'В этом году',
 };
 
-const PERIODS: TimePeriod[] = ['today', 'week', 'month', 'year'];
+const PERIODS: TimePeriod[] = ['today', 'tomorrow', 'week', 'month', 'year'];
 
 function classifyTask(dueDate: string | null): TimePeriod | 'none' {
   if (!dueDate) return 'none';
@@ -26,6 +27,7 @@ function classifyTask(dueDate: string | null): TimePeriod | 'none' {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+  const dayAfterTomorrow = new Date(today); dayAfterTomorrow.setDate(today.getDate() + 2);
 
   // Overdue → today
   if (due < today) return 'today';
@@ -33,10 +35,13 @@ function classifyTask(dueDate: string | null): TimePeriod | 'none' {
   // Today
   if (due >= today && due < tomorrow) return 'today';
 
-  // This week (next 7 days after today)
+  // Tomorrow
+  if (due >= tomorrow && due < dayAfterTomorrow) return 'tomorrow';
+
+  // This week (days 3-7 from today)
   const weekEnd = new Date(today);
   weekEnd.setDate(today.getDate() + 7);
-  if (due >= tomorrow && due < weekEnd) return 'week';
+  if (due >= dayAfterTomorrow && due < weekEnd) return 'week';
 
   // This month (rest of month after this week)
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
@@ -52,6 +57,7 @@ function computePeriodDueDate(period: TimePeriod): string {
   const now = new Date();
   switch (period) {
     case 'today': return now.toISOString().split('T')[0]!;
+    case 'tomorrow': { const d = new Date(now); d.setDate(now.getDate() + 1); return d.toISOString().split('T')[0]!; }
     case 'week': { const fri = new Date(now); fri.setDate(now.getDate() + (5 - now.getDay())); return fri.toISOString().split('T')[0]!; }
     case 'month': { const end = new Date(now.getFullYear(), now.getMonth() + 1, 0); return end.toISOString().split('T')[0]!; }
     case 'year': return `${now.getFullYear()}-12-31`;
@@ -152,7 +158,7 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
       <div className="p-4 pt-2">
         <SortableContext items={projectOrder.map((p) => `project-row-${p.project?.id ?? 'none'}`)} strategy={verticalListSortingStrategy}>
           {projectOrder.map(({ project, tasks: pTasks }) => {
-            const grouped: Record<TimePeriod | 'none' | 'done' | 'someday' | 'backlog', Task[]> = { backlog: [], today: [], week: [], month: [], year: [], none: [], done: [], someday: [] };
+            const grouped: Record<TimePeriod | 'none' | 'done' | 'someday' | 'backlog', Task[]> = { backlog: [], today: [], tomorrow: [], week: [], month: [], year: [], none: [], done: [], someday: [] };
             for (const t of pTasks) {
               if (t.status === 'done') {
                 grouped.done.push(t);

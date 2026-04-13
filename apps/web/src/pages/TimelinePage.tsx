@@ -22,6 +22,11 @@ function computeDueDate(period: TimePeriod | 'none'): string | null {
   switch (period) {
     case 'today':
       return localDateStr(now);
+    case 'tomorrow': {
+      const d = new Date(now);
+      d.setDate(now.getDate() + 1);
+      return localDateStr(d);
+    }
     case 'week': {
       const d = new Date(now);
       d.setDate(now.getDate() + 5);
