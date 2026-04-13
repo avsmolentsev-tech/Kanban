@@ -6,7 +6,13 @@ import { useDroppable } from '@dnd-kit/core';
 import type { Task, Project, TaskStatus, Person } from '@pis/shared';
 import { TaskCard } from './TaskCard';
 import { TaskDetailPanel } from './TaskDetailPanel';
-import { AddTaskModal } from './AddTaskModal';
+import { TaskCreatePanel, type CreatePeriod } from './TaskCreatePanel';
+
+function statusToPeriod(status: TaskStatus): CreatePeriod {
+  if (status === 'backlog') return 'backlog';
+  if (status === 'someday') return 'someday';
+  return 'today';
+}
 import { AddProjectForm } from './AddProjectForm';
 import { tasksApi } from '../../api/tasks.api';
 import { apiGet, apiPost } from '../../api/client';
@@ -121,17 +127,20 @@ function SwimlaneColumn({ droppableId, status, tasks, projects, people, onTaskCl
           </div>
         ))}
       </div>
-      {adding ? (
-        <div className="mt-2">
-          <AddTaskModal status={status} projectId={projectId} people={people} onCreated={() => { setAdding(false); onRefresh(); }} onCancel={() => setAdding(false)} />
-        </div>
-      ) : (
-        <div className="mt-2 flex items-center justify-center gap-2">
-          <button onClick={() => setAdding(true)} className="text-xs text-gray-400 hover:text-indigo-600 transition-colors">{t('+ Добавить', '+ Add')}</button>
-          <span className="text-gray-300 dark:text-gray-600">|</span>
-          <TemplateDropdown onSelect={() => {}} onRefresh={onRefresh} />
-        </div>
-      )}
+      <div className="mt-2 flex items-center justify-center gap-2">
+        <button onClick={() => setAdding(true)} className="text-xs text-gray-400 hover:text-indigo-600 transition-colors">{t('+ Добавить', '+ Add')}</button>
+        <span className="text-gray-300 dark:text-gray-600">|</span>
+        <TemplateDropdown onSelect={() => {}} onRefresh={onRefresh} />
+      </div>
+      <TaskCreatePanel
+        open={adding}
+        projects={projects}
+        people={people}
+        initialProjectId={projectId}
+        initialPeriod={statusToPeriod(status)}
+        onClose={() => setAdding(false)}
+        onCreated={onRefresh}
+      />
     </div>
   );
 }

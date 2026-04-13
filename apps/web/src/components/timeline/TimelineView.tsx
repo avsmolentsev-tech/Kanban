@@ -5,7 +5,7 @@ import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-
 import { CSS } from '@dnd-kit/utilities';
 import type { Task, Project, Person } from '@pis/shared';
 import { TaskCard } from '../kanban/TaskCard';
-import { AddTaskModal } from '../kanban/AddTaskModal';
+import { TaskCreatePanel, type CreatePeriod } from '../kanban/TaskCreatePanel';
 
 export type TimePeriod = 'today' | 'tomorrow' | 'week' | 'month' | 'year';
 
@@ -53,21 +53,18 @@ function classifyTask(dueDate: string | null): TimePeriod | 'none' {
   return 'year';
 }
 
-function computePeriodDueDate(period: TimePeriod): string {
-  const now = new Date();
-  switch (period) {
-    case 'today': return now.toISOString().split('T')[0]!;
-    case 'tomorrow': { const d = new Date(now); d.setDate(now.getDate() + 1); return d.toISOString().split('T')[0]!; }
-    case 'week': { const fri = new Date(now); fri.setDate(now.getDate() + (5 - now.getDay())); return fri.toISOString().split('T')[0]!; }
-    case 'month': { const end = new Date(now.getFullYear(), now.getMonth() + 1, 0); return end.toISOString().split('T')[0]!; }
-    case 'year': return `${now.getFullYear()}-12-31`;
-  }
+function columnToPeriod(col: TimePeriod | 'none' | 'done' | 'someday' | 'backlog'): CreatePeriod {
+  if (col === 'done') return 'today';
+  if (col === 'none') return 'none';
+  if (col === 'someday') return 'someday';
+  if (col === 'backlog') return 'backlog';
+  return col;
 }
 
-function TimelineColumn({ period, tasks, projects, onTaskClick, onToggleDone, projectId, people, onRefresh, dueDate }: {
+function TimelineColumn({ period, tasks, projects, onTaskClick, onToggleDone, projectId, people, onRefresh }: {
   period: TimePeriod | 'none' | 'done' | 'someday' | 'backlog'; tasks: Task[]; projects: Project[]; onTaskClick: (t: Task) => void;
   onToggleDone: (id: number, newStatus: import('@pis/shared').TaskStatus) => void;
-  projectId: number | null; people: Person[]; onRefresh: () => void; dueDate?: string | null;
+  projectId: number | null; people: Person[]; onRefresh: () => void;
 }) {
   // Unique droppable ID per project+period combination
   const droppableId = `timeline-${projectId ?? 'none'}-${period}`;
@@ -82,16 +79,18 @@ function TimelineColumn({ period, tasks, projects, onTaskClick, onToggleDone, pr
         {tasks.map((t) => (
           <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined} onClick={() => onTaskClick(t)} onToggleDone={onToggleDone} dragMode="draggable" />
         ))}
-        {tasks.length === 0 && !adding && <div className="text-gray-300 text-xs text-center py-4">Перетащи сюда</div>}
+        {tasks.length === 0 && <div className="text-gray-300 text-xs text-center py-4">Перетащи сюда</div>}
       </div>
-      {adding ? (
-        <div className="mt-2">
-          <AddTaskModal status="todo" projectId={projectId} people={people} dueDate={dueDate}
-            onCreated={() => { setAdding(false); onRefresh(); }} onCancel={() => setAdding(false)} />
-        </div>
-      ) : (
-        <button onClick={() => setAdding(true)} className="mt-2 text-xs text-gray-400 hover:text-indigo-600 transition-colors self-center">+ Добавить</button>
-      )}
+      <button onClick={() => setAdding(true)} className="mt-2 text-xs text-gray-400 hover:text-indigo-600 transition-colors self-center">+ Добавить</button>
+      <TaskCreatePanel
+        open={adding}
+        projects={projects}
+        people={people}
+        initialProjectId={projectId}
+        initialPeriod={columnToPeriod(period)}
+        onClose={() => setAdding(false)}
+        onCreated={onRefresh}
+      />
     </div>
   );
 }
@@ -195,18 +194,17 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
                     {/* Period columns */}
                     <div className="flex gap-4">
                       <TimelineColumn period="backlog" tasks={grouped.backlog} projects={projects} onTaskClick={onTaskClick}
-                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} />
                       {PERIODS.map((period) => (
                         <TimelineColumn key={`${project?.id ?? 'none'}-${period}`} period={period} tasks={grouped[period]} projects={projects}
-                          onTaskClick={onTaskClick} onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh}
-                          dueDate={computePeriodDueDate(period)} />
+                          onTaskClick={onTaskClick} onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} />
                       ))}
                       <TimelineColumn period="none" tasks={grouped.none} projects={projects} onTaskClick={onTaskClick}
-                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} />
                       <TimelineColumn period="done" tasks={grouped.done} projects={projects} onTaskClick={onTaskClick}
-                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} />
                       <TimelineColumn period="someday" tasks={grouped.someday} projects={projects} onTaskClick={onTaskClick}
-                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} dueDate={null} />
+                        onToggleDone={onToggleDone} projectId={project?.id ?? null} people={people} onRefresh={onRefresh} />
                     </div>
                   </div>
                 )}
