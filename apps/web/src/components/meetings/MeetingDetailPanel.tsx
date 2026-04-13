@@ -101,11 +101,11 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
       {meeting && (
         <div className="flex flex-col h-full">
           {/* Tabs */}
-          <div className="flex border-b border-gray-200 mb-4 -mt-2">
+          <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4 -mt-2">
             <button
               onClick={() => setTab('details')}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                tab === 'details' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                tab === 'details' ? 'border-indigo-600 text-indigo-500 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
               }`}
             >
               {t('Детали', 'Details')}
@@ -113,7 +113,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
             <button
               onClick={() => setTab('chat')}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                tab === 'chat' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                tab === 'chat' ? 'border-indigo-600 text-indigo-500 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
               }`}
             >
               {t('Обсудить с AI', 'Discuss with AI')}
@@ -124,7 +124,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
             <div className="space-y-4 flex-1 overflow-auto">
               <div>
                 <input
-                  className="w-full text-lg font-semibold border-b border-transparent hover:border-gray-300 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
+                  className="w-full text-lg font-semibold bg-transparent text-gray-900 dark:text-gray-100 border-b border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
                   value={form.title ?? ''}
                   onChange={(e) => handleChange('title', e.target.value)}
                   onBlur={() => handleBlur('title')}
@@ -132,13 +132,13 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
               </div>
 
               <div>
-                <div className="text-xs text-gray-500 mb-1">{t('Дата', 'Date')}</div>
-                <input type="date" className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t('Дата', 'Date')}</div>
+                <input type="date" className="w-full text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500"
                   value={form.date ?? ''} onChange={(e) => handleChange('date', e.target.value)} onBlur={() => handleBlur('date')} />
               </div>
 
               <div>
-                <div className="text-xs text-gray-500 mb-1.5">{t('Проекты (можно несколько)', 'Projects (multiple allowed)')}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">{t('Проекты (можно несколько)', 'Projects (multiple allowed)')}</div>
                 <div className="flex flex-wrap gap-2">
                   {projects.filter((p) => !p.archived).map((p) => {
                     const active = projectIds.includes(p.id);
@@ -158,7 +158,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                             alert(t('Ошибка: ', 'Error: ') + (err instanceof Error ? err.message : 'unknown'));
                           }
                         }}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${active ? 'border-transparent text-white' : 'border-gray-200 text-gray-600 bg-white hover:border-gray-300'}`}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${active ? 'border-transparent text-white' : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600'}`}
                         style={active ? { backgroundColor: p.color, borderColor: p.color } : {}}
                       >
                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: active ? 'rgba(255,255,255,0.7)' : p.color }} />
@@ -181,27 +181,27 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
               )}
 
               <div>
-                <div className="text-xs text-gray-500 mb-1">{t('Содержание / транскрипция', 'Content / transcription')}</div>
-                <textarea className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-y"
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t('Содержание / транскрипция', 'Content / transcription')}</div>
+                <textarea className="w-full text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 resize-y placeholder-gray-400 dark:placeholder-gray-500"
                   rows={12} value={form.summary_raw ?? ''} onChange={(e) => handleChange('summary_raw', e.target.value)}
                   onBlur={() => handleBlur('summary_raw')} placeholder={t('Текст встречи, заметки, транскрипция...', 'Meeting text, notes, transcription...')} />
               </div>
 
               {!!(meeting as unknown as Record<string, unknown>)['vault_path'] && (
-                <div className="text-xs text-gray-400 flex items-center gap-1">
+                <div className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
                   <span>Obsidian:</span>
                   <a href={`obsidian://open?vault=ObsidianVault&file=${encodeURIComponent(String((meeting as unknown as Record<string, unknown>)['vault_path']).replace('.md', ''))}`}
-                    className="text-indigo-500 hover:text-indigo-700 underline">
+                    className="text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 underline">
                     {String((meeting as unknown as Record<string, unknown>)['vault_path'])}
                   </a>
                 </div>
               )}
 
-              <div className="text-xs text-gray-400">{t('Создано: ', 'Created: ')}{meeting.created_at}</div>
+              <div className="text-xs text-gray-400 dark:text-gray-500">{t('Создано: ', 'Created: ')}{meeting.created_at}</div>
 
               {onDeleted && (
                 <button onClick={async () => { if (confirm(t('Удалить встречу?', 'Delete meeting?'))) { await meetingsApi.delete(meeting.id); onDeleted(); onClose(); } }}
-                  className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors">
+                  className="w-full py-2 text-sm text-red-500 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-900/40 transition-colors">
                   {t('Удалить встречу', 'Delete meeting')}
                 </button>
               )}
@@ -213,8 +213,8 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
               {/* Chat messages */}
               <div className="flex-1 overflow-auto space-y-3 mb-3">
                 {chatMessages.length === 0 && (
-                  <div className="text-sm text-gray-400 space-y-2 p-3 bg-gray-50 rounded-lg">
-                    <div className="font-medium text-gray-500">{t('Спроси что угодно о встрече:', 'Ask anything about the meeting:')}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400 space-y-2 p-3 bg-gray-50 dark:bg-gray-800/60 rounded-lg">
+                    <div className="font-medium text-gray-600 dark:text-gray-300">{t('Спроси что угодно о встрече:', 'Ask anything about the meeting:')}</div>
                     <div>• {t('«Выдели ключевые договорённости»', '"Highlight key agreements"')}</div>
                     <div>• {t('«Какие задачи нужно создать?»', '"What tasks should be created?"')}</div>
                     <div>• {t('«Кратко резюмируй встречу»', '"Briefly summarize the meeting"')}</div>
@@ -224,15 +224,15 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                 {chatMessages.map((msg, i) => (
                   <div key={i} className={`text-sm px-3 py-2 rounded-lg ${
                     msg.role === 'user'
-                      ? 'bg-indigo-50 text-indigo-800 ml-8'
-                      : 'bg-gray-50 text-gray-700 mr-8'
+                      ? 'bg-indigo-50 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200 ml-8'
+                      : 'bg-gray-50 text-gray-700 dark:bg-gray-800/60 dark:text-gray-200 mr-8'
                   }`}>
-                    <div className="text-xs font-medium mb-1 text-gray-400">{msg.role === 'user' ? t('Вы', 'You') : 'AI'}</div>
+                    <div className="text-xs font-medium mb-1 text-gray-400 dark:text-gray-500">{msg.role === 'user' ? t('Вы', 'You') : 'AI'}</div>
                     <div className="whitespace-pre-wrap">{msg.content}</div>
                   </div>
                 ))}
                 {chatLoading && (
-                  <div className="text-sm text-gray-400 px-3 py-2">{t('Думаю...', 'Thinking...')}</div>
+                  <div className="text-sm text-gray-400 dark:text-gray-500 px-3 py-2">{t('Думаю...', 'Thinking...')}</div>
                 )}
                 <div ref={chatEndRef} />
               </div>
@@ -240,7 +240,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
               {/* Chat input */}
               <div className="flex gap-2">
                 <input
-                  className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-300"
+                  className="flex-1 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
                   placeholder={t('Спросите о встрече...', 'Ask about the meeting...')}
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
