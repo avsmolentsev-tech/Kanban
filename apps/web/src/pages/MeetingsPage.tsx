@@ -41,19 +41,34 @@ function classifyMeeting(date: string | null): TimePeriod | 'none' {
   return 'year';
 }
 
+const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  queued: { label: '⏳ В очереди', color: 'bg-gray-100 dark:bg-gray-700/60 text-gray-700 dark:text-gray-200' },
+  compressing: { label: '🗜️ Сжимаем', color: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200' },
+  transcribing: { label: '🎤 Транскрибируем', color: 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200' },
+  summarizing: { label: '✍️ Резюме', color: 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-200' },
+  failed: { label: '⚠️ Ошибка', color: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-200' },
+};
+
 function MeetingCard({ meeting, project, onClick }: { meeting: Meeting; project?: Project; onClick: () => void }) {
+  const status = (meeting as unknown as Record<string, unknown>)['processing_status'] as string | undefined;
+  const statusInfo = status && status !== 'done' ? STATUS_LABELS[status] : null;
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-xl border border-gray-200 p-3 cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all"
+      className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-sm transition-all"
     >
       <div className="flex items-center gap-2 mb-1">
         {project && <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: project.color }} />}
-        <div className="font-medium text-sm text-gray-800 truncate">{meeting.title}</div>
+        <div className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">{meeting.title}</div>
       </div>
-      <div className="text-xs text-gray-400">{meeting.date}</div>
-      {meeting.summary_raw && (
-        <p className="text-xs text-gray-500 mt-1.5 line-clamp-2 leading-relaxed">{meeting.summary_raw.slice(0, 100)}</p>
+      <div className="text-xs text-gray-400 dark:text-gray-500">{meeting.date}</div>
+      {statusInfo && (
+        <div className={`mt-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${statusInfo.color}`}>
+          {statusInfo.label}
+        </div>
+      )}
+      {meeting.summary_raw && !statusInfo && (
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 line-clamp-2 leading-relaxed">{meeting.summary_raw.slice(0, 100)}</p>
       )}
     </div>
   );
@@ -108,6 +123,19 @@ export function MeetingsPage() {
   };
   useEffect(load, []);
 
+  // Auto-poll meetings list while any meeting is processing
+  useEffect(() => {
+    const anyProcessing = meetings.some((m) => {
+      const s = (m as unknown as Record<string, unknown>)['processing_status'];
+      return s && s !== 'done' && s !== 'failed';
+    });
+    if (!anyProcessing) return;
+    const timer = setInterval(() => {
+      meetingsApi.list().then(setMeetings);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [meetings]);
+
   const projectMap = new Map(projects.map((p) => [p.id, p]));
   const activeProjects = projects.filter((p) => !p.archived);
 
@@ -138,22 +166,15 @@ export function MeetingsPage() {
         setSubmitStage('transcribing');
         const form = new FormData();
         form.append('audio', newFile);
+        // Background job: server returns 202 immediately
         await apiClient.post(`/meetings/${created.id}/transcribe`, form, {
           headers: { 'Content-Type': 'multipart/form-data' },
-          timeout: 600000,
+          timeout: 120000, // upload timeout, not transcription wait
         });
-        setSubmitStage('summarizing');
-        try {
-          await apiClient.post(`/meetings/${created.id}/summarize`);
-        } catch { /* summary optional — transcription already in body */ }
       }
 
       setNewTitle(''); setNewDate(''); setNewProjectIds([]); setNewFile(null); setNewSyncVault(true); setAdding(false);
       load();
-      if (created?.id) {
-        const full = await meetingsApi.get(created.id);
-        setSelected(full as unknown as Meeting);
-      }
     } catch (err) {
       alert(t('Ошибка: ', 'Error: ') + (err instanceof Error ? err.message : 'unknown'));
     } finally { setSubmitting(false); setSubmitStage(''); }

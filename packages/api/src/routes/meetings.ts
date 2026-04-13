@@ -188,108 +188,156 @@ meetingsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   res.json(ok({ deleted: true }));
 });
 
-// Transcribe audio file and attach to meeting
-meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthRequest, res: Response) => {
-  const id = Number(req.params['id']);
-  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-  if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
+// Heavy background pipeline: compress → transcribe → summarize → save → sync vault
+async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, originalName: string, userId: number | null, autoSummarize: boolean): Promise<void> {
+  const db = getDb();
+  const setStatus = (status: string | null, errMsg?: string | null): void => {
+    db.prepare('UPDATE meetings SET processing_status = ?, processing_error = ? WHERE id = ?').run(status, errMsg ?? null, meetingId);
+  };
 
   try {
-    let transcript = '';
+    const filename = originalName || 'audio.ogg';
+    const origMb = fileBuffer.length / 1024 / 1024;
+    const OPENAI_LIMIT_MB = 24;
+    const canOpenAI = !!config.openaiApiKey;
 
-    if (req.file) {
-      const filename = req.file.originalname || 'audio.ogg';
-      const origMb = req.file.buffer.length / 1024 / 1024;
-      const OPENAI_LIMIT_MB = 24;
-      const canOpenAI = !!config.openaiApiKey;
-
-      // Step 1: always pre-compress to small MP3 (16kHz mono 32kbps, ~15MB per hour of voice).
-      // Works for ogg/mp3/mp4/m4a/webm/wav/flac/mov — anything ffmpeg can read.
-      let audioBuffer = req.file.buffer;
-      let audioName = filename;
-      try {
-        console.log(`[transcribe] pre-compressing ${origMb.toFixed(1)}MB ${filename}`);
-        const compressed = await compressForTranscription(req.file.buffer, filename);
-        const compMb = compressed.length / 1024 / 1024;
-        console.log(`[transcribe] compressed to ${compMb.toFixed(1)}MB MP3 (${(origMb > 0 ? (1 - compMb / origMb) * 100 : 0).toFixed(0)}% smaller)`);
-        audioBuffer = compressed;
-        audioName = filename.replace(/\.[^.]+$/, '') + '.mp3';
-      } catch (err) {
-        console.warn('[transcribe] compression failed, using original:', err instanceof Error ? err.message : err);
-      }
-
-      const finalMb = audioBuffer.length / 1024 / 1024;
-      const useOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
-
-      if (useOpenAI) {
-        // Write to temp file and stream it to OpenAI (most reliable across SDK versions)
-        const tmp = path.join(require('os').tmpdir(), `oa-${Date.now()}-${audioName}`);
-        fs.writeFileSync(tmp, audioBuffer);
-        try {
-          console.log(`[transcribe] OpenAI whisper-1 for ${finalMb.toFixed(1)}MB (streaming from ${tmp})`);
-          const result = await openai.audio.transcriptions.create({
-            model: 'whisper-1',
-            file: fs.createReadStream(tmp),
-            language: 'ru',
-          });
-          transcript = result.text;
-          console.log(`[transcribe] OpenAI returned ${transcript.length} chars`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.error('[transcribe] OpenAI failed:', msg);
-          if (isLocalWhisperAvailable()) {
-            console.log('[transcribe] falling back to local whisper');
-            transcript = await transcribeLocal(audioBuffer, audioName);
-          } else {
-            throw err;
-          }
-        } finally {
-          try { fs.unlinkSync(tmp); } catch {}
-        }
-      } else if (isLocalWhisperAvailable()) {
-        console.log(`[transcribe] local whisper.cpp for ${finalMb.toFixed(1)}MB (OpenAI limit exceeded)`);
-        transcript = await transcribeLocal(audioBuffer, audioName);
-      } else {
-        throw new Error('No transcription backend available');
-      }
-    } else if (req.body.text) {
-      transcript = req.body.text;
-    } else {
-      res.status(400).json(fail('No audio file or text provided'));
-      return;
+    // Step 1: pre-compress to small MP3
+    setStatus('compressing');
+    let audioBuffer = fileBuffer;
+    let audioName = filename;
+    try {
+      console.log(`[bg-job ${meetingId}] pre-compressing ${origMb.toFixed(1)}MB ${filename}`);
+      const compressed = await compressForTranscription(fileBuffer, filename);
+      audioBuffer = compressed;
+      audioName = filename.replace(/\.[^.]+$/, '') + '.mp3';
+      console.log(`[bg-job ${meetingId}] compressed → ${(compressed.length / 1024 / 1024).toFixed(1)}MB`);
+    } catch (err) {
+      console.warn(`[bg-job ${meetingId}] compression failed, using original:`, err instanceof Error ? err.message : err);
     }
 
-    // Append transcript to summary
+    // Step 2: transcribe
+    setStatus('transcribing');
+    let transcript = '';
+    const finalMb = audioBuffer.length / 1024 / 1024;
+    const useOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
+
+    if (useOpenAI) {
+      const tmp = path.join(require('os').tmpdir(), `oa-${Date.now()}-${audioName}`);
+      fs.writeFileSync(tmp, audioBuffer);
+      try {
+        console.log(`[bg-job ${meetingId}] OpenAI whisper-1 for ${finalMb.toFixed(1)}MB`);
+        const result = await openai.audio.transcriptions.create({
+          model: 'whisper-1',
+          file: fs.createReadStream(tmp),
+          language: 'ru',
+        });
+        transcript = result.text;
+        console.log(`[bg-job ${meetingId}] OpenAI returned ${transcript.length} chars`);
+      } catch (err) {
+        console.error(`[bg-job ${meetingId}] OpenAI failed:`, err instanceof Error ? err.message : err);
+        if (isLocalWhisperAvailable()) {
+          console.log(`[bg-job ${meetingId}] falling back to local whisper`);
+          transcript = await transcribeLocal(audioBuffer, audioName);
+        } else {
+          throw err;
+        }
+      } finally {
+        try { fs.unlinkSync(tmp); } catch {}
+      }
+    } else if (isLocalWhisperAvailable()) {
+      console.log(`[bg-job ${meetingId}] local whisper.cpp for ${finalMb.toFixed(1)}MB`);
+      transcript = await transcribeLocal(audioBuffer, audioName);
+    } else {
+      throw new Error('No transcription backend available');
+    }
+
+    // Step 3: save transcript
+    const meeting = db.prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId) as Record<string, unknown> | undefined;
+    if (!meeting) throw new Error('Meeting deleted while processing');
     const existingSummary = (meeting['summary_raw'] as string) || '';
-    const newSummary = existingSummary
+    let mergedBody = existingSummary
       ? `${existingSummary}\n\n---\nТранскрипция (${new Date().toLocaleString('ru')}):\n${transcript}`
       : transcript;
+    db.prepare("UPDATE meetings SET summary_raw = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(mergedBody, meetingId);
+    searchService.indexRecord('meeting', meetingId, meeting['title'] as string, mergedBody);
 
-    getDb().prepare("UPDATE meetings SET summary_raw = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(newSummary, id);
-    searchService.indexRecord('meeting', id, meeting['title'] as string, newSummary);
+    // Step 4: AI summary
+    if (autoSummarize && transcript.trim()) {
+      setStatus('summarizing');
+      try {
+        const sys = 'Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды.';
+        const summary = (await claude.chat([{ role: 'user', content: transcript }], sys, 'gpt-4.1-mini', false, false)).trim();
+        if (summary && !mergedBody.startsWith('## Ключевые решения')) {
+          mergedBody = `${summary}\n\n---\n\n${mergedBody}`;
+          db.prepare("UPDATE meetings SET summary_raw = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(mergedBody, meetingId);
+          searchService.indexRecord('meeting', meetingId, meeting['title'] as string, mergedBody);
+        }
+      } catch (err) {
+        console.warn(`[bg-job ${meetingId}] summarize failed:`, err instanceof Error ? err.message : err);
+      }
+    }
 
-    // Update vault file (only if sync enabled for this meeting)
+    // Step 5: vault sync
     try {
-      const vp = meeting['vault_path'] as string | null;
-      const syncOn = (meeting['sync_vault'] as number | null | undefined) !== 0;
-      if (vp && syncOn) {
-        const projectName = meeting['project_id'] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(meeting['project_id'] as number) as { name: string } | undefined)?.name : undefined;
-        const peopleNames = (getDb().prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(id) as Array<{ name: string }>).map(x => x.name);
-        await obsidian.forUser(getUserId(req)).writeMeeting({
-          title: meeting['title'] as string,
-          date: meeting['date'] as string,
+      const fresh = db.prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId) as Record<string, unknown>;
+      const syncOn = (fresh['sync_vault'] as number | null | undefined) !== 0;
+      if (syncOn) {
+        const projectName = fresh['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(fresh['project_id'] as number) as { name: string } | undefined)?.name : undefined;
+        const peopleNames = (db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map(x => x.name);
+        const vp = await obsidian.forUser(userId).writeMeeting({
+          title: fresh['title'] as string,
+          date: fresh['date'] as string,
           project: projectName,
-          summary: newSummary,
+          summary: (fresh['summary_raw'] as string) ?? '',
           people: peopleNames,
         });
+        if (vp && vp !== fresh['vault_path']) {
+          db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vp, meetingId);
+        }
       }
-    } catch {}
+    } catch (err) {
+      console.warn(`[bg-job ${meetingId}] vault sync failed:`, err instanceof Error ? err.message : err);
+    }
 
-    const updated = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id);
-    res.json(ok({ ...updated as object, transcript }));
+    setStatus('done', null);
+    console.log(`[bg-job ${meetingId}] DONE`);
   } catch (err) {
-    res.status(500).json(fail(err instanceof Error ? err.message : 'Transcription error'));
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[bg-job ${meetingId}] FAILED:`, msg);
+    setStatus('failed', msg);
   }
+}
+
+// POST /meetings/:id/transcribe — fires a background job and returns 202 immediately
+meetingsRouter.post('/:id/transcribe', upload.single('audio'), (req: AuthRequest, res: Response) => {
+  const id = Number(req.params['id']);
+  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, getUserId(req)) as Record<string, unknown> | undefined;
+  if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
+
+  if (req.file) {
+    const userId = getUserId(req);
+    const buffer = req.file.buffer;
+    const originalName = req.file.originalname || 'audio.ogg';
+    const autoSummarize = req.body?.summarize !== 'false';
+    // Mark as queued + kick off background job (don't await)
+    getDb().prepare('UPDATE meetings SET processing_status = ?, processing_error = NULL WHERE id = ?').run('queued', id);
+    void processAudioInBackground(id, buffer, originalName, userId, autoSummarize);
+    res.status(202).json(ok({ id, status: 'queued', message: 'Транскрипция запущена в фоне. Можно закрыть окно.' }));
+    return;
+  }
+
+  // Sync path: just save text body
+  if (req.body?.text) {
+    const text = req.body.text as string;
+    const existing = (meeting['summary_raw'] as string) || '';
+    const merged = existing ? `${existing}\n\n---\n${text}` : text;
+    getDb().prepare("UPDATE meetings SET summary_raw = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(merged, id);
+    searchService.indexRecord('meeting', id, meeting['title'] as string, merged);
+    res.json(ok({ id, transcript: text }));
+    return;
+  }
+
+  res.status(400).json(fail('No audio file or text provided'));
 });
 
 // Send meeting summary or full transcription to user's Telegram
