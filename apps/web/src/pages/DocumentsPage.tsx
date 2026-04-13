@@ -314,10 +314,10 @@ export function DocumentsPage() {
       </div>
 
       {adding && (
-        <div className="bg-white rounded-xl border border-indigo-200 shadow-lg p-4 mb-6 max-w-md space-y-3">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-indigo-200 dark:border-indigo-700 shadow-lg p-4 mb-6 max-w-md space-y-3">
           <input
             autoFocus
-            className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
+            className="w-full text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
             placeholder={t('Название документа *', 'Document title *')}
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
@@ -327,20 +327,20 @@ export function DocumentsPage() {
             }}
           />
           <textarea
-            className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 resize-none"
+            className="w-full text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 resize-none placeholder-gray-400 dark:placeholder-gray-500"
             placeholder={t('Содержание...', 'Content...')}
             rows={3}
             value={newBody}
             onChange={(e) => setNewBody(e.target.value)}
           />
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-500 mr-1">{t('Категория:', 'Category:')}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">{t('Категория:', 'Category:')}</span>
             {CATEGORIES.map((c) => (
               <button
                 key={c}
                 onClick={() => setNewCategory(c)}
                 className={`text-xs px-2.5 py-1 rounded-full border transition-colors capitalize ${
-                  newCategory === c ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200'
+                  newCategory === c ? 'text-white border-transparent' : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700'
                 }`}
                 style={newCategory === c ? { backgroundColor: CAT_COLORS[c] } : undefined}
               >
@@ -349,7 +349,7 @@ export function DocumentsPage() {
             ))}
           </div>
           <select
-            className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 bg-white"
+            className="w-full text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500"
             value={newProjectId}
             onChange={(e) => setNewProjectId(e.target.value !== '' ? Number(e.target.value) : '')}
           >
@@ -361,7 +361,7 @@ export function DocumentsPage() {
           <div className="flex justify-end gap-2">
             <button
               onClick={() => setAdding(false)}
-              className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5"
+              className="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 px-3 py-1.5"
             >
               {t('Отмена', 'Cancel')}
             </button>

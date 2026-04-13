@@ -234,36 +234,36 @@ export function PeoplePage() {
       <div className="flex-1 overflow-auto p-6">
 
       {adding && (
-        <div className="bg-white rounded-xl border border-indigo-200 shadow-lg p-4 mb-6 max-w-md space-y-3">
-          <input autoFocus className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-indigo-200 dark:border-indigo-700 shadow-lg p-4 mb-6 max-w-md space-y-3">
+          <input autoFocus className="w-full text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
             placeholder={t('ФИО *', 'Full name *')} value={name} onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false); }} />
           <div className="grid grid-cols-2 gap-3">
-            <input className="text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
+            <input className="text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
               placeholder={t('Компания', 'Company')} value={company} onChange={(e) => setCompany(e.target.value)} />
-            <input className="text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
+            <input className="text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
               placeholder={t('Роль', 'Role')} value={role} onChange={(e) => setRole(e.target.value)} />
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <input className="text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
+            <input className="text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
               placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input className="text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
+            <input className="text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
               placeholder="Telegram" value={telegram} onChange={(e) => setTelegram(e.target.value)} />
-            <input className="text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
+            <input className="text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
               placeholder={t('Телефон', 'Phone')} value={phone} onChange={(e) => setPhone(e.target.value)} />
           </div>
-          <textarea className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 resize-none"
+          <textarea className="w-full text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 resize-none placeholder-gray-400 dark:placeholder-gray-500"
             placeholder={t('Заметки / описание', 'Notes / description')} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           {activeProjects.length > 0 && (
             <div>
-              <div className="text-xs text-gray-500 mb-1.5">{t('Проекты', 'Projects')}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">{t('Проекты', 'Projects')}</div>
               <div className="flex flex-wrap gap-2">
                 {activeProjects.map(p => (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => toggleAddProject(p.id)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${selectedProjectIds.includes(p.id) ? 'border-transparent text-white' : 'border-gray-200 text-gray-600 bg-white hover:border-gray-300'}`}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${selectedProjectIds.includes(p.id) ? 'border-transparent text-white' : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-600'}`}
                     style={selectedProjectIds.includes(p.id) ? { backgroundColor: p.color, borderColor: p.color } : {}}
                   >
                     <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: selectedProjectIds.includes(p.id) ? 'rgba(255,255,255,0.7)' : p.color }} />
@@ -274,7 +274,7 @@ export function PeoplePage() {
             </div>
           )}
           <div className="flex justify-end gap-2">
-            <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">{t('Отмена', 'Cancel')}</button>
+            <button onClick={() => setAdding(false)} className="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 px-3 py-1.5">{t('Отмена', 'Cancel')}</button>
             <button onClick={submit} disabled={!name.trim() || submitting}
               className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
               {submitting ? '...' : t('Добавить контакт', 'Add contact')}

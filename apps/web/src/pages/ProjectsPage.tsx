@@ -205,21 +205,21 @@ export function ProjectsPage() {
       {adding && (
         <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 p-4">
           <div className="max-w-md space-y-3">
-            <input autoFocus className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
+            <input autoFocus className="w-full text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
               placeholder={t('Название проекта...', 'Project name...')} value={name} onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false); }} />
-            <input className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
+            <input className="w-full text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
               placeholder={t('Описание (необязательно)', 'Description (optional)')} value={description} onChange={(e) => setDescription(e.target.value)} />
             <div className="flex items-center gap-1">
-              <span className="text-xs text-gray-500 mr-2">{t('Цвет:', 'Color:')}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">{t('Цвет:', 'Color:')}</span>
               {COLORS.map((c) => (
                 <button key={c} onClick={() => setColor(c)}
-                  className={`w-6 h-6 rounded-full border-2 transition-all ${color === c ? 'border-gray-800 scale-110' : 'border-transparent'}`}
+                  className={`w-6 h-6 rounded-full border-2 transition-all ${color === c ? 'border-gray-800 dark:border-gray-200 scale-110' : 'border-transparent'}`}
                   style={{ backgroundColor: c }} />
               ))}
             </div>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">{t('Отмена', 'Cancel')}</button>
+              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 px-3 py-1.5">{t('Отмена', 'Cancel')}</button>
               <button onClick={submit} disabled={!name.trim() || submitting}
                 className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
                 {submitting ? '...' : t('Создать', 'Create')}
