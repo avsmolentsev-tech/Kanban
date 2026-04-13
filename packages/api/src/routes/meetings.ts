@@ -202,7 +202,7 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthR
       // Fallback to OpenAI whisper-1 if local not available
       const filename = req.file.originalname || 'audio.ogg';
       if (isLocalWhisperAvailable()) {
-        transcript = transcribeLocal(req.file.buffer, filename);
+        transcript = await transcribeLocal(req.file.buffer, filename);
       } else {
         const file = new File([req.file.buffer], filename, { type: req.file.mimetype });
         const result = await openai.audio.transcriptions.create({ model: 'whisper-1', file, language: 'ru' });
