@@ -95,6 +95,7 @@ export function MeetingsPage() {
   const [newDate, setNewDate] = useState('');
   const [newProjectIds, setNewProjectIds] = useState<number[]>([]);
   const [newFile, setNewFile] = useState<File | null>(null);
+  const [newSyncVault, setNewSyncVault] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitStage, setSubmitStage] = useState<'' | 'creating' | 'transcribing' | 'summarizing'>('');
   const [transcribing, setTranscribing] = useState(false);
@@ -121,6 +122,7 @@ export function MeetingsPage() {
         project_id: newProjectIds[0],
         project_ids: newProjectIds.length > 0 ? newProjectIds : undefined,
         summary_raw: '',
+        sync_vault: newSyncVault,
       }) as unknown as { id: number };
 
       if (newFile && created?.id) {
@@ -137,7 +139,7 @@ export function MeetingsPage() {
         } catch { /* summary optional — transcription already in body */ }
       }
 
-      setNewTitle(''); setNewDate(''); setNewProjectIds([]); setNewFile(null); setAdding(false);
+      setNewTitle(''); setNewDate(''); setNewProjectIds([]); setNewFile(null); setNewSyncVault(true); setAdding(false);
       load();
       if (created?.id) {
         const full = await meetingsApi.get(created.id);
@@ -281,6 +283,13 @@ export function MeetingsPage() {
                 </div>
               )}
             </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+              <input type="checkbox" checked={newSyncVault} onChange={(e) => setNewSyncVault(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500" />
+              <span>{t('Синхронизировать с Obsidian', 'Sync with Obsidian')}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">{t('(по умолчанию вкл)', '(on by default)')}</span>
+            </label>
 
             <div className="flex items-center justify-between">
               <div className="text-xs text-gray-500 dark:text-gray-400 min-h-[16px]">

@@ -40,4 +40,5 @@ export interface CreateMeetingDto {
   project_id?: number;
   project_ids?: number[];
   summary_raw: string;
+  sync_vault?: boolean;
 }

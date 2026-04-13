@@ -7,6 +7,7 @@ export interface UpdateMeetingDto {
   project_id?: number | null;
   project_ids?: number[];
   summary_raw?: string;
+  sync_vault?: boolean;
 }
 
 export const meetingsApi = {

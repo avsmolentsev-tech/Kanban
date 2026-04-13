@@ -29,12 +29,14 @@ const CreateSchema = z.object({
   project_id: z.number().int().optional(),
   project_ids: z.array(z.number().int()).optional(),
   summary_raw: z.string().default(''),
+  sync_vault: z.boolean().optional(),
 });
 const UpdateSchema = z.object({
   title: z.string().min(1).optional(),
   date: z.string().optional(),
   project_id: z.number().int().nullable().optional(),
   project_ids: z.array(z.number().int()).optional(),
+  sync_vault: z.boolean().optional(),
   summary_raw: z.string().optional(),
 });
 
@@ -89,20 +91,23 @@ meetingsRouter.get('/', (req: AuthRequest, res: Response) => {
 meetingsRouter.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const { title, date, project_id, project_ids, summary_raw } = parsed.data;
+  const { title, date, project_id, project_ids, summary_raw, sync_vault } = parsed.data;
   const effectiveIds = project_ids && project_ids.length > 0 ? project_ids : project_id != null ? [project_id] : [];
+  const shouldSync = sync_vault !== false;
   const userId = getUserId(req);
-  const result = getDb().prepare('INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES (?, ?, ?, ?, ?)').run(title, date, effectiveIds[0] ?? null, summary_raw, userId);
+  const result = getDb().prepare('INSERT INTO meetings (title, date, project_id, summary_raw, user_id, sync_vault) VALUES (?, ?, ?, ?, ?, ?)').run(title, date, effectiveIds[0] ?? null, summary_raw, userId, shouldSync ? 1 : 0);
   const meetingId = Number(result.lastInsertRowid);
   if (effectiveIds.length > 0) setMeetingProjects(meetingId, effectiveIds);
   searchService.indexRecord('meeting', meetingId, title, summary_raw);
-  // Sync to vault
-  try {
-    const projectName = effectiveIds[0] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(effectiveIds[0]) as { name: string } | undefined)?.name : undefined;
-    const peopleNames = (getDb().prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map(x => x.name);
-    const vaultPath = await obsidian.forUser(getUserId(req)).writeMeeting({ title, date, project: projectName, summary: summary_raw, people: peopleNames });
-    getDb().prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultPath, meetingId);
-  } catch {}
+  // Sync to vault (only if enabled)
+  if (shouldSync) {
+    try {
+      const projectName = effectiveIds[0] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(effectiveIds[0]) as { name: string } | undefined)?.name : undefined;
+      const peopleNames = (getDb().prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map(x => x.name);
+      const vaultPath = await obsidian.forUser(getUserId(req)).writeMeeting({ title, date, project: projectName, summary: summary_raw, people: peopleNames });
+      getDb().prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultPath, meetingId);
+    } catch {}
+  }
   const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId) as Record<string, unknown>;
   res.status(201).json(ok(attachProjects([meeting])[0]));
 });
@@ -131,8 +136,8 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const updated = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id) as Record<string, unknown>;
   if (updated) searchService.indexRecord('meeting', updated['id'] as number, updated['title'] as string, (updated['summary_raw'] as string) ?? '');
 
-  // Sync to Obsidian vault (async, non-blocking)
-  if (updated) {
+  // Sync to Obsidian vault (async, non-blocking) — only if sync_vault flag is on
+  if (updated && (updated['sync_vault'] as number | null | undefined) !== 0) {
     void (async () => {
       try {
         const projectId = updated['project_id'] as number | null;
@@ -219,10 +224,11 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthR
     getDb().prepare("UPDATE meetings SET summary_raw = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(newSummary, id);
     searchService.indexRecord('meeting', id, meeting['title'] as string, newSummary);
 
-    // Update vault file
+    // Update vault file (only if sync enabled for this meeting)
     try {
       const vp = meeting['vault_path'] as string | null;
-      if (vp) {
+      const syncOn = (meeting['sync_vault'] as number | null | undefined) !== 0;
+      if (vp && syncOn) {
         const projectName = meeting['project_id'] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(meeting['project_id'] as number) as { name: string } | undefined)?.name : undefined;
         const peopleNames = (getDb().prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(id) as Array<{ name: string }>).map(x => x.name);
         await obsidian.forUser(getUserId(req)).writeMeeting({

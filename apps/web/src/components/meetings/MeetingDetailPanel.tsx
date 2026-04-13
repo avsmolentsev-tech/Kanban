@@ -236,6 +236,18 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                 </div>
               </div>
 
+              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                <input type="checkbox"
+                  checked={((meeting as unknown as Record<string, unknown>)['sync_vault'] as number | undefined) !== 0}
+                  onChange={async (e) => {
+                    const val = e.target.checked;
+                    await meetingsApi.update(meeting.id, { sync_vault: val } as unknown as Parameters<typeof meetingsApi.update>[1]);
+                    onUpdated();
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500" />
+                <span>{t('Синхронизировать с Obsidian', 'Sync with Obsidian')}</span>
+              </label>
+
               <div className="text-xs text-gray-400 dark:text-gray-500">{t('Создано: ', 'Created: ')}{meeting.created_at}</div>
 
               {onDeleted && (
