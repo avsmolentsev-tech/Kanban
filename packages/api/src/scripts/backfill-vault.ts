@@ -7,11 +7,12 @@
 //
 // Example: npx tsx src/scripts/backfill-vault.ts 2
 
-import { getDb } from '../db/db';
+import { getDb, initDb } from '../db/db';
 import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
 
 async function main(): Promise<void> {
+  initDb();
   const userIdArg = process.argv[2];
   if (!userIdArg) {
     console.error('Usage: backfill-vault <userId>');
