@@ -122,6 +122,32 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
 
   const updated = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id) as Record<string, unknown>;
   if (updated) searchService.indexRecord('meeting', updated['id'] as number, updated['title'] as string, (updated['summary_raw'] as string) ?? '');
+
+  // Sync to Obsidian vault (async, non-blocking)
+  if (updated) {
+    void (async () => {
+      try {
+        const projectId = updated['project_id'] as number | null;
+        const projectName = projectId != null
+          ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as { name: string } | undefined)?.name
+          : undefined;
+        const vaultPath = await obsidian.forUser(userId).writeMeeting({
+          title: updated['title'] as string,
+          date: updated['date'] as string,
+          project: projectName,
+          summary: (updated['summary_raw'] as string) ?? '',
+          people: [],
+        });
+        const currentPath = updated['vault_path'] as string | null;
+        if (vaultPath && vaultPath !== currentPath) {
+          getDb().prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultPath, id);
+        }
+      } catch (err) {
+        console.error('[meetings.patch] vault sync failed:', err instanceof Error ? err.message : err);
+      }
+    })();
+  }
+
   res.json(ok(attachProjects([updated])[0]));
 });
 
