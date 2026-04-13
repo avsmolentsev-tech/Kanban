@@ -41,13 +41,58 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
     { value: 'monthly', label: t('Ежемесячно', 'Monthly') },
   ];
 
-  const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
+  type Period = 'today' | 'tomorrow' | 'week' | 'month' | 'year' | 'backlog' | 'someday' | 'none' | 'in_progress' | 'done';
+
+  const PERIOD_OPTIONS: { value: Period; label: string }[] = [
+    { value: 'today', label: t('Сегодня', 'Today') },
+    { value: 'tomorrow', label: t('Завтра', 'Tomorrow') },
+    { value: 'week', label: t('На неделе', 'This week') },
+    { value: 'month', label: t('В этом месяце', 'This month') },
+    { value: 'year', label: t('В этом году', 'This year') },
+    { value: 'none', label: t('Без даты', 'No date') },
     { value: 'backlog', label: t('Бэклог', 'Backlog') },
-    { value: 'todo', label: t('К выполнению', 'To Do') },
-    { value: 'in_progress', label: t('В работе', 'In Progress') },
+    { value: 'in_progress', label: t('В работе', 'In progress') },
     { value: 'done', label: t('Готово', 'Done') },
     { value: 'someday', label: t('Когда-нибудь', 'Someday') },
   ];
+
+  const localDateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const periodToUpdates = (p: Period): { status: TaskStatus; due_date: string | null } | { status: TaskStatus } => {
+    const now = new Date();
+    switch (p) {
+      case 'today': return { status: 'todo', due_date: localDateStr(now) };
+      case 'tomorrow': { const d = new Date(now); d.setDate(now.getDate() + 1); return { status: 'todo', due_date: localDateStr(d) }; }
+      case 'week': { const d = new Date(now); d.setDate(now.getDate() + (5 - now.getDay())); return { status: 'todo', due_date: localDateStr(d) }; }
+      case 'month': { const d = new Date(now.getFullYear(), now.getMonth() + 1, 0); return { status: 'todo', due_date: localDateStr(d) }; }
+      case 'year': return { status: 'todo', due_date: `${now.getFullYear()}-12-31` };
+      case 'none': return { status: 'todo', due_date: null };
+      case 'backlog': return { status: 'backlog', due_date: null };
+      case 'someday': return { status: 'someday', due_date: null };
+      case 'in_progress': return { status: 'in_progress' };
+      case 'done': return { status: 'done' };
+    }
+  };
+
+  const currentPeriod = (status: TaskStatus, dueDate: string | null): Period => {
+    if (status === 'in_progress') return 'in_progress';
+    if (status === 'done') return 'done';
+    if (status === 'backlog') return 'backlog';
+    if (status === 'someday') return 'someday';
+    if (!dueDate) return 'none';
+    const due = new Date(dueDate);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+    const dayAfter = new Date(today); dayAfter.setDate(today.getDate() + 2);
+    if (due < tomorrow) return 'today';
+    if (due < dayAfter) return 'tomorrow';
+    const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7);
+    if (due < weekEnd) return 'week';
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    if (due <= monthEnd) return 'month';
+    return 'year';
+  };
 
   const [form, setForm] = useState<FormState>({
     title: '',
@@ -173,19 +218,29 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             disabled={saving}
           />
 
-          {/* Status */}
+          {/* Period (replaces status + deadline) */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">{t('Статус', 'Status')}</div>
-            <select
-              className="w-full text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
-              value={form.status}
-              onChange={(e) => handleSelectChange('status', e.target.value as TaskStatus)}
-              disabled={saving}
-            >
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+            <div className="text-xs text-gray-500 mb-1">{t('Когда', 'When')}</div>
+            <div className="flex flex-wrap gap-1.5">
+              {PERIOD_OPTIONS.map((opt) => {
+                const active = currentPeriod(form.status, form.due_date || null) === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => {
+                      const updates = periodToUpdates(opt.value);
+                      setForm((f) => ({ ...f, status: updates.status, due_date: 'due_date' in updates ? (updates.due_date ?? '') : f.due_date }));
+                      save(updates as Partial<FormState>);
+                    }}
+                    className={`px-2.5 py-1 text-xs rounded border transition-colors ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-indigo-300'}`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Project */}
@@ -333,19 +388,6 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
               label={t('Срочность', 'Urgency')}
               value={form.urgency}
               onChange={(v) => handleRatingClick('urgency', v)}
-              disabled={saving}
-            />
-          </div>
-
-          {/* Due date */}
-          <div>
-            <div className="text-xs text-gray-500 mb-1">{t('Дедлайн', 'Deadline')}</div>
-            <input
-              type="date"
-              className="w-full text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300"
-              value={form.due_date}
-              onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
-              onBlur={() => handleBlur('due_date')}
               disabled={saving}
             />
           </div>
