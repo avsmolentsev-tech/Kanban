@@ -266,6 +266,19 @@ export function initDb(): void {
   try { _db.exec("ALTER TABLE meetings ADD COLUMN processing_status TEXT"); } catch {}
   try { _db.exec("ALTER TABLE meetings ADD COLUMN processing_error TEXT"); } catch {}
 
+  // Persistent notification dedup log — survives API restarts
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS notification_log (
+        user_id  INTEGER NOT NULL,
+        type     TEXT NOT NULL,
+        ref_id   TEXT NOT NULL,
+        sent_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        PRIMARY KEY (user_id, type, ref_id)
+      );
+    `);
+  } catch {}
+
   // Users table
   try {
     _db.exec(`
@@ -553,6 +566,19 @@ export function initTestDb(): void {
   try { _db.exec("ALTER TABLE meetings ADD COLUMN updated_at TEXT"); } catch {}
   try { _db.exec("ALTER TABLE meetings ADD COLUMN processing_status TEXT"); } catch {}
   try { _db.exec("ALTER TABLE meetings ADD COLUMN processing_error TEXT"); } catch {}
+
+  // Persistent notification dedup log — survives API restarts
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS notification_log (
+        user_id  INTEGER NOT NULL,
+        type     TEXT NOT NULL,
+        ref_id   TEXT NOT NULL,
+        sent_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        PRIMARY KEY (user_id, type, ref_id)
+      );
+    `);
+  } catch {}
 }
 
 export function closeDb(): void {

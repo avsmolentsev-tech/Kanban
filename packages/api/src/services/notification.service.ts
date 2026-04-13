@@ -46,6 +46,8 @@ function checkOverdueTasks(): void {
     ).all(today, user.id) as Array<{ title: string; due_date: string; priority: number }>;
 
     if (overdue.length === 0) continue;
+    // Send overdue digest at most once per day per user
+    if (!shouldSendNotification(user.id, 'overdue_digest', 'all')) continue;
 
     const lines = overdue.map(t => `⚠️ <b>${t.title}</b> (срок: ${t.due_date})`);
     telegramService.notifyUser(user.tg_id, `🔔 Просроченные задачи (${overdue.length}):\n\n${lines.join('\n')}`);
@@ -218,12 +220,28 @@ function checkUpcomingDeadlines(): void {
       if (tasks.length === 0) continue;
 
       const lines = tasks.map(t => `• ${t.title}`);
+      if (!shouldSendNotification(user.id, 'deadline_tomorrow', 'all')) continue;
       telegramService.notifyUser(user.tg_id, `⏰ Завтра дедлайн:\n\n${lines.join('\n')}`);
     } catch {}
   }
 }
 
-const notifiedMeetings = new Set<string>();
+/**
+ * Persistent dedup: try to register a notification. Returns true if it's a NEW one
+ * and the caller should send. False if already sent today for this (user, type, ref).
+ */
+function shouldSendNotification(userId: number, type: string, refId: string): boolean {
+  const db = getDb();
+  // ref_id includes the date so the same meeting/task can be re-notified next day
+  const key = `${refId}|${moscowDateString()}`;
+  try {
+    const result = db.prepare('INSERT OR IGNORE INTO notification_log (user_id, type, ref_id) VALUES (?, ?, ?)').run(userId, type, key);
+    return result.changes > 0;
+  } catch {
+    return true; // on DB error, prefer to send rather than miss
+  }
+}
+
 function checkUpcomingMeetings(): void {
   const today = moscowDateString();
   const db = getDb();
@@ -232,13 +250,8 @@ function checkUpcomingMeetings(): void {
     const meetings = db.prepare("SELECT id, title, date FROM meetings WHERE date = ? AND user_id = ?").all(today, user.id) as Array<{ id: number; title: string; date: string }>;
 
     for (const m of meetings) {
-      const key = `${user.id}-${m.id}`;
-      if (notifiedMeetings.has(key)) continue;
-      notifiedMeetings.add(key);
+      if (!shouldSendNotification(user.id, 'meeting_today', String(m.id))) continue;
       telegramService.notifyUser(user.tg_id, `📅 Встреча сегодня: <b>${m.title}</b>`);
     }
   }
-
-  const now = moscowNow();
-  if (now.getUTCHours() === 0) notifiedMeetings.clear();
 }
