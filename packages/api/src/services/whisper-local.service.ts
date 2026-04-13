@@ -11,6 +11,37 @@ export function isLocalWhisperAvailable(): boolean {
   return fs.existsSync(WHISPER_CLI) && fs.existsSync(WHISPER_MODEL);
 }
 
+/**
+ * Compress any audio/video buffer to a small voice-optimized MP3.
+ * Mono 16kHz 32kbps → ~15 MB per hour of speech.
+ * Any format ffmpeg can read (ogg, mp4, mov, webm, wav, m4a, flac, etc.) is accepted.
+ * Returns the compressed Buffer.
+ */
+export async function compressForTranscription(buffer: Buffer, filename: string): Promise<Buffer> {
+  const tmpDir = os.tmpdir();
+  const id = Date.now() + '-' + Math.random().toString(36).slice(2);
+  const inputPath = path.join(tmpDir, `pre-${id}-${filename}`);
+  const outputPath = path.join(tmpDir, `pre-${id}.mp3`);
+  fs.writeFileSync(inputPath, buffer);
+  try {
+    await runCommand('ffmpeg', [
+      '-i', inputPath,
+      '-vn',                    // drop video stream if any
+      '-ac', '1',               // mono
+      '-ar', '16000',           // 16 kHz (speech)
+      '-b:a', '32k',            // 32 kbps (enough for voice)
+      '-f', 'mp3',
+      outputPath,
+      '-y',
+    ], 300000); // 5 min max
+    const out = fs.readFileSync(outputPath);
+    return out;
+  } finally {
+    try { fs.unlinkSync(inputPath); } catch {}
+    try { fs.unlinkSync(outputPath); } catch {}
+  }
+}
+
 /** Run a command non-blocking. Rejects on non-zero exit or timeout. */
 function runCommand(cmd: string, args: string[], timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {

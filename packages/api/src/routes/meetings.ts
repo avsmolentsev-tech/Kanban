@@ -10,7 +10,7 @@ import { ObsidianService } from '../services/obsidian.service';
 import { ClaudeService } from '../services/claude.service';
 import { mdToPdf, mdToDocx } from '../services/converter.service';
 import { telegramService } from '../services/telegram.service';
-import { isLocalWhisperAvailable, transcribeLocal } from '../services/whisper-local.service';
+import { isLocalWhisperAvailable, transcribeLocal, compressForTranscription } from '../services/whisper-local.service';
 import { config } from '../config';
 import OpenAI from 'openai';
 import type { AuthRequest } from '../middleware/auth';
@@ -199,31 +199,47 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthR
 
     if (req.file) {
       const filename = req.file.originalname || 'audio.ogg';
-      const sizeMb = req.file.buffer.length / 1024 / 1024;
+      const origMb = req.file.buffer.length / 1024 / 1024;
       const OPENAI_LIMIT_MB = 24;
       const canOpenAI = !!config.openaiApiKey;
-      // Strategy: small files → OpenAI (~30s, reliable). Large → local whisper.cpp (slow but no 25MB limit, free).
-      const useOpenAI = canOpenAI && sizeMb <= OPENAI_LIMIT_MB;
+
+      // Step 1: always pre-compress to small MP3 (16kHz mono 32kbps, ~15MB per hour of voice).
+      // Works for ogg/mp3/mp4/m4a/webm/wav/flac/mov — anything ffmpeg can read.
+      let audioBuffer = req.file.buffer;
+      let audioName = filename;
+      try {
+        console.log(`[transcribe] pre-compressing ${origMb.toFixed(1)}MB ${filename}`);
+        const compressed = await compressForTranscription(req.file.buffer, filename);
+        const compMb = compressed.length / 1024 / 1024;
+        console.log(`[transcribe] compressed to ${compMb.toFixed(1)}MB MP3 (${(origMb > 0 ? (1 - compMb / origMb) * 100 : 0).toFixed(0)}% smaller)`);
+        audioBuffer = compressed;
+        audioName = filename.replace(/\.[^.]+$/, '') + '.mp3';
+      } catch (err) {
+        console.warn('[transcribe] compression failed, using original:', err instanceof Error ? err.message : err);
+      }
+
+      const finalMb = audioBuffer.length / 1024 / 1024;
+      const useOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
 
       if (useOpenAI) {
         try {
-          console.log(`[transcribe] OpenAI whisper-1 for ${sizeMb.toFixed(1)}MB file`);
-          const file = new File([req.file.buffer], filename, { type: req.file.mimetype });
+          console.log(`[transcribe] OpenAI whisper-1 for ${finalMb.toFixed(1)}MB`);
+          const file = new File([audioBuffer], audioName, { type: 'audio/mpeg' });
           const result = await openai.audio.transcriptions.create({ model: 'whisper-1', file, language: 'ru' });
           transcript = result.text;
         } catch (err) {
           console.warn('[transcribe] OpenAI failed, fallback to local:', err instanceof Error ? err.message : err);
           if (isLocalWhisperAvailable()) {
-            transcript = await transcribeLocal(req.file.buffer, filename);
+            transcript = await transcribeLocal(audioBuffer, audioName);
           } else {
             throw err;
           }
         }
       } else if (isLocalWhisperAvailable()) {
-        console.log(`[transcribe] local whisper.cpp for ${sizeMb.toFixed(1)}MB file (OpenAI skipped)`);
-        transcript = await transcribeLocal(req.file.buffer, filename);
+        console.log(`[transcribe] local whisper.cpp for ${finalMb.toFixed(1)}MB (OpenAI limit exceeded)`);
+        transcript = await transcribeLocal(audioBuffer, audioName);
       } else {
-        throw new Error('No transcription backend available (file too large for OpenAI and local whisper.cpp not installed)');
+        throw new Error('No transcription backend available');
       }
     } else if (req.body.text) {
       transcript = req.body.text;
