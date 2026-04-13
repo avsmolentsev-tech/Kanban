@@ -67,7 +67,7 @@ function checkMorningBrief(): void {
   for (const user of getUsers()) {
     const tasks = db.prepare("SELECT title, priority FROM tasks WHERE archived = 0 AND status = 'in_progress' AND user_id = ? ORDER BY priority DESC LIMIT 5").all(user.id) as Array<{ title: string; priority: number }>;
     const todayTasks = db.prepare("SELECT title FROM tasks WHERE archived = 0 AND due_date = ? AND status != 'done' AND user_id = ?").all(today, user.id) as Array<{ title: string }>;
-    const todayMeetings = db.prepare("SELECT title, date FROM meetings WHERE date = ? AND user_id = ? ORDER BY date").all(today, user.id) as Array<{ title: string; date: string }>;
+    const todayMeetings = db.prepare("SELECT title, date FROM meetings WHERE date = ? AND user_id = ? AND (summary_raw IS NULL OR summary_raw = '') AND (source_file IS NULL OR source_file = '') ORDER BY date").all(today, user.id) as Array<{ title: string; date: string }>;
 
     let msg = `🌅 <b>Доброе утро, ${user.name}!</b>\n\n`;
     if (todayMeetings.length > 0) {
@@ -247,11 +247,16 @@ function checkUpcomingMeetings(): void {
   const db = getDb();
 
   for (const user of getUsers()) {
-    const meetings = db.prepare("SELECT id, title, date FROM meetings WHERE date = ? AND user_id = ?").all(today, user.id) as Array<{ id: number; title: string; date: string }>;
+    // Only remind about PLANNED meetings — skip those already transcribed/summarized
+    const meetings = db.prepare(
+      "SELECT id, title FROM meetings WHERE date = ? AND user_id = ? AND (summary_raw IS NULL OR summary_raw = '') AND (source_file IS NULL OR source_file = '') ORDER BY id"
+    ).all(today, user.id) as Array<{ id: number; title: string }>;
 
-    for (const m of meetings) {
-      if (!shouldSendNotification(user.id, 'meeting_today', String(m.id))) continue;
-      telegramService.notifyUser(user.tg_id, `📅 Встреча сегодня: <b>${m.title}</b>`);
-    }
+    if (meetings.length === 0) continue;
+    if (!shouldSendNotification(user.id, 'meetings_today_digest', 'all')) continue;
+
+    const lines = meetings.map(m => `  • ${m.title}`);
+    const header = meetings.length === 1 ? '📅 Встреча сегодня:' : `📅 Встречи сегодня (${meetings.length}):`;
+    telegramService.notifyUser(user.tg_id, `${header}\n${lines.join('\n')}`);
   }
 }
