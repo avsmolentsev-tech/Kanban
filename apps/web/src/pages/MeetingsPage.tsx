@@ -111,6 +111,15 @@ export function MeetingsPage() {
   const projectMap = new Map(projects.map((p) => [p.id, p]));
   const activeProjects = projects.filter((p) => !p.archived);
 
+  const hasDraft = () => !!(newTitle.trim() || newFile || newProjectIds.length > 0 || newDate);
+
+  const tryCancel = () => {
+    if (submitting) return;
+    if (hasDraft() && !confirm(t('Закрыть без сохранения? Введённые данные будут потеряны.', 'Close without saving? Entered data will be lost.'))) return;
+    setNewTitle(''); setNewDate(''); setNewProjectIds([]); setNewFile(null); setNewSyncVault(true);
+    setAdding(false);
+  };
+
   const submit = async () => {
     if (!newTitle.trim()) return;
     setSubmitting(true);
@@ -230,7 +239,7 @@ export function MeetingsPage() {
           <div className="max-w-xl space-y-3">
             <input autoFocus className="w-full text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500"
               placeholder={t('Название встречи *', 'Meeting title *')} value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false); if (e.key === 'Enter' && !submitting) submit(); }} />
+              onKeyDown={(e) => { if (e.key === 'Escape') tryCancel(); if (e.key === 'Enter' && !submitting) submit(); }} />
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -298,10 +307,13 @@ export function MeetingsPage() {
                 {submitStage === 'summarizing' && t('✍️ Делаем резюме...', '✍️ Summarizing...')}
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setAdding(false)} disabled={submitting} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5 disabled:opacity-50">{t('Отмена', 'Cancel')}</button>
+                <button onClick={tryCancel} disabled={submitting}
+                  className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50">
+                  {t('✕ Закрыть без сохранения', '✕ Close without saving')}
+                </button>
                 <button onClick={submit} disabled={!newTitle.trim() || submitting}
                   className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                  {submitting ? '...' : t('Создать', 'Create')}
+                  {submitting ? '...' : t('✓ Создать', '✓ Create')}
                 </button>
               </div>
             </div>
