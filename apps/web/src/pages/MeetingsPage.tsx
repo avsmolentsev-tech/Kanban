@@ -93,10 +93,13 @@ export function MeetingsPage() {
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState('');
-  const [newProjectId, setNewProjectId] = useState<number | ''>('');
+  const [newProjectIds, setNewProjectIds] = useState<number[]>([]);
+  const [newFile, setNewFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submitStage, setSubmitStage] = useState<'' | 'creating' | 'transcribing' | 'summarizing'>('');
   const [transcribing, setTranscribing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const newFileRef = useRef<HTMLInputElement>(null);
 
   const load = () => {
     meetingsApi.list().then(setMeetings);
@@ -111,15 +114,38 @@ export function MeetingsPage() {
     if (!newTitle.trim()) return;
     setSubmitting(true);
     try {
-      await meetingsApi.create({
+      setSubmitStage('creating');
+      const created = await meetingsApi.create({
         title: newTitle.trim(),
         date: newDate || new Date().toISOString().slice(0, 10),
-        project_id: newProjectId !== '' ? Number(newProjectId) : undefined,
+        project_id: newProjectIds[0],
+        project_ids: newProjectIds.length > 0 ? newProjectIds : undefined,
         summary_raw: '',
-      });
-      setNewTitle(''); setNewDate(''); setNewProjectId(''); setAdding(false);
+      }) as unknown as { id: number };
+
+      if (newFile && created?.id) {
+        setSubmitStage('transcribing');
+        const form = new FormData();
+        form.append('audio', newFile);
+        await apiClient.post(`/meetings/${created.id}/transcribe`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 600000,
+        });
+        setSubmitStage('summarizing');
+        try {
+          await apiClient.post(`/meetings/${created.id}/summarize`);
+        } catch { /* summary optional — transcription already in body */ }
+      }
+
+      setNewTitle(''); setNewDate(''); setNewProjectIds([]); setNewFile(null); setAdding(false);
       load();
-    } finally { setSubmitting(false); }
+      if (created?.id) {
+        const full = await meetingsApi.get(created.id);
+        setSelected(full as unknown as Meeting);
+      }
+    } catch (err) {
+      alert(t('Ошибка: ', 'Error: ') + (err instanceof Error ? err.message : 'unknown'));
+    } finally { setSubmitting(false); setSubmitStage(''); }
   };
 
   const handleTranscribe = async (meetingId: number, file: File) => {
@@ -199,31 +225,76 @@ export function MeetingsPage() {
 
       {adding && (
         <div className="bg-white dark:bg-gray-900 border-b dark:border-gray-700 p-4">
-          <div className="max-w-md space-y-3">
-            <input autoFocus className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
+          <div className="max-w-xl space-y-3">
+            <input autoFocus className="w-full text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500"
               placeholder={t('Название встречи *', 'Meeting title *')} value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false); if (e.key === 'Enter') submit(); }} />
+              onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false); if (e.key === 'Enter' && !submitting) submit(); }} />
+
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className="text-xs text-gray-500 mb-1">{t('Дата', 'Date')}</div>
-                <input type="date" className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300"
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t('Дата', 'Date')}</div>
+                <input type="date" className="w-full text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500"
                   value={newDate} onChange={(e) => setNewDate(e.target.value)} />
               </div>
               <div>
-                <div className="text-xs text-gray-500 mb-1">{t('Проект', 'Project')}</div>
-                <select className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 bg-white"
-                  value={newProjectId} onChange={(e) => setNewProjectId(e.target.value !== '' ? Number(e.target.value) : '')}>
-                  <option value="">{t('Без проекта', 'No project')}</option>
-                  {activeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t('Проекты', 'Projects')}</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {activeProjects.map((p) => {
+                    const active = newProjectIds.includes(p.id);
+                    return (
+                      <button key={p.id} type="button" onClick={() => setNewProjectIds(active ? newProjectIds.filter((x) => x !== p.id) : [...newProjectIds, p.id])}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs border transition-colors ${active ? 'border-transparent text-white' : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800'}`}
+                        style={active ? { backgroundColor: p.color, borderColor: p.color } : {}}>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: active ? 'rgba(255,255,255,0.8)' : p.color }} />
+                        {p.name}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5">{t('Отмена', 'Cancel')}</button>
-              <button onClick={submit} disabled={!newTitle.trim() || submitting}
-                className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                {submitting ? '...' : t('Создать', 'Create')}
-              </button>
+
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t('Аудио/видео файл (опционально)', 'Audio/video file (optional)')}</div>
+              <div
+                onDragOver={(e) => { e.preventDefault(); }}
+                onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) setNewFile(f); }}
+                onClick={() => newFileRef.current?.click()}
+                className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg px-3 py-4 text-center cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors">
+                <input ref={newFileRef} type="file" className="hidden"
+                  accept="audio/*,video/*,.ogg,.oga,.mp3,.mp4,.m4a,.wav,.webm,.flac"
+                  onChange={(e) => setNewFile(e.target.files?.[0] ?? null)} />
+                {newFile ? (
+                  <div className="text-sm">
+                    <div className="text-gray-700 dark:text-gray-200 font-medium">🎧 {newFile.name}</div>
+                    <div className="text-xs text-gray-400 dark:text-gray-500">{(newFile.size / 1024 / 1024).toFixed(1)} МБ — {t('нажмите ещё раз чтобы заменить', 'click again to replace')}</div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-400 dark:text-gray-500">
+                    {t('Перетащите файл или кликните. Поддержка: ogg, mp3, mp4, m4a, wav, webm, flac', 'Drop a file or click. Formats: ogg, mp3, mp4, m4a, wav, webm, flac')}
+                  </div>
+                )}
+              </div>
+              {newFile && (
+                <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+                  {t('После создания файл будет транскрибирован и резюмирован автоматически (1-10 мин).', 'File will be transcribed and summarized automatically after creation (1-10 min).')}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-gray-500 dark:text-gray-400 min-h-[16px]">
+                {submitStage === 'creating' && t('Создание встречи...', 'Creating meeting...')}
+                {submitStage === 'transcribing' && t('🎤 Транскрибируем (может занять несколько минут)...', '🎤 Transcribing (may take a few minutes)...')}
+                {submitStage === 'summarizing' && t('✍️ Делаем резюме...', '✍️ Summarizing...')}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setAdding(false)} disabled={submitting} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5 disabled:opacity-50">{t('Отмена', 'Cancel')}</button>
+                <button onClick={submit} disabled={!newTitle.trim() || submitting}
+                  className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                  {submitting ? '...' : t('Создать', 'Create')}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -10,6 +10,7 @@ import { ObsidianService } from '../services/obsidian.service';
 import { ClaudeService } from '../services/claude.service';
 import { mdToPdf, mdToDocx } from '../services/converter.service';
 import { telegramService } from '../services/telegram.service';
+import { isLocalWhisperAvailable, transcribeLocal } from '../services/whisper-local.service';
 import { config } from '../config';
 import OpenAI from 'openai';
 import type { AuthRequest } from '../middleware/auth';
@@ -192,14 +193,16 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthR
     let transcript = '';
 
     if (req.file) {
-      // Transcribe audio via Whisper
-      const file = new File([req.file.buffer], req.file.originalname || 'audio.ogg', { type: req.file.mimetype });
-      const result = await openai.audio.transcriptions.create({
-        model: 'whisper-1',
-        file,
-        language: 'ru',
-      });
-      transcript = result.text;
+      // Prefer local whisper.cpp (free, no size limit, supports any format via ffmpeg)
+      // Fallback to OpenAI whisper-1 if local not available
+      const filename = req.file.originalname || 'audio.ogg';
+      if (isLocalWhisperAvailable()) {
+        transcript = transcribeLocal(req.file.buffer, filename);
+      } else {
+        const file = new File([req.file.buffer], filename, { type: req.file.mimetype });
+        const result = await openai.audio.transcriptions.create({ model: 'whisper-1', file, language: 'ru' });
+        transcript = result.text;
+      }
     } else if (req.body.text) {
       transcript = req.body.text;
     } else {
@@ -300,6 +303,32 @@ export async function sendMeetingToTelegram(meetingId: number, userId: number, t
     }
   }
 }
+
+// Generate AI summary for a meeting (prepends compact summary to summary_raw body)
+meetingsRouter.post('/:id/summarize', async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params['id']);
+  const userId = getUserId(req);
+  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId) as Record<string, unknown> | undefined;
+  if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
+  const raw = ((meeting['summary_raw'] as string) ?? '').trim();
+  if (!raw) { res.status(400).json(fail('No content to summarize')); return; }
+
+  try {
+    const sys = 'Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды.';
+    const summary = (await claude.chat([{ role: 'user', content: raw }], sys, 'gpt-4.1-mini', false, false)).trim();
+    const separator = '\n\n---\n\n';
+    const marker = '## Ключевые решения';
+    const existingStart = raw.indexOf(marker);
+    const newSummary = existingStart === 0
+      ? raw // already starts with a summary — skip (caller can regenerate by clearing first)
+      : `${summary}${separator}${raw}`;
+    getDb().prepare("UPDATE meetings SET summary_raw = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(newSummary, id);
+    searchService.indexRecord('meeting', id, meeting['title'] as string, newSummary);
+    res.json(ok({ summary, summary_raw: newSummary }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Summarize error'));
+  }
+});
 
 meetingsRouter.post('/:id/send-to-telegram', async (req: AuthRequest, res: Response) => {
   const parsed = SendToTelegramSchema.safeParse(req.body);

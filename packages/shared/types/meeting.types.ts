@@ -38,5 +38,6 @@ export interface CreateMeetingDto {
   title: string;
   date: string;
   project_id?: number;
+  project_ids?: number[];
   summary_raw: string;
 }

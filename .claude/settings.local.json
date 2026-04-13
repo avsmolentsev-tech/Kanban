@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(start \"\" \"C:/Program Files/Handy/handy.exe\")",
+      "Bash(tasklist)"
+    ]
+  }
+}
