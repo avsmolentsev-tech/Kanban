@@ -36,7 +36,7 @@ import { LoginPage } from './pages/LoginPage';
 import {
   LayoutDashboard, Columns3, BarChart3, FolderKanban, Users, CalendarDays,
   Lightbulb, FileText, MessageCircle, Target, BookOpen, GanttChart,
-  Flame, Sun, PieChart, LogOut, ChevronLeft, ChevronRight
+  Flame, Sun, PieChart, LogOut, ChevronLeft, ChevronRight, Shield
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -223,13 +223,22 @@ export default function App() {
             {/* User footer */}
             <div className="border-t border-gray-200/50 dark:border-gray-700/50 px-4 py-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                  {(user?.name || user?.email || '?')[0]?.toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">{user?.name || user?.email}</div>
-                  <div className="text-[10px] text-gray-400 truncate">{user?.email}</div>
-                </div>
+                <NavLink to="/profile" className="flex items-center gap-2.5 flex-1 min-w-0 rounded-lg px-1.5 py-1 -mx-1.5 -my-1 hover:bg-gray-100/80 dark:hover:bg-gray-700/50 transition-colors" title={t('Открыть профиль', 'Open profile')}>
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                    {(user?.name || user?.email || '?')[0]?.toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">{user?.name || user?.email}</div>
+                    <div className="text-[10px] text-gray-400 truncate">{user?.email}</div>
+                  </div>
+                </NavLink>
+                {user?.role === 'admin' && (
+                  <a href="/admin.html" target="_blank" rel="noopener"
+                    className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-gray-400 hover:text-indigo-500 transition-colors"
+                    title={t('Админка', 'Admin')}>
+                    <Shield size={14} />
+                  </a>
+                )}
                 <button onClick={() => { logout(); window.location.href = '/login'; }}
                   className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500 transition-colors"
                   title={t('Выйти', 'Sign out')}>

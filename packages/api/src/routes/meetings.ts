@@ -198,15 +198,32 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthR
     let transcript = '';
 
     if (req.file) {
-      // Prefer local whisper.cpp (free, no size limit, supports any format via ffmpeg)
-      // Fallback to OpenAI whisper-1 if local not available
       const filename = req.file.originalname || 'audio.ogg';
-      if (isLocalWhisperAvailable()) {
+      const sizeMb = req.file.buffer.length / 1024 / 1024;
+      const OPENAI_LIMIT_MB = 24;
+      const canOpenAI = !!config.openaiApiKey;
+      // Strategy: small files → OpenAI (~30s, reliable). Large → local whisper.cpp (slow but no 25MB limit, free).
+      const useOpenAI = canOpenAI && sizeMb <= OPENAI_LIMIT_MB;
+
+      if (useOpenAI) {
+        try {
+          console.log(`[transcribe] OpenAI whisper-1 for ${sizeMb.toFixed(1)}MB file`);
+          const file = new File([req.file.buffer], filename, { type: req.file.mimetype });
+          const result = await openai.audio.transcriptions.create({ model: 'whisper-1', file, language: 'ru' });
+          transcript = result.text;
+        } catch (err) {
+          console.warn('[transcribe] OpenAI failed, fallback to local:', err instanceof Error ? err.message : err);
+          if (isLocalWhisperAvailable()) {
+            transcript = await transcribeLocal(req.file.buffer, filename);
+          } else {
+            throw err;
+          }
+        }
+      } else if (isLocalWhisperAvailable()) {
+        console.log(`[transcribe] local whisper.cpp for ${sizeMb.toFixed(1)}MB file (OpenAI skipped)`);
         transcript = await transcribeLocal(req.file.buffer, filename);
       } else {
-        const file = new File([req.file.buffer], filename, { type: req.file.mimetype });
-        const result = await openai.audio.transcriptions.create({ model: 'whisper-1', file, language: 'ru' });
-        transcript = result.text;
+        throw new Error('No transcription backend available (file too large for OpenAI and local whisper.cpp not installed)');
       }
     } else if (req.body.text) {
       transcript = req.body.text;
