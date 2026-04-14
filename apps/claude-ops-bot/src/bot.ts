@@ -63,6 +63,29 @@ export async function startBot(): Promise<void> {
 
   const MODEL_FLAG = (m: 'sonnet' | 'opus') => m === 'opus' ? 'claude-opus-4-6' : 'claude-sonnet-4-6';
 
+  bot.command('stop', (ctx) => {
+    const s = sessions.get(ctx.from!.id);
+    const runner = s.claudeProcess as ClaudeRunner | undefined;
+    if (!runner || !runner.isRunning()) return ctx.reply('Сейчас ничего не выполняется.');
+    runner.stop();
+    return ctx.reply('⏹ отправлен SIGINT');
+  });
+
+  bot.command('status', (ctx) => {
+    const s = sessions.get(ctx.from!.id);
+    if (!s.activeTarget) return ctx.reply('Сессия без активного проекта.');
+    const runner = s.claudeProcess as ClaudeRunner | undefined;
+    const running = runner?.isRunning() ? 'работает' : 'idle';
+    const age = Math.round((Date.now() - s.lastActivityTs) / 1000);
+    return ctx.reply(`Проект: ${s.activeTarget.name}\nМодель: ${s.model}\nСтатус: ${running}\nИнактив: ${age}с`);
+  });
+
+  bot.command('opus', (ctx) => {
+    const s = sessions.get(ctx.from!.id);
+    s.model = 'opus';
+    return ctx.reply('Следующий раунд: Opus');
+  });
+
   bot.on('text', async (ctx) => {
     const tgId = ctx.from!.id;
     const text = ctx.message.text;
