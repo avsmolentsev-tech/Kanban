@@ -5,6 +5,8 @@ import { makeAuthMiddleware } from './auth.js';
 import { SessionManager } from './session.js';
 import { ProjectResolver } from './project-resolver.js';
 import { ensureDirs } from './state-store.js';
+import { ClaudeRunner } from './claude-runner.js';
+import { chunkForTelegram } from './tg-format.js';
 
 export async function startBot(): Promise<void> {
   const cfg = loadConfig();
@@ -57,6 +59,64 @@ export async function startBot(): Promise<void> {
   bot.command('end', (ctx) => {
     sessions.end(ctx.from!.id);
     return ctx.reply('Сессия закрыта.');
+  });
+
+  const MODEL_FLAG = (m: 'sonnet' | 'opus') => m === 'opus' ? 'claude-opus-4-6' : 'claude-sonnet-4-6';
+
+  bot.on('text', async (ctx) => {
+    const tgId = ctx.from!.id;
+    const text = ctx.message.text;
+    if (text.startsWith('/')) return; // commands handled above
+
+    const s = sessions.get(tgId);
+    sessions.touch(tgId);
+
+    if (!s.activeTarget) {
+      const list = resolver.list();
+      if (list.length === 1 && list[0]) {
+        s.activeTarget = list[0];
+        await ctx.reply(`Активный: ${list[0].name} (единственный в whitelist)`);
+      } else if (list.length === 0) {
+        await ctx.reply('Whitelist пуст. /add_repo <path>');
+        return;
+      } else {
+        await ctx.reply('Какой проект? ' + list.map((t) => `/use ${t.name}`).join(' или '));
+        return;
+      }
+    }
+
+    await ctx.reply(`🚀 ${s.activeTarget!.name} (${s.model}) старт`);
+
+    const runner = new ClaudeRunner({
+      bin: cfg.claudeBin,
+      args: ['-p', '--permission-mode', 'bypassPermissions', '--model', MODEL_FLAG(s.model)],
+      cwd: s.activeTarget!.path,
+    });
+    s.claudeProcess = runner;
+
+    let buf = '';
+    const flush = async (): Promise<void> => {
+      if (!buf) return;
+      const toSend = buf;
+      buf = '';
+      for (const chunk of chunkForTelegram(toSend)) {
+        await ctx.reply(chunk).catch(() => {});
+      }
+    };
+    const flushTimer = setInterval(flush, 2000);
+
+    try {
+      const res = await runner.run(text, (c) => { buf += c; });
+      clearInterval(flushTimer);
+      await flush();
+      await ctx.reply(res.exitCode === 0 ? `✅ раунд завершён` : `⚠️ exit ${res.exitCode}`);
+    } catch (err) {
+      clearInterval(flushTimer);
+      await ctx.reply(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      s.claudeProcess = undefined;
+      sessions.touch(tgId);
+    }
   });
 
   bot.catch((err) => console.error('[claude-ops-bot] handler error:', err));
