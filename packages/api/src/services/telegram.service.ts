@@ -438,7 +438,9 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       return;
     }
 
-    this.bot = new Telegraf(config.telegramBotToken);
+    // handlerTimeout: Infinity — long-running handlers (whisper on 15+ min audio,
+    // AI command chains) must not be killed mid-flight.
+    this.bot = new Telegraf(config.telegramBotToken, { handlerTimeout: Infinity });
 
     this.bot.catch((err: unknown) => {
       console.error('[telegram] bot error:', err instanceof Error ? err.message : err);
