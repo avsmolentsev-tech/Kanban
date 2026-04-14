@@ -47,6 +47,13 @@ jobs:
           path: packages/api/src/
           retention-days: 1
 
+      - name: Upload API manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-manifest
+          path: packages/api/package.json
+          retention-days: 1
+
       - name: Upload claude-ops-bot source
         uses: actions/upload-artifact@v4
         with:
@@ -87,6 +94,12 @@ jobs:
           name: api-src
           path: api-src/
 
+      - name: Download API manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: api-manifest
+          path: api-manifest/
+
       - name: Download claude-ops-bot
         uses: actions/download-artifact@v4
         with:
@@ -118,6 +131,12 @@ jobs:
             --exclude='__tests__' \
             api-src/ \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/packages/api/src/
+
+      - name: Deploy API manifest
+        run: |
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            api-manifest/package.json \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/packages/api/package.json
 
       - name: Deploy claude-ops-bot
         run: |
