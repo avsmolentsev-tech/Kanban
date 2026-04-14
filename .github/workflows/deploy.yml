@@ -47,6 +47,28 @@ jobs:
           path: packages/api/src/
           retention-days: 1
 
+      - name: Upload claude-ops-bot source
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-ops-bot
+          path: |
+            apps/claude-ops-bot/src/
+            apps/claude-ops-bot/package.json
+            apps/claude-ops-bot/tsconfig.json
+            apps/claude-ops-bot/jest.config.ts
+            apps/claude-ops-bot/.env.example
+          retention-days: 1
+
+      - name: Upload workspace manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-manifests
+          path: |
+            pnpm-workspace.yaml
+            pnpm-lock.yaml
+            package.json
+          retention-days: 1
+
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
@@ -64,6 +86,18 @@ jobs:
         with:
           name: api-src
           path: api-src/
+
+      - name: Download claude-ops-bot
+        uses: actions/download-artifact@v4
+        with:
+          name: claude-ops-bot
+          path: claude-ops-bot/
+
+      - name: Download workspace manifests
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace-manifests
+          path: workspace-manifests/
 
       - name: Setup SSH
         run: |
@@ -85,8 +119,40 @@ jobs:
             api-src/ \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/packages/api/src/
 
+      - name: Deploy claude-ops-bot
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            "mkdir -p /var/www/kanban-app/apps/claude-ops-bot"
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            --exclude='node_modules' \
+            --exclude='dist' \
+            --exclude='.env' \
+            claude-ops-bot/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/apps/claude-ops-bot/
+
+      - name: Deploy workspace manifests
+        run: |
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            workspace-manifests/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/
+
+      - name: Install deps on server
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            "cd /var/www/kanban-app && pnpm install --no-frozen-lockfile"
+
       - name: Restart API
         run: |
-          ssh -i ~/.ssh/id_ed25519 \
-            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
             "pm2 restart kanban-api && pm2 save"
+
+      - name: Start or restart claude-ops-bot
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "bash -lc '
+            if pm2 describe claude-ops-bot > /dev/null 2>&1; then
+              pm2 restart claude-ops-bot
+            else
+              pm2 start --name claude-ops-bot --cwd /var/www/kanban-app/apps/claude-ops-bot npm -- start
+            fi
+            pm2 save
+          '"
