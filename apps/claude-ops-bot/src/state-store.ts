@@ -1,11 +1,12 @@
 import * as path from 'node:path';
+import * as fsp from 'node:fs/promises';
 import * as fs from 'fs-extra';
 
 export async function ensureDirs(stateDir: string): Promise<void> {
   await fs.mkdirp(path.join(stateDir, 'sessions'));
   await fs.mkdirp(path.join(stateDir, 'logs'));
   await fs.mkdirp(path.join(stateDir, 'backups'));
-  await fs.chmod(stateDir, 0o700).catch(() => {});
+  await fsp.chmod(stateDir, 0o700).catch(() => {});
 }
 
 export async function readJson<T>(file: string): Promise<T | null> {
