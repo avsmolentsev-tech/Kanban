@@ -1,4 +1,5 @@
-import { Telegraf } from 'telegraf';
+import { Telegraf, Context } from 'telegraf';
+import { message } from 'telegraf/filters';
 import * as path from 'node:path';
 import { loadConfig } from './config.js';
 import { makeAuthMiddleware } from './auth.js';
@@ -7,6 +8,7 @@ import { ProjectResolver } from './project-resolver.js';
 import { ensureDirs } from './state-store.js';
 import { ClaudeRunner } from './claude-runner.js';
 import { chunkForTelegram } from './tg-format.js';
+import { transcribe } from './whisper.js';
 
 export async function startBot(): Promise<void> {
   const cfg = loadConfig();
@@ -139,6 +141,28 @@ export async function startBot(): Promise<void> {
     } finally {
       s.claudeProcess = undefined;
       sessions.touch(tgId);
+    }
+  });
+
+  async function dispatchText(ctx: Context, text: string): Promise<void> {
+    // Re-enter the text flow manually by constructing a minimal Update and replaying it.
+    const fakeMessage = { ...(ctx.message as any), text };
+    await bot.handleUpdate({ update_id: 0, message: fakeMessage } as any);
+  }
+
+  bot.on(message('voice'), async (ctx) => {
+    try {
+      await ctx.reply('🎤 Транскрибирую...');
+      const fileId = ctx.message.voice.file_id;
+      const link = await ctx.telegram.getFileLink(fileId);
+      const res = await fetch(link.href);
+      const buf = Buffer.from(await res.arrayBuffer());
+      const text = await transcribe(buf, 'voice.ogg');
+      if (!text.trim()) { await ctx.reply('⚠️ пусто'); return; }
+      await ctx.reply(`📝 ${text.slice(0, 500)}${text.length > 500 ? '…' : ''}`);
+      await dispatchText(ctx, text);
+    } catch (err) {
+      await ctx.reply(`❌ ${err instanceof Error ? err.message : String(err)}`);
     }
   });
 
