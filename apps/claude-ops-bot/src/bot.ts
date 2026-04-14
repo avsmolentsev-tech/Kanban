@@ -10,7 +10,7 @@ import { ensureDirs } from './state-store.js';
 import { ClaudeRunner } from './claude-runner.js';
 import { chunkForTelegram } from './tg-format.js';
 import { transcribe } from './whisper.js';
-import { classifyDiff, inspectLastCommit, pushMaster, parkOnBranch } from './git-safety.js';
+import { classifyDiff, inspectLastCommit, pushMaster, parkOnBranch, mergeBranch, revertHead } from './git-safety.js';
 
 export async function startBot(): Promise<void> {
   const cfg = loadConfig();
@@ -88,6 +88,31 @@ export async function startBot(): Promise<void> {
     const s = sessions.get(ctx.from!.id);
     s.model = 'opus';
     return ctx.reply('Следующий раунд: Opus');
+  });
+
+  bot.command('merge', async (ctx) => {
+    const s = sessions.get(ctx.from!.id);
+    if (!s.activeTarget || s.activeTarget.type !== 'git') return ctx.reply('Нужен активный git-проект.');
+    const branch = ctx.message.text.replace(/^\/merge\s*/, '').trim();
+    if (!branch.startsWith('claude/')) return ctx.reply('Формат: /merge claude/<name>');
+    try {
+      await mergeBranch(s.activeTarget.path, branch);
+      return ctx.reply(`✅ ${branch} → master`);
+    } catch (err) {
+      return ctx.reply(`❌ ${err instanceof Error ? err.message : err}`);
+    }
+  });
+
+  bot.command('rollback', async (ctx) => {
+    const s = sessions.get(ctx.from!.id);
+    if (!s.activeTarget) return ctx.reply('Нет активного проекта.');
+    if (s.activeTarget.type !== 'git') return ctx.reply('Folder rollback — в Task 19.');
+    try {
+      const sha = await revertHead(s.activeTarget.path);
+      return ctx.reply(`✅ revert, новый HEAD: ${sha}`);
+    } catch (err) {
+      return ctx.reply(`❌ ${err instanceof Error ? err.message : err}`);
+    }
   });
 
   bot.on('text', async (ctx) => {
