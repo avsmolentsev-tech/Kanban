@@ -11,6 +11,7 @@ import { ClaudeRunner } from './claude-runner.js';
 import { chunkForTelegram } from './tg-format.js';
 import { transcribe } from './whisper.js';
 import { classifyDiff, inspectLastCommit, pushMaster, parkOnBranch, mergeBranch, revertHead } from './git-safety.js';
+import { snapshot, pruneOldSnapshots, restoreLatest } from './folder-safety.js';
 
 export async function startBot(): Promise<void> {
   const cfg = loadConfig();
@@ -106,13 +107,16 @@ export async function startBot(): Promise<void> {
   bot.command('rollback', async (ctx) => {
     const s = sessions.get(ctx.from!.id);
     if (!s.activeTarget) return ctx.reply('Нет активного проекта.');
-    if (s.activeTarget.type !== 'git') return ctx.reply('Folder rollback — в Task 19.');
-    try {
-      const sha = await revertHead(s.activeTarget.path);
-      return ctx.reply(`✅ revert, новый HEAD: ${sha}`);
-    } catch (err) {
-      return ctx.reply(`❌ ${err instanceof Error ? err.message : err}`);
+    if (s.activeTarget.type === 'git') {
+      try {
+        const sha = await revertHead(s.activeTarget.path);
+        return ctx.reply(`✅ revert, новый HEAD: ${sha}`);
+      } catch (err) { return ctx.reply(`❌ ${err instanceof Error ? err.message : err}`); }
     }
+    try {
+      await restoreLatest(s.activeTarget.path, path.join(cfg.stateDir, 'backups'), String(ctx.from!.id));
+      return ctx.reply('✅ vault восстановлен из последнего снимка');
+    } catch (err) { return ctx.reply(`❌ ${err instanceof Error ? err.message : err}`); }
   });
 
   bot.on('text', async (ctx) => {
@@ -138,6 +142,12 @@ export async function startBot(): Promise<void> {
     }
 
     await ctx.reply(`🚀 ${s.activeTarget!.name} (${s.model}) старт`);
+
+    if (s.activeTarget!.type === 'folder') {
+      const backupsRoot = path.join(cfg.stateDir, 'backups');
+      await snapshot(s.activeTarget!.path, backupsRoot, String(tgId));
+      await pruneOldSnapshots(backupsRoot, String(tgId), 5);
+    }
 
     const runner = new ClaudeRunner({
       bin: cfg.claudeBin,
