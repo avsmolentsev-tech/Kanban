@@ -1,6 +1,6 @@
 // TODO: switch to cp -al on Linux for space savings (hard-link snapshots)
 import * as path from 'node:path';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 
 export async function snapshot(targetDir: string, backupsRoot: string, sessionId: string): Promise<string> {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');

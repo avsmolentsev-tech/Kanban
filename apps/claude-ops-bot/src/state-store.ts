@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as fsp from 'node:fs/promises';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 
 export async function ensureDirs(stateDir: string): Promise<void> {
   await fs.mkdirp(path.join(stateDir, 'sessions'));
