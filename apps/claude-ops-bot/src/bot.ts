@@ -10,6 +10,7 @@ import { ensureDirs } from './state-store.js';
 import { ClaudeRunner } from './claude-runner.js';
 import { chunkForTelegram } from './tg-format.js';
 import { transcribe } from './whisper.js';
+import { classifyDiff, inspectLastCommit, pushMaster, parkOnBranch } from './git-safety.js';
 
 export async function startBot(): Promise<void> {
   const cfg = loadConfig();
@@ -135,7 +136,34 @@ export async function startBot(): Promise<void> {
       const res = await runner.run(text, (c) => { buf += c; });
       clearInterval(flushTimer);
       await flush();
-      await ctx.reply(res.exitCode === 0 ? `✅ раунд завершён` : `⚠️ exit ${res.exitCode}`);
+      if (res.exitCode !== 0) {
+        await ctx.reply(`⚠️ Claude exit ${res.exitCode}`);
+      } else if (s.activeTarget!.type === 'git') {
+        const info = await inspectLastCommit(s.activeTarget!.path);
+        if (!info) {
+          await ctx.reply('ℹ️ Claude не сделал коммитов.');
+        } else {
+          const cls = classifyDiff(info);
+          if (cls.kind === 'small') {
+            try {
+              const sha = await pushMaster(s.activeTarget!.path);
+              await ctx.reply(`✅ влито в master (${sha}), ${info.files.length} файл(ов), ${info.totalChanges} строк. Deploy в процессе.`);
+            } catch (err) {
+              await ctx.reply(`❌ push не удался: ${err instanceof Error ? err.message : err}`);
+            }
+          } else {
+            try {
+              const slug = text.slice(0, 40);
+              const branch = await parkOnBranch(s.activeTarget!.path, slug);
+              await ctx.reply(`⚠️ Большое изменение (${cls.reason}). Ветка: ${branch}\n/merge ${branch} чтобы влить.`);
+            } catch (err) {
+              await ctx.reply(`❌ park не удался: ${err instanceof Error ? err.message : err}`);
+            }
+          }
+        }
+      } else {
+        await ctx.reply('✅ раунд завершён (folder target, без git).');
+      }
     } catch (err) {
       clearInterval(flushTimer);
       await ctx.reply(`❌ ${err instanceof Error ? err.message : String(err)}`);
