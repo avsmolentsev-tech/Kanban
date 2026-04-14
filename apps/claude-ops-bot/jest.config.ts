@@ -10,7 +10,7 @@ const config: Config = {
   transform: {
     '^.+\\.ts$': ['ts-jest', { useESM: true, tsconfig: { module: 'ESNext', moduleResolution: 'Bundler', target: 'ES2022', strict: true, esModuleInterop: true } }],
   },
-  testMatch: ['<rootDir>/tests/**/*.test.ts'],
+  testRegex: 'tests/.*\\.test\\.ts$',
 };
 
 export default config;
