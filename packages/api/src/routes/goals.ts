@@ -87,7 +87,7 @@ goalsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   }
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM goals WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(goalId, userId);
+  const existing = getDb().prepare('SELECT id FROM goals WHERE id = ? AND user_id = ?').get(goalId, userId);
   if (!existing) { res.status(404).json(fail('Goal not found')); return; }
   const entries = Object.entries(parsed.data).filter(([, v]) => v !== undefined);
   if (entries.length === 0) {
@@ -106,10 +106,10 @@ goalsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
 goalsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM goals WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(goalId, userId);
+  const existing = getDb().prepare('SELECT id FROM goals WHERE id = ? AND user_id = ?').get(goalId, userId);
   if (!existing) { res.status(404).json(fail('Goal not found')); return; }
   // Delete key results first
-  getDb().prepare('DELETE FROM goals WHERE parent_id = ? AND (user_id = ? OR user_id IS NULL)').run(goalId, userId);
-  getDb().prepare('DELETE FROM goals WHERE id = ? AND (user_id = ? OR user_id IS NULL)').run(goalId, userId);
+  getDb().prepare('DELETE FROM goals WHERE parent_id = ? AND user_id = ?').run(goalId, userId);
+  getDb().prepare('DELETE FROM goals WHERE id = ? AND user_id = ?').run(goalId, userId);
   res.json(ok({ deleted: true }));
 });

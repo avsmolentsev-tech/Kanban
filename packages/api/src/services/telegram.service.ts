@@ -665,7 +665,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
         // Ingest as meeting
         const ingestService = new IngestService();
-        const result = await ingestService.ingestText(transcript);
+        const result = await ingestService.ingestText(transcript, userId);
         await sendLong(ctx, formatIngestResult(result));
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'unknown'}`);
@@ -946,7 +946,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
           await sendCommandResult(ctx, response);
         } else {
           const ingestService = new IngestService();
-          const result = await ingestService.ingestText(text);
+          const result = await ingestService.ingestText(text, userId);
           await sendLong(ctx, formatIngestResult(result));
         }
       } catch (err) {
@@ -990,7 +990,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
             await sendCommandResult(ctx, cmdResponse);
         } else {
           const ingestService = new IngestService();
-          const result = await ingestService.ingestText(transcript);
+          const result = await ingestService.ingestText(transcript, userId);
           await sendLong(ctx, formatIngestResult(result));
         }
       } catch (err) {
@@ -1024,12 +1024,12 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
           // Ingest the transcript as text
           const ingestService = new IngestService();
-          const result = await ingestService.ingestText(transcript);
+          const result = await ingestService.ingestText(transcript, userId);
           await sendLong(ctx, formatIngestResult(result));
         } else {
           ctx.reply('📄 Обрабатываю файл...');
           const ingestService = new IngestService();
-          const result = await ingestService.ingestBuffer(buffer, filename);
+          const result = await ingestService.ingestBuffer(buffer, filename, userId);
           await sendLong(ctx, formatIngestResult(result));
         }
       } catch (err) {
@@ -1055,7 +1055,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         ctx.reply(`📝 Транскрипция (${transcript.length} символов):\n${preview}`);
 
         const ingestService = new IngestService();
-        const result = await ingestService.ingestText(transcript);
+        const result = await ingestService.ingestText(transcript, userId);
         await sendLong(ctx, formatIngestResult(result));
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
@@ -1072,7 +1072,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         const buffer = Buffer.from(await response.arrayBuffer());
 
         const ingestService = new IngestService();
-        const result = await ingestService.ingestBuffer(buffer, 'photo.jpg');
+        const result = await ingestService.ingestBuffer(buffer, 'photo.jpg', userId);
         ctx.reply(`📷 Фото обработано: ${result.detected_type}\n${result.summary}`);
       } catch (err) {
         ctx.reply(`❌ Error: ${err instanceof Error ? err.message : 'Unknown'}`);

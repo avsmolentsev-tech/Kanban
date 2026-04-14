@@ -80,7 +80,7 @@ projectsRouter.post('/', (req: AuthRequest, res: Response) => {
 
 projectsRouter.get('/:id', (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
-  const project = getDb().prepare('SELECT * FROM projects WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(Number(req.params['id']), userId);
+  const project = getDb().prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
   if (!project) { res.status(404).json(fail('Project not found')); return; }
   const tasks = getDb().prepare('SELECT * FROM tasks WHERE project_id = ? AND archived = 0').all(Number(req.params['id']));
   const meetings = getDb().prepare('SELECT * FROM meetings WHERE project_id = ?').all(Number(req.params['id']));
@@ -91,12 +91,12 @@ projectsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM projects WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(Number(req.params['id']), userId);
+  const existing = getDb().prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
   if (!existing) { res.status(404).json(fail('Project not found')); return; }
   const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
   const values = Object.values(parsed.data).filter((v) => v !== undefined);
   if (fields.length === 0) { res.status(400).json(fail('No fields to update')); return; }
-  getDb().prepare(`UPDATE projects SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND (user_id = ? OR user_id IS NULL)`).run(...values, Number(req.params['id']), userId);
+  getDb().prepare(`UPDATE projects SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?`).run(...values, Number(req.params['id']), userId);
   const updated = getDb().prepare('SELECT * FROM projects WHERE id = ?').get(Number(req.params['id']));
   syncProjectToVault(Number(req.params['id']), userId);
   res.json(ok(updated));
@@ -105,8 +105,8 @@ projectsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
 projectsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM projects WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId);
+  const existing = getDb().prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(id, userId);
   if (!existing) { res.status(404).json(fail('Project not found')); return; }
-  getDb().prepare("UPDATE projects SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND (user_id = ? OR user_id IS NULL)").run(id, userId);
+  getDb().prepare("UPDATE projects SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?").run(id, userId);
   res.json(ok({ deleted: true }));
 });

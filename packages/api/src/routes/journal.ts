@@ -54,11 +54,11 @@ journalRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM journal WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId);
+  const existing = getDb().prepare('SELECT id FROM journal WHERE id = ? AND user_id = ?').get(id, userId);
   if (!existing) { res.status(404).json(fail('Journal entry not found')); return; }
   const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
   const values = Object.values(parsed.data).filter((v) => v !== undefined);
   if (fields.length === 0) { res.status(400).json(fail('No fields')); return; }
-  getDb().prepare(`UPDATE journal SET ${fields.join(', ')} WHERE id = ? AND (user_id = ? OR user_id IS NULL)`).run(...values, id, userId);
+  getDb().prepare(`UPDATE journal SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, id, userId);
   res.json(ok(getDb().prepare('SELECT * FROM journal WHERE id = ?').get(id)));
 });

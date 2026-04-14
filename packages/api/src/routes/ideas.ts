@@ -54,7 +54,7 @@ ideasRouter.post('/', (req: AuthRequest, res: Response) => {
 
 ideasRouter.get('/:id', (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
-  const idea = getDb().prepare('SELECT * FROM ideas WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(Number(req.params['id']), userId);
+  const idea = getDb().prepare('SELECT * FROM ideas WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
   if (!idea) { res.status(404).json(fail('Idea not found')); return; }
   res.json(ok(idea));
 });
@@ -64,7 +64,7 @@ ideasRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const before = getDb().prepare('SELECT * FROM ideas WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId) as Record<string, unknown> | undefined;
+  const before = getDb().prepare('SELECT * FROM ideas WHERE id = ? AND user_id = ?').get(id, userId) as Record<string, unknown> | undefined;
   if (!before) { res.status(404).json(fail('Idea not found')); return; }
 
   const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
@@ -103,7 +103,7 @@ ideasRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
 ideasRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const idea = getDb().prepare('SELECT vault_path FROM ideas WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId) as { vault_path: string | null } | undefined;
+  const idea = getDb().prepare('SELECT vault_path FROM ideas WHERE id = ? AND user_id = ?').get(id, userId) as { vault_path: string | null } | undefined;
   if (!idea) { res.status(404).json(fail('Idea not found')); return; }
   getDb().prepare('DELETE FROM ideas WHERE id = ?').run(id);
   searchService.removeRecord('idea', id);

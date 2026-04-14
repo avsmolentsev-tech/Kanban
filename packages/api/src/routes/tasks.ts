@@ -165,12 +165,12 @@ tasksRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const { person_ids, ...rest } = parsed.data;
   const taskId = Number(req.params['id']);
   const userId = getUserId(req);
-  const owner = getDb().prepare('SELECT id FROM tasks WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(taskId, userId);
+  const owner = getDb().prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?').get(taskId, userId);
   if (!owner) { res.status(404).json(fail('Task not found')); return; }
   const fields = Object.entries(rest).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
   const values = Object.values(rest).filter((v) => v !== undefined);
   if (fields.length > 0) {
-    getDb().prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND (user_id = ? OR user_id IS NULL)`).run(...values, taskId, userId);
+    getDb().prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?`).run(...values, taskId, userId);
   } else if (person_ids === undefined) {
     res.status(400).json(fail('No fields')); return;
   }
@@ -219,21 +219,22 @@ tasksRouter.patch('/:id/move', (req: AuthRequest, res: Response) => {
 
 tasksRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
-  const task = getDb().prepare('SELECT vault_path FROM tasks WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(Number(req.params['id']), userId) as { vault_path: string | null } | undefined;
+  const task = getDb().prepare('SELECT vault_path FROM tasks WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId) as { vault_path: string | null } | undefined;
   if (!task) { res.status(404).json(fail('Task not found')); return; }
-  getDb().prepare(`UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND (user_id = ? OR user_id IS NULL)`).run(Number(req.params['id']), userId);
+  getDb().prepare(`UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?`).run(Number(req.params['id']), userId);
   // Move vault file to trash
   try { if (task?.vault_path) obsidian.forUser(getUserId(req)).deleteFile(task.vault_path); } catch {}
   res.json(ok({ archived: true }));
 });
 
-// Process recurring tasks
-tasksRouter.post('/process-recurring', (_req: AuthRequest, res: Response) => {
+// Process recurring tasks (scoped to calling user)
+tasksRouter.post('/process-recurring', (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (userId == null) { res.status(401).json(fail('Authentication required')); return; }
   const db = getDb();
-  const doneTasks = db.prepare("SELECT * FROM tasks WHERE status = 'done' AND recurrence IS NOT NULL AND archived = 0").all() as Record<string, unknown>[];
+  const doneTasks = db.prepare("SELECT * FROM tasks WHERE status = 'done' AND recurrence IS NOT NULL AND archived = 0 AND user_id = ?").all(userId) as Record<string, unknown>[];
   const created: number[] = [];
   for (const t of doneTasks) {
-    // Calculate next due_date
     let nextDue: string | null = null;
     if (t['due_date']) {
       const d = new Date(t['due_date'] as string);
@@ -243,14 +244,13 @@ tasksRouter.post('/process-recurring', (_req: AuthRequest, res: Response) => {
       nextDue = d.toISOString().split('T')[0];
     }
     const result = db.prepare(
-      'INSERT INTO tasks (project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO tasks (user_id, project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
-      t['project_id'] ?? null, t['parent_id'] ?? null, t['title'], t['description'],
+      userId, t['project_id'] ?? null, t['parent_id'] ?? null, t['title'], t['description'],
       'todo', t['priority'], t['urgency'], nextDue, t['start_date'] ?? null, t['recurrence']
     );
     created.push(result.lastInsertRowid as number);
-    // Clear recurrence on original so it doesn't get processed again
-    db.prepare('UPDATE tasks SET recurrence = NULL WHERE id = ?').run(t['id']);
+    db.prepare('UPDATE tasks SET recurrence = NULL WHERE id = ? AND user_id = ?').run(t['id'], userId);
   }
   res.json(ok({ processed: doneTasks.length, created_ids: created }));
 });

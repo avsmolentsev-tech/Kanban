@@ -20,10 +20,20 @@ emailWebhookRouter.post('/', (req: Request, res: Response) => {
 
   const db = getDb();
 
-  // Auto-assign to self
-  const selfRow = db.prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
+  // Webhook has no session; route to explicit user_id (query/body) or env default.
+  const userIdRaw = req.query['user_id'] ?? req.body?.user_id ?? process.env['WEBHOOK_DEFAULT_USER_ID'];
+  const userId = userIdRaw != null ? Number(userIdRaw) : NaN;
+  if (!Number.isInteger(userId) || userId <= 0) {
+    res.status(400).json(fail('Missing user_id (provide ?user_id=N or set WEBHOOK_DEFAULT_USER_ID)'));
+    return;
+  }
+  const userExists = db.prepare('SELECT 1 FROM users WHERE id = ?').get(userId);
+  if (!userExists) { res.status(400).json(fail('Invalid user_id')); return; }
 
-  const result = db.prepare('INSERT INTO tasks (title, description, status, priority) VALUES (?, ?, ?, ?)').run(
+  const selfRow = db.prepare("SELECT id FROM people WHERE user_id = ? AND LOWER(name) IN ('я','me','self') LIMIT 1").get(userId) as { id: number } | undefined;
+
+  const result = db.prepare('INSERT INTO tasks (user_id, title, description, status, priority) VALUES (?, ?, ?, ?, ?)').run(
+    userId,
     title.slice(0, 200),
     `${senderInfo ? 'От: ' + senderInfo + '\n\n' : ''}${description.slice(0, 5000)}`,
     'backlog',

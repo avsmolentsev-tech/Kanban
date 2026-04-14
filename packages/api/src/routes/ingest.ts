@@ -23,33 +23,31 @@ ingestRouter.get('/', (req: AuthRequest, res: Response) => {
 ingestRouter.post('/', upload.single('file'), async (req: AuthRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    if (userId == null) { res.status(401).json(fail('Authentication required')); return; }
     let result;
     if (req.file) {
-      result = await ingestService.ingestBuffer(req.file.buffer, req.file.originalname);
+      result = await ingestService.ingestBuffer(req.file.buffer, req.file.originalname, userId);
     } else if (typeof req.body['text'] === 'string') {
-      result = await ingestService.ingestText(req.body['text'] as string);
+      result = await ingestService.ingestText(req.body['text'] as string, userId);
     } else if (typeof req.body['url'] === 'string') {
-      // URL ingestion - parse URL directly
       const { parseUrl } = require('../parsers');
       const text = await parseUrl(req.body['url']);
-      result = await ingestService.ingestBuffer(Buffer.from(text, 'utf-8'), req.body['url']);
+      result = await ingestService.ingestBuffer(Buffer.from(text, 'utf-8'), req.body['url'], userId);
     } else {
       res.status(400).json(fail('Provide a file or text field'));
       return;
     }
 
-    // Associate created records with the current user and optional project
     const projectId = req.body['project_id'] ? Number(req.body['project_id']) : null;
-    const db = getDb();
-    for (const record of result.created_records) {
-      if (record.type === 'meeting') {
-        if (userId != null) db.prepare('UPDATE meetings SET user_id = ? WHERE id = ?').run(userId, record.id);
-        if (projectId) db.prepare('UPDATE meetings SET project_id = ? WHERE id = ?').run(projectId, record.id);
-      } else if (record.type === 'task') {
-        if (userId != null) db.prepare('UPDATE tasks SET user_id = ? WHERE id = ?').run(userId, record.id);
-        if (projectId) db.prepare('UPDATE tasks SET project_id = ? WHERE id = ?').run(projectId, record.id);
+    if (projectId) {
+      const db = getDb();
+      const owns = db.prepare('SELECT 1 FROM projects WHERE id = ? AND user_id = ?').get(projectId, userId);
+      if (owns) {
+        for (const record of result.created_records) {
+          if (record.type === 'meeting') db.prepare('UPDATE meetings SET project_id = ? WHERE id = ? AND user_id = ?').run(projectId, record.id, userId);
+          else if (record.type === 'task') db.prepare('UPDATE tasks SET project_id = ? WHERE id = ? AND user_id = ?').run(projectId, record.id, userId);
+        }
       }
-      // ideas table may not have project_id; skip silently
     }
 
     res.status(201).json(ok(result));

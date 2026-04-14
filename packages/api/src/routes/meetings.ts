@@ -115,7 +115,7 @@ meetingsRouter.post('/', async (req: AuthRequest, res: Response) => {
 meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId);
+  const existing = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND user_id = ?').get(id, userId);
   if (!existing) { res.status(404).json(fail('Meeting not found')); return; }
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
@@ -167,7 +167,7 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
 
 meetingsRouter.get('/:id', (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
-  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(Number(req.params['id']), userId);
+  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
   const agreements = getDb().prepare('SELECT * FROM agreements WHERE meeting_id = ?').all(Number(req.params['id']));
   const people = getDb().prepare('SELECT p.* FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(Number(req.params['id']));
@@ -177,7 +177,7 @@ meetingsRouter.get('/:id', (req: AuthRequest, res: Response) => {
 meetingsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const meeting = getDb().prepare('SELECT vault_path FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId) as { vault_path: string | null } | undefined;
+  const meeting = getDb().prepare('SELECT vault_path FROM meetings WHERE id = ? AND user_id = ?').get(id, userId) as { vault_path: string | null } | undefined;
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
   getDb().prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(id);
   getDb().prepare('DELETE FROM meeting_projects WHERE meeting_id = ?').run(id);
@@ -311,7 +311,7 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
 // POST /meetings/:id/transcribe — fires a background job and returns 202 immediately
 meetingsRouter.post('/:id/transcribe', upload.single('audio'), (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
-  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, getUserId(req)) as Record<string, unknown> | undefined;
+  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND user_id = ?').get(id, getUserId(req)) as Record<string, unknown> | undefined;
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
 
   if (req.file) {
@@ -406,7 +406,7 @@ export async function sendMeetingToTelegram(meetingId: number, userId: number, t
 meetingsRouter.post('/:id/summarize', async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId) as Record<string, unknown> | undefined;
+  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND user_id = ?').get(id, userId) as Record<string, unknown> | undefined;
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
   const raw = ((meeting['summary_raw'] as string) ?? '').trim();
   if (!raw) { res.status(400).json(fail('No content to summarize')); return; }
@@ -434,7 +434,7 @@ meetingsRouter.post('/:id/send-to-telegram', async (req: AuthRequest, res: Respo
   const id = Number(req.params['id']);
   const userId = getUserId(req);
   if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
-  const exists = getDb().prepare('SELECT id FROM meetings WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, userId);
+  const exists = getDb().prepare('SELECT id FROM meetings WHERE id = ? AND user_id = ?').get(id, userId);
   if (!exists) { res.status(404).json(fail('Meeting not found')); return; }
   try {
     await sendMeetingToTelegram(id, userId, parsed.data.type, parsed.data.format);

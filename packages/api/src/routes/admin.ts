@@ -70,7 +70,7 @@ adminRouter.get('/stats', (req: AuthRequest, res: Response) => {
 
       // Transcriptions
       const transcriptions = (db.prepare(`
-        SELECT COUNT(*) as cnt FROM usage_logs WHERE (user_id = ? OR user_id IS NULL) AND type = 'transcription'
+        SELECT COUNT(*) as cnt FROM usage_logs WHERE user_id = ? AND type = 'transcription'
       `).get(u.id) as { cnt: number }).cnt;
 
       return {
