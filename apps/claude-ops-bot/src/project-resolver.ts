@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import { readJson, writeJson } from './state-store.js';
 
 export type TargetType = 'git' | 'folder';

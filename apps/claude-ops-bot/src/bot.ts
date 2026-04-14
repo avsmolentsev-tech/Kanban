@@ -1,7 +1,7 @@
 import { Telegraf, Context } from 'telegraf';
 import { message } from 'telegraf/filters';
 import * as path from 'node:path';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import { loadConfig } from './config.js';
 import { makeAuthMiddleware } from './auth.js';
 import { SessionManager } from './session.js';
