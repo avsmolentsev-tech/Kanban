@@ -1,6 +1,7 @@
 import { Telegraf, Context } from 'telegraf';
 import { message } from 'telegraf/filters';
 import * as path from 'node:path';
+import * as fs from 'fs-extra';
 import { loadConfig } from './config.js';
 import { makeAuthMiddleware } from './auth.js';
 import { SessionManager } from './session.js';
@@ -161,6 +162,39 @@ export async function startBot(): Promise<void> {
       if (!text.trim()) { await ctx.reply('⚠️ пусто'); return; }
       await ctx.reply(`📝 ${text.slice(0, 500)}${text.length > 500 ? '…' : ''}`);
       await dispatchText(ctx, text);
+    } catch (err) {
+      await ctx.reply(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  bot.on(message('document'), async (ctx) => {
+    try {
+      const doc = ctx.message.document;
+      const link = await ctx.telegram.getFileLink(doc.file_id);
+      const res = await fetch(link.href);
+      const buf = Buffer.from(await res.arrayBuffer());
+      const outDir = path.join(cfg.stateDir, 'inputs', String(ctx.from!.id));
+      await fs.mkdirp(outDir);
+      const outPath = path.join(outDir, `${Date.now()}-${doc.file_name ?? 'file'}`);
+      await fs.writeFile(outPath, buf);
+      await ctx.reply(`📎 сохранён: ${outPath}`);
+      await dispatchText(ctx, `Файл доступен локально: ${outPath}\n\n${ctx.message.caption ?? 'Посмотри и действуй.'}`);
+    } catch (err) {
+      await ctx.reply(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  bot.on(message('photo'), async (ctx) => {
+    try {
+      const photo = ctx.message.photo[ctx.message.photo.length - 1]!;
+      const link = await ctx.telegram.getFileLink(photo.file_id);
+      const res = await fetch(link.href);
+      const buf = Buffer.from(await res.arrayBuffer());
+      const outDir = path.join(cfg.stateDir, 'inputs', String(ctx.from!.id));
+      await fs.mkdirp(outDir);
+      const outPath = path.join(outDir, `${Date.now()}-photo.jpg`);
+      await fs.writeFile(outPath, buf);
+      await dispatchText(ctx, `Скриншот: ${outPath}\n\n${ctx.message.caption ?? 'Проанализируй.'}`);
     } catch (err) {
       await ctx.reply(`❌ ${err instanceof Error ? err.message : String(err)}`);
     }
