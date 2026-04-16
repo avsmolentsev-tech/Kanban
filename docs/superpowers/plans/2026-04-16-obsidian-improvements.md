@@ -1412,6 +1412,102 @@ git commit -m "ci(backup): deploy obsidian→drive backup script, cron, logrotat
 
 ---
 
+## Phase 7a — Sync web-UI edits back to vault with full frontmatter
+
+### Task 12b: Web PATCH handlers also propagate tags + company + source
+
+**Files:**
+- Modify: `packages/api/src/routes/meetings.ts`
+- Modify: `packages/api/src/routes/tasks.ts`
+- Modify: `packages/api/src/routes/ideas.ts`
+
+- [ ] **Step 1: Add `company` + `tags` + `source` columns fetch to meetings PATCH vault-sync**
+
+In `packages/api/src/routes/meetings.ts` inside the `void (async () => { ... })` block that runs after update (around line 141–162), replace the `writeMeeting` call with:
+
+```typescript
+const company = (updated['company'] as string | null) ?? undefined;
+const tagsRaw = updated['tags'] as string | null;
+const tags = tagsRaw ? JSON.parse(tagsRaw) as string[] : undefined;
+const source = (updated['source'] as string | null) ?? undefined;
+const agreementsCount = (getDb().prepare('SELECT COUNT(*) as c FROM agreements WHERE meeting_id = ?').get(id) as { c: number }).c;
+const vaultPath = await obsidian.forUser(userId).writeMeeting({
+  title: updated['title'] as string,
+  date: updated['date'] as string,
+  project: projectName,
+  company,
+  summary: (updated['summary_raw'] as string) ?? '',
+  people: peopleNames,
+  tags,
+  source,
+  agreements: agreementsCount,
+});
+```
+
+Note: `meetings.company`, `meetings.tags`, `meetings.source` columns may not exist yet. In that case:
+- Run `sqlite3 /var/www/kanban-app/data/pis.db ".schema meetings"` to confirm.
+- If missing, add a migration file `packages/api/src/db/migrations/20260416_meeting_fields.sql` with:
+  ```sql
+  ALTER TABLE meetings ADD COLUMN company TEXT;
+  ALTER TABLE meetings ADD COLUMN tags TEXT;
+  ALTER TABLE meetings ADD COLUMN source TEXT;
+  ```
+  and ensure it runs on startup (see existing migration bootstrap in `db/db.ts`).
+
+- [ ] **Step 2: Mirror for tasks route**
+
+In `packages/api/src/routes/tasks.ts` — the update endpoint has a similar `obsidian.writeTask(...)` vault-sync block (search for `writeTask`). Replace the arguments to include `company`, `tags`, `source`:
+
+```typescript
+const company = (updated['company'] as string | null) ?? undefined;
+const tagsRaw = updated['tags'] as string | null;
+const tags = tagsRaw ? JSON.parse(tagsRaw) as string[] : undefined;
+const source = (updated['source'] as string | null) ?? undefined;
+const vaultPath = await obsidian.forUser(userId).writeTask({
+  title: updated['title'] as string,
+  status: updated['status'] as string,
+  priority: updated['priority'] as number,
+  urgency: (updated['urgency'] as number) ?? 3,
+  project: projectName,
+  company,
+  due_date: (updated['due_date'] as string | null) ?? null,
+  people: peopleNames,
+  tags,
+  source,
+});
+```
+
+Add `company` column migration to `tasks` if missing (follow same pattern).
+
+- [ ] **Step 3: Mirror for ideas route**
+
+Same for `packages/api/src/routes/ideas.ts` — update the `writeIdea(...)` call to pass `company`, `tags`, `source`. Add migration for `ideas.company` / `ideas.tags` / `ideas.source` if missing.
+
+- [ ] **Step 4: Also: `saveDraftAsIs` (Task 8) should INSERT company + tags + source into DB**
+
+In `packages/api/src/services/telegram.service.ts` inside `saveDraftAsIs` update the INSERT statements so the new columns get populated on initial save (NOT just in vault). Example for meetings:
+```typescript
+const result = db.prepare(
+  'INSERT INTO meetings (user_id, title, date, project_id, company, tags, summary_raw, summary_structured, vault_path, source_file, source, processed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
+).run(
+  draft.userId, draft.title, draft.date, null,
+  draft.companyName, JSON.stringify(draft.tags),
+  draft.summary, JSON.stringify({ transcript: draft.transcript }),
+  null, draft.sourceKind, `telegram-${draft.sourceKind}`
+);
+```
+
+Apply same pattern to tasks / ideas branches in `saveDraftAsIs`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/api/src/routes/ packages/api/src/db/migrations/ packages/api/src/services/telegram.service.ts
+git commit -m "feat(api): web edits propagate company/tags/source back to vault frontmatter"
+```
+
+---
+
 ## Phase 7 — Smoke test
 
 ### Task 13: Integration smoke test
