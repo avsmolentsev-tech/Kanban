@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { config } from '../config';
-import type { MeetingStructured, InboxAnalysis } from '@pis/shared';
+import type { MeetingStructured, InboxAnalysis, ExtractionResult } from '@pis/shared';
 import { toolDefinitions, executeTool } from './tools.service';
 
 export interface TaskSuggestion {
@@ -17,9 +17,12 @@ export interface SearchResult {
 
 export class ClaudeService {
   private readonly client: OpenAI;
+  // Public alias so newer code (and tests) can reference `this.openai` / monkey-patch `svc.openai`.
+  public openai: OpenAI;
 
   constructor() {
     this.client = new OpenAI({ apiKey: config.openaiApiKey });
+    this.openai = this.client;
   }
 
   private buildSystemPrompt(extra = ''): string {
@@ -157,6 +160,58 @@ ${text}`;
       if (!jsonMatch) throw new Error('Claude did not return valid JSON for inbox analysis');
       parsed = JSON.parse(jsonMatch[0]) as InboxAnalysis;
     }
+    return parsed;
+  }
+
+  async extractDraft(text: string, todayIso?: string): Promise<ExtractionResult> {
+    const today = todayIso ?? new Date().toISOString().split('T')[0]!;
+    const systemPrompt = `Ты помощник который превращает транскрипт голосовой заметки или свободный текст в структурированную карточку.
+
+Верни СТРОГО JSON без пояснений со следующей схемой:
+{
+  "detected_type": "meeting" | "task" | "idea" | "inbox",
+  "title": "краткое название 4-10 слов на русском",
+  "date": "YYYY-MM-DD (сегодня, если автор явно не указал другую)",
+  "project_hints": ["строка"],
+  "company_hints": ["строка"],
+  "people": ["имя как произнесено"],
+  "tags_hierarchical": ["type/<type>", "project/<slug>", "company/<slug>"],
+  "tags_free": ["до 5 строк на русском, короткие"],
+  "summary": "2-4 предложения на русском",
+  "agreements": 0,
+  "tasks": ["для встречи: 0-10 задач, вытащенных из разговора"]
+}
+
+Правила:
+- Всегда включи "type/<тип>" в tags_hierarchical.
+- Если проект ясен — добавь "project/<транслит в kebab-case>".
+- Если компания ясна — добавь "company/<транслит в kebab-case>".
+- Для идей используй "category/<slug>" вместо "project/...".
+- Свободные теги короткие, на русском, без спецсимволов, до 5 штук.
+- Если дата не указана — сегодняшняя.
+- agreements = 0 для task/idea/inbox.
+- tasks = [] для task/idea/inbox.`;
+    const userPrompt = `Сегодня: ${today}\n\nТекст:\n${text}\n\nВерни JSON.`;
+    const resp = await this.openai.chat.completions.create({
+      model: 'gpt-4.1-mini',
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      response_format: { type: 'json_object' },
+    });
+    const raw = resp.choices[0]?.message?.content ?? '{}';
+    const parsed = JSON.parse(raw) as ExtractionResult;
+    parsed.project_hints ??= [];
+    parsed.company_hints ??= [];
+    parsed.people ??= [];
+    parsed.tags_hierarchical ??= [`type/${parsed.detected_type ?? 'inbox'}`];
+    parsed.tags_free ??= [];
+    parsed.tasks ??= [];
+    parsed.agreements ??= 0;
+    parsed.summary ??= '';
+    parsed.date ??= today;
     return parsed;
   }
 
