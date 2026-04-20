@@ -148,6 +148,23 @@ export class IngestService {
     return this.ingestBuffer(Buffer.from(text, 'utf-8'), 'paste.txt', userId);
   }
 
+  /** Match existing company by name across this user's people; return the canonical name or the hint verbatim */
+  private matchCompany(hints: string[], userId: number): string | null {
+    if (hints.length === 0) return null;
+    const db = getDb();
+    const rows = db.prepare('SELECT DISTINCT company FROM people WHERE user_id = ? AND company != ""').all(userId) as Array<{ company: string }>;
+    const existing = rows.map((r) => r.company);
+    for (const hint of hints) {
+      const lower = hint.toLowerCase().trim();
+      if (!lower) continue;
+      const match = existing.find((c) => c.toLowerCase() === lower || c.toLowerCase().includes(lower) || lower.includes(c.toLowerCase()));
+      if (match) return match;
+    }
+    // No match in DB; return the first non-empty hint verbatim so it still lands in vault as a wiki-link
+    const first = hints.find((h) => h && h.trim());
+    return first ? first.trim() : null;
+  }
+
   getStatus(id: number): unknown {
     return getDb().prepare('SELECT * FROM inbox_items WHERE id = ?').get(id);
   }
