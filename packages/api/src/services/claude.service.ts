@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { config } from '../config';
-import type { MeetingStructured, InboxAnalysis, ExtractionResult } from '@pis/shared';
+import type { MeetingStructured, InboxAnalysis, ExtractionResult, DraftCard } from '@pis/shared';
 import { toolDefinitions, executeTool } from './tools.service';
 
 export interface TaskSuggestion {
@@ -212,6 +212,42 @@ ${text}`;
     parsed.agreements ??= 0;
     parsed.summary ??= '';
     parsed.date ??= today;
+    return parsed;
+  }
+
+  async correctDraft(current: DraftCard, userText: string): Promise<ExtractionResult> {
+    const resp = await this.openai.chat.completions.create({
+      model: 'gpt-4.1-mini',
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: 'Ты обновляешь черновик карточки. Возвращаешь JSON с точно такой же схемой: {detected_type, title, date, project_hints, company_hints, people, tags_hierarchical, tags_free, summary, agreements, tasks}. Берёшь текущие поля и применяешь правку пользователя. Если правка не касается поля — оставь как было. СТРОГО JSON без пояснений.' },
+        { role: 'user', content: `Текущий черновик:\n${JSON.stringify({
+          detected_type: current.type,
+          title: current.title,
+          date: current.date,
+          project_hints: current.projectName ? [current.projectName] : [],
+          company_hints: current.companyName ? [current.companyName] : [],
+          people: current.people,
+          tags_hierarchical: current.tags.filter((t) => t.includes('/')),
+          tags_free: current.tags.filter((t) => !t.includes('/')),
+          summary: current.summary,
+          agreements: 0,
+          tasks: [],
+        })}\n\nПравка пользователя:\n${userText}\n\nВерни обновлённый JSON.` },
+      ],
+      response_format: { type: 'json_object' },
+    });
+    const raw = resp.choices[0]?.message?.content ?? '{}';
+    const parsed = JSON.parse(raw) as ExtractionResult;
+    parsed.project_hints ??= [];
+    parsed.company_hints ??= [];
+    parsed.people ??= [];
+    parsed.tags_hierarchical ??= [`type/${parsed.detected_type ?? 'inbox'}`];
+    parsed.tags_free ??= [];
+    parsed.tasks ??= [];
+    parsed.agreements ??= 0;
+    parsed.summary ??= '';
+    parsed.date ??= current.date;
     return parsed;
   }
 

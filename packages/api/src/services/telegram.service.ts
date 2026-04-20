@@ -11,6 +11,7 @@ import { generateBundle, findProjectByName } from './bundle.service';
 import { generateAllFormats } from './converter.service';
 import { DraftSession } from './draft-session';
 import type { ExtractionResult, DraftCard } from '@pis/shared';
+import { ObsidianService } from './obsidian.service';
 import { renderDraftCard, inlineKeyboard, parseCallbackData } from './card-renderer';
 
 export class TelegramService {
@@ -54,8 +55,81 @@ export class TelegramService {
   }
 
   private async saveDraftAsIs(draft: DraftCard): Promise<void> {
-    console.log('[draft] auto-save:', draft.title);
-    // stub — Task 8 implements the real version
+    const db = getDb();
+    const obsidian = new ObsidianService(config.vaultPath).forUser(draft.userId);
+    const tagsList = draft.tags;
+    if (draft.type === 'meeting') {
+      const fullBody = `${draft.summary}\n\n---\n\n## Полная транскрипция\n\n${draft.transcript}`;
+      const result = db.prepare(
+        'INSERT INTO meetings (user_id, title, date, summary_raw, summary_structured, source_file, processed) VALUES (?, ?, ?, ?, ?, ?, 1)'
+      ).run(draft.userId, draft.title, draft.date, fullBody, JSON.stringify({ transcript: draft.transcript }), draft.sourceKind);
+      const meetingId = Number(result.lastInsertRowid);
+      const vaultRel = await obsidian.writeMeeting({
+        title: draft.title, date: draft.date, people: draft.people,
+        project: draft.projectName ?? undefined,
+        company: draft.companyName ?? undefined,
+        summary: fullBody, agreements: 0,
+        source: `telegram-${draft.sourceKind}`,
+        tags: tagsList,
+      });
+      db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultRel, meetingId);
+    } else if (draft.type === 'task') {
+      const result = db.prepare(
+        'INSERT INTO tasks (user_id, title, description, status, priority, urgency) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(draft.userId, draft.title, draft.summary, 'todo', 3, 3);
+      const taskId = Number(result.lastInsertRowid);
+      const vaultRel = await obsidian.writeTask({
+        title: draft.title, status: 'todo', priority: 3, urgency: 3,
+        project: draft.projectName ?? undefined,
+        company: draft.companyName ?? undefined,
+        people: draft.people,
+        tags: tagsList,
+        source: `telegram-${draft.sourceKind}`,
+      });
+      db.prepare('UPDATE tasks SET vault_path = ? WHERE id = ?').run(vaultRel, taskId);
+    } else if (draft.type === 'idea') {
+      db.prepare(
+        'INSERT INTO ideas (user_id, title, body, category, status) VALUES (?, ?, ?, ?, ?)'
+      ).run(draft.userId, draft.title, draft.summary, 'personal', 'backlog');
+      await obsidian.writeIdea({
+        title: draft.title, body: draft.summary,
+        category: 'personal',
+        project: draft.projectName ?? undefined,
+        company: draft.companyName ?? undefined,
+        date: draft.date,
+        tags: tagsList,
+        source: `telegram-${draft.sourceKind}`,
+      });
+    } else {
+      await obsidian.writeInboxItem(`${draft.date}-${draft.title}.txt`, draft.transcript);
+    }
+  }
+
+  private async applyCorrection(ctx: any, draft: DraftCard, userText: string): Promise<void> {
+    const claude = new ClaudeService();
+    const patched = await claude.correctDraft(draft, userText);
+    const updated = this.drafts.update(draft.tgId, {
+      type: patched.detected_type,
+      title: patched.title,
+      date: patched.date,
+      projectName: patched.project_hints[0] ?? null,
+      companyName: patched.company_hints[0] ?? null,
+      people: patched.people,
+      tags: [...patched.tags_hierarchical, ...patched.tags_free],
+      summary: patched.summary,
+      awaitingEdit: false,
+    });
+    if (!updated || updated.cardMessageId == null) {
+      await ctx.reply('❌ Драфт не найден, попробуй заново.');
+      return;
+    }
+    await ctx.telegram.editMessageText(
+      ctx.chat.id,
+      updated.cardMessageId,
+      undefined,
+      renderDraftCard(updated),
+      { reply_markup: inlineKeyboard(updated) },
+    );
   }
 
   private async buildAndSendDraft(
@@ -1017,8 +1091,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         const tgId = ctx.from!.id;
         const existing = this.drafts.get(tgId);
         if (existing?.awaitingEdit) {
-          // stub for now — Task 8 adds applyCorrection
-          await ctx.reply('Правки пока не реализованы (Task 8)');
+          await this.applyCorrection(ctx, existing, transcript);
           return;
         }
 
