@@ -9,12 +9,19 @@ import OpenAI from 'openai';
 import { moscowDateString, moscowDateTimeString } from '../utils/time';
 import { generateBundle, findProjectByName } from './bundle.service';
 import { generateAllFormats } from './converter.service';
+import { DraftSession } from './draft-session';
+import type { ExtractionResult, DraftCard } from '@pis/shared';
+import { renderDraftCard, inlineKeyboard, parseCallbackData } from './card-renderer';
 
 export class TelegramService {
   private bot: Telegraf | null = null;
   private chatHistories = new Map<number, Array<{ role: 'user' | 'assistant'; content: string }>>();
   private pendingLogins = new Map<number, 'email' | 'password'>(); // tg_id → waiting state
   private pendingEmails = new Map<number, string>(); // tg_id → email entered
+  private drafts = new DraftSession({
+    timeoutMs: 30 * 60_000,
+    onTimeout: (c) => { this.saveDraftAsIs(c).catch((e) => console.error('[draft] timeout save failed:', e)); },
+  });
 
   private getChatHistory(tgId: number): Array<{ role: 'user' | 'assistant'; content: string }> {
     if (!this.chatHistories.has(tgId)) this.chatHistories.set(tgId, []);
@@ -44,6 +51,27 @@ export class TelegramService {
       console.error('[telegram] auto-create user failed:', err);
       return null;
     }
+  }
+
+  private async saveDraftAsIs(draft: DraftCard): Promise<void> {
+    console.log('[draft] auto-save:', draft.title);
+    // stub — Task 8 implements the real version
+  }
+
+  private async buildAndSendDraft(
+    ctx: any,
+    userId: number,
+    tgId: number,
+    sourceKind: DraftCard['sourceKind'],
+    transcript: string,
+    sourceLocalPath: string | null,
+  ): Promise<void> {
+    if (!transcript.trim()) { await ctx.reply('⚠️ Пустой текст, нечего сохранять'); return; }
+    const claude = new ClaudeService();
+    const extraction: ExtractionResult = await claude.extractDraft(transcript);
+    const card = this.drafts.create(tgId, userId, extraction, sourceKind, transcript, sourceLocalPath);
+    const msg = await ctx.reply(renderDraftCard(card), { reply_markup: inlineKeyboard(card) });
+    this.drafts.update(tgId, { cardMessageId: msg.message_id });
   }
 
   /** Execute a command via AI — same as web voice commands */
@@ -985,16 +1013,25 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
           return;
         }
 
-        // Route: short = command, long = ingest as meeting
+        // If draft awaiting edit — route transcript as correction, NOT as new draft
+        const tgId = ctx.from!.id;
+        const existing = this.drafts.get(tgId);
+        if (existing?.awaitingEdit) {
+          // stub for now — Task 8 adds applyCorrection
+          await ctx.reply('Правки пока не реализованы (Task 8)');
+          return;
+        }
+
+        // Short command handling stays the same
         const intent = await this.classifyMessage(transcript, ctx.from?.id);
         if (intent === 'command' || intent === 'chat') {
           const cmdResponse = await this.executeCommand(transcript, ctx.from?.id);
-            await sendCommandResult(ctx, cmdResponse);
-        } else {
-          const ingestService = new IngestService();
-          const result = await ingestService.ingestText(transcript, userId);
-          await sendLong(ctx, formatIngestResult(result));
+          await sendCommandResult(ctx, cmdResponse);
+          return;
         }
+
+        // Long text (meeting/idea/task) → build and send draft card
+        await this.buildAndSendDraft(ctx, userId!, tgId, 'voice', transcript, null);
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
