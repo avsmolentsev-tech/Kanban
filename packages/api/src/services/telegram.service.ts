@@ -9,12 +9,20 @@ import OpenAI from 'openai';
 import { moscowDateString, moscowDateTimeString } from '../utils/time';
 import { generateBundle, findProjectByName } from './bundle.service';
 import { generateAllFormats } from './converter.service';
+import { DraftSession } from './draft-session';
+import type { ExtractionResult, DraftCard } from '@pis/shared';
+import { ObsidianService } from './obsidian.service';
+import { renderDraftCard, inlineKeyboard, parseCallbackData } from './card-renderer';
 
 export class TelegramService {
   private bot: Telegraf | null = null;
   private chatHistories = new Map<number, Array<{ role: 'user' | 'assistant'; content: string }>>();
   private pendingLogins = new Map<number, 'email' | 'password'>(); // tg_id → waiting state
   private pendingEmails = new Map<number, string>(); // tg_id → email entered
+  private drafts = new DraftSession({
+    timeoutMs: 30 * 60_000,
+    onTimeout: (c) => { this.saveDraftAsIs(c).catch((e) => console.error('[draft] timeout save failed:', e)); },
+  });
 
   private getChatHistory(tgId: number): Array<{ role: 'user' | 'assistant'; content: string }> {
     if (!this.chatHistories.has(tgId)) this.chatHistories.set(tgId, []);
@@ -44,6 +52,100 @@ export class TelegramService {
       console.error('[telegram] auto-create user failed:', err);
       return null;
     }
+  }
+
+  private async saveDraftAsIs(draft: DraftCard): Promise<void> {
+    const db = getDb();
+    const obsidian = new ObsidianService(config.vaultPath).forUser(draft.userId);
+    const tagsList = draft.tags;
+    if (draft.type === 'meeting') {
+      const fullBody = `${draft.summary}\n\n---\n\n## Полная транскрипция\n\n${draft.transcript}`;
+      const result = db.prepare(
+        'INSERT INTO meetings (user_id, title, date, summary_raw, summary_structured, source_file, processed) VALUES (?, ?, ?, ?, ?, ?, 1)'
+      ).run(draft.userId, draft.title, draft.date, fullBody, JSON.stringify({ transcript: draft.transcript }), draft.sourceKind);
+      const meetingId = Number(result.lastInsertRowid);
+      const vaultRel = await obsidian.writeMeeting({
+        title: draft.title, date: draft.date, people: draft.people,
+        project: draft.projectName ?? undefined,
+        company: draft.companyName ?? undefined,
+        summary: fullBody, agreements: 0,
+        source: `telegram-${draft.sourceKind}`,
+        tags: tagsList,
+      });
+      db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultRel, meetingId);
+    } else if (draft.type === 'task') {
+      const result = db.prepare(
+        'INSERT INTO tasks (user_id, title, description, status, priority, urgency) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(draft.userId, draft.title, draft.summary, 'todo', 3, 3);
+      const taskId = Number(result.lastInsertRowid);
+      const vaultRel = await obsidian.writeTask({
+        title: draft.title, status: 'todo', priority: 3, urgency: 3,
+        project: draft.projectName ?? undefined,
+        company: draft.companyName ?? undefined,
+        people: draft.people,
+        tags: tagsList,
+        source: `telegram-${draft.sourceKind}`,
+      });
+      db.prepare('UPDATE tasks SET vault_path = ? WHERE id = ?').run(vaultRel, taskId);
+    } else if (draft.type === 'idea') {
+      db.prepare(
+        'INSERT INTO ideas (user_id, title, body, category, status) VALUES (?, ?, ?, ?, ?)'
+      ).run(draft.userId, draft.title, draft.summary, 'personal', 'backlog');
+      await obsidian.writeIdea({
+        title: draft.title, body: draft.summary,
+        category: 'personal',
+        project: draft.projectName ?? undefined,
+        company: draft.companyName ?? undefined,
+        date: draft.date,
+        tags: tagsList,
+        source: `telegram-${draft.sourceKind}`,
+      });
+    } else {
+      await obsidian.writeInboxItem(`${draft.date}-${draft.title}.txt`, draft.transcript);
+    }
+  }
+
+  private async applyCorrection(ctx: any, draft: DraftCard, userText: string): Promise<void> {
+    const claude = new ClaudeService();
+    const patched = await claude.correctDraft(draft, userText);
+    const updated = this.drafts.update(draft.tgId, {
+      type: patched.detected_type,
+      title: patched.title,
+      date: patched.date,
+      projectName: patched.project_hints[0] ?? null,
+      companyName: patched.company_hints[0] ?? null,
+      people: patched.people,
+      tags: [...patched.tags_hierarchical, ...patched.tags_free],
+      summary: patched.summary,
+      awaitingEdit: false,
+    });
+    if (!updated || updated.cardMessageId == null) {
+      await ctx.reply('❌ Драфт не найден, попробуй заново.');
+      return;
+    }
+    await ctx.telegram.editMessageText(
+      ctx.chat.id,
+      updated.cardMessageId,
+      undefined,
+      renderDraftCard(updated),
+      { reply_markup: inlineKeyboard(updated) },
+    );
+  }
+
+  private async buildAndSendDraft(
+    ctx: any,
+    userId: number,
+    tgId: number,
+    sourceKind: DraftCard['sourceKind'],
+    transcript: string,
+    sourceLocalPath: string | null,
+  ): Promise<void> {
+    if (!transcript.trim()) { await ctx.reply('⚠️ Пустой текст, нечего сохранять'); return; }
+    const claude = new ClaudeService();
+    const extraction: ExtractionResult = await claude.extractDraft(transcript);
+    const card = this.drafts.create(tgId, userId, extraction, sourceKind, transcript, sourceLocalPath);
+    const msg = await ctx.reply(renderDraftCard(card), { reply_markup: inlineKeyboard(card) });
+    this.drafts.update(tgId, { cardMessageId: msg.message_id });
   }
 
   /** Execute a command via AI — same as web voice commands */
@@ -884,6 +986,64 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       return msg;
     };
 
+    // Inline button callbacks (draft card actions)
+    this.bot.on('callback_query', async (ctx) => {
+      const data = (ctx.callbackQuery as any).data as string;
+      if (!data) { await ctx.answerCbQuery(); return; }
+      const parsed = parseCallbackData(data);
+      if (!parsed) { await ctx.answerCbQuery('Неверный формат'); return; }
+      const tgId = ctx.from!.id;
+      const draft = this.drafts.get(tgId);
+      if (!draft || draft.id !== parsed.draftId) {
+        await ctx.answerCbQuery('Драфт устарел');
+        return;
+      }
+      switch (parsed.action) {
+        case 'ok': {
+          await this.saveDraftAsIs(draft);
+          this.drafts.close(tgId);
+          await ctx.answerCbQuery('Сохранено');
+          try { await ctx.editMessageReplyMarkup(undefined as any); } catch {}
+          await ctx.reply(`✅ Сохранено: ${draft.title}`);
+          break;
+        }
+        case 'fix': {
+          this.drafts.update(tgId, { awaitingEdit: true });
+          await ctx.answerCbQuery('Жду правку');
+          await ctx.reply('Что поменять? Напиши или надиктуй.');
+          break;
+        }
+        case 'cancel': {
+          const obsidian = new ObsidianService(config.vaultPath).forUser(draft.userId);
+          await obsidian.writeInboxItem(`${draft.date}-отменённый-драфт-${draft.id.slice(0, 8)}.txt`, draft.transcript);
+          this.drafts.close(tgId);
+          await ctx.answerCbQuery('Отменено');
+          try { await ctx.editMessageReplyMarkup(undefined as any); } catch {}
+          await ctx.reply('❌ Отменено, транскрипт сохранён в Inbox.');
+          break;
+        }
+        case 'as-meeting':
+        case 'as-task':
+        case 'as-idea': {
+          const newType = parsed.action.replace('as-', '') as DraftCard['type'];
+          const newTags = draft.tags.map((t) => t.startsWith('type/') ? `type/${newType}` : t);
+          if (!newTags.some((t) => t.startsWith('type/'))) newTags.unshift(`type/${newType}`);
+          const updated = this.drafts.update(tgId, { type: newType, tags: newTags });
+          if (updated?.cardMessageId) {
+            try {
+              await ctx.telegram.editMessageText(
+                ctx.chat!.id, updated.cardMessageId, undefined,
+                renderDraftCard(updated),
+                { reply_markup: inlineKeyboard(updated) },
+              );
+            } catch {}
+          }
+          await ctx.answerCbQuery(`Тип: ${newType}`);
+          break;
+        }
+      }
+    });
+
     // Any text message → smart routing
     this.bot.on(message('text'), async (ctx) => {
       const text = ctx.message.text;
@@ -930,6 +1090,13 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 
       const userId = this.resolveUserId(tgId, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
+
+      // If draft awaiting edit — route text as correction
+      const draft = this.drafts.get(tgId);
+      if (draft?.awaitingEdit) {
+        await this.applyCorrection(ctx, draft, text);
+        return;
+      }
 
       // Check for claude/клод prefix → save for Claude Code processing
       const claudeMatch = text.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
@@ -985,16 +1152,24 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
           return;
         }
 
-        // Route: short = command, long = ingest as meeting
+        // If draft awaiting edit — route transcript as correction, NOT as new draft
+        const tgId = ctx.from!.id;
+        const existing = this.drafts.get(tgId);
+        if (existing?.awaitingEdit) {
+          await this.applyCorrection(ctx, existing, transcript);
+          return;
+        }
+
+        // Short command handling stays the same
         const intent = await this.classifyMessage(transcript, ctx.from?.id);
         if (intent === 'command' || intent === 'chat') {
           const cmdResponse = await this.executeCommand(transcript, ctx.from?.id);
-            await sendCommandResult(ctx, cmdResponse);
-        } else {
-          const ingestService = new IngestService();
-          const result = await ingestService.ingestText(transcript, userId);
-          await sendLong(ctx, formatIngestResult(result));
+          await sendCommandResult(ctx, cmdResponse);
+          return;
         }
+
+        // Long text (meeting/idea/task) → build and send draft card
+        await this.buildAndSendDraft(ctx, userId!, tgId, 'voice', transcript, null);
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
@@ -1024,10 +1199,14 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
           const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
           ctx.reply(`📝 Транскрипция (${transcript.length} символов):\n${preview}`);
 
-          // Ingest the transcript as text
-          const ingestService = new IngestService();
-          const result = await ingestService.ingestText(transcript, userId);
-          await sendLong(ctx, formatIngestResult(result));
+          // If draft awaiting edit — route transcript as correction
+          const activeDraft = this.drafts.get(ctx.from!.id);
+          if (activeDraft?.awaitingEdit) {
+            await this.applyCorrection(ctx, activeDraft, transcript);
+            return;
+          }
+
+          await this.buildAndSendDraft(ctx, userId!, ctx.from!.id, 'audio', transcript, null);
         } else {
           ctx.reply('📄 Обрабатываю файл...');
           const ingestService = new IngestService();
@@ -1056,9 +1235,14 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
         ctx.reply(`📝 Транскрипция (${transcript.length} символов):\n${preview}`);
 
-        const ingestService = new IngestService();
-        const result = await ingestService.ingestText(transcript, userId);
-        await sendLong(ctx, formatIngestResult(result));
+        // If draft awaiting edit — route transcript as correction
+        const activeDraft = this.drafts.get(ctx.from!.id);
+        if (activeDraft?.awaitingEdit) {
+          await this.applyCorrection(ctx, activeDraft, transcript);
+          return;
+        }
+
+        await this.buildAndSendDraft(ctx, userId!, ctx.from!.id, 'audio', transcript, null);
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }

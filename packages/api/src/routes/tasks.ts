@@ -185,10 +185,15 @@ tasksRouter.patch('/:id', (req: AuthRequest, res: Response) => {
       const vp = task['vault_path'] as string | null;
       if (vp) {
         const projectName = task['project_id'] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(task['project_id'] as number) as { name: string } | undefined)?.name : undefined;
+        const company = (task['company'] as string | null) ?? undefined;
+        const tagsRaw = task['tags'] as string | null;
+        const tags = tagsRaw ? JSON.parse(tagsRaw) as string[] : undefined;
+        const source = (task['source'] as string | null) ?? undefined;
         obsidian.forUser(getUserId(req)).updateTask(vp, {
           title: task['title'] as string, status: task['status'] as string,
           priority: task['priority'] as number, urgency: task['urgency'] as number,
           project: projectName, due_date: task['due_date'] as string | null,
+          company, tags, source,
         });
       }
     } catch {}

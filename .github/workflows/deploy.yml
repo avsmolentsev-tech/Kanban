@@ -76,6 +76,15 @@ jobs:
             package.json
           retention-days: 1
 
+      - name: Upload backup scripts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-scripts
+          path: |
+            scripts/backup-obsidian-md-to-drive.sh
+            scripts/logrotate-backup-obsidian-md
+          retention-days: 1
+
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
@@ -111,6 +120,12 @@ jobs:
         with:
           name: workspace-manifests
           path: workspace-manifests/
+
+      - name: Download backup scripts
+        uses: actions/download-artifact@v4
+        with:
+          name: backup-scripts
+          path: backup-scripts/
 
       - name: Setup SSH
         run: |
@@ -174,4 +189,19 @@ jobs:
               pm2 start --name claude-ops-bot --cwd /var/www/kanban-app/apps/claude-ops-bot npm -- start
             fi
             pm2 save
+          '"
+
+      - name: Install Drive backup script + cron + logrotate
+        run: |
+          scp -i ~/.ssh/id_ed25519 backup-scripts/scripts/backup-obsidian-md-to-drive.sh \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/usr/local/bin/backup-obsidian-md-to-drive.sh
+          scp -i ~/.ssh/id_ed25519 backup-scripts/scripts/logrotate-backup-obsidian-md \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/etc/logrotate.d/backup-obsidian-md
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "bash -lc '
+            chmod 0755 /usr/local/bin/backup-obsidian-md-to-drive.sh
+            chmod 0644 /etc/logrotate.d/backup-obsidian-md
+            mkdir -p /var/lib/backup-obsidian
+            ( crontab -l 2>/dev/null | grep -v backup-obsidian-md-to-drive ; echo \"15 3 * * * /usr/local/bin/backup-obsidian-md-to-drive.sh\" ) | crontab -
+            touch /var/log/backup-obsidian-md.log
+            chmod 0644 /var/log/backup-obsidian-md.log
           '"
