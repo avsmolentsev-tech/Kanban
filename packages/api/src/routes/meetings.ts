@@ -145,12 +145,21 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
           ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as { name: string } | undefined)?.name
           : undefined;
         const peopleNames = (getDb().prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(id) as Array<{ name: string }>).map(x => x.name);
+        const company = (updated['company'] as string | null) ?? undefined;
+        const tagsRaw = updated['tags'] as string | null;
+        const tags = tagsRaw ? JSON.parse(tagsRaw) as string[] : undefined;
+        const source = (updated['source'] as string | null) ?? undefined;
+        const agreementsCount = (getDb().prepare('SELECT COUNT(*) as c FROM agreements WHERE meeting_id = ?').get(id) as { c: number }).c;
         const vaultPath = await obsidian.forUser(userId).writeMeeting({
           title: updated['title'] as string,
           date: updated['date'] as string,
           project: projectName,
+          company,
           summary: (updated['summary_raw'] as string) ?? '',
           people: peopleNames,
+          tags,
+          source,
+          agreements: agreementsCount,
         });
         const currentPath = updated['vault_path'] as string | null;
         if (vaultPath && vaultPath !== currentPath) {

@@ -81,13 +81,19 @@ ideasRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
       const projectName = after['project_id']
         ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(after['project_id'] as number) as { name: string } | undefined)?.name
         : undefined;
+      const company = (after['company'] as string | null) ?? undefined;
+      const tagsRaw = after['tags'] as string | null;
+      const tags = tagsRaw ? JSON.parse(tagsRaw) as string[] : undefined;
+      const source = (after['source'] as string | null) ?? 'kanban';
       const vaultPath = await obsidian.forUser(getUserId(req)).writeIdea({
         title: after['title'] as string,
         body: (after['body'] as string) ?? '',
         category: (after['category'] as string) ?? 'personal',
         project: projectName,
+        company,
         date: moscowDateString(),
-        source: 'kanban',
+        source,
+        tags,
       });
       getDb().prepare('UPDATE ideas SET vault_path = ? WHERE id = ?').run(vaultPath, id);
       (after as Record<string, unknown>)['vault_path'] = vaultPath;
