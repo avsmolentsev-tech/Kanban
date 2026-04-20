@@ -8,18 +8,22 @@ interface WriteTaskParams {
   priority: number;
   urgency: number;
   project?: string;
+  company?: string;
   due_date?: string | null;
   people?: string[];
   tags?: string[];
+  source?: string;
 }
 
 interface WriteMeetingParams {
   title: string;
   date: string;
   project?: string;
+  company?: string;
   people?: string[];
   summary: string;
   agreements?: number;
+  tags?: string[];
   source?: string;
 }
 
@@ -47,7 +51,9 @@ interface WriteIdeaParams {
   body: string;
   category: string;
   project?: string;
+  company?: string;
   source?: string;
+  tags?: string[];
   date: string;
 }
 
@@ -88,6 +94,15 @@ export class ObsidianService {
     return `[[${name}]]`;
   }
 
+  private wikiOrNull(name: string | undefined | null): string {
+    return name ? this.wikiLink(name) : 'null';
+  }
+
+  private tagList(tags: string[] | undefined): string {
+    const t = (tags && tags.length > 0) ? tags : [];
+    return `[${t.join(', ')}]`;
+  }
+
   private now(): string {
     return new Date().toISOString();
   }
@@ -104,11 +119,13 @@ export class ObsidianService {
     const people = (params.people ?? []).map((p) => this.wikiLink(p));
     const frontmatter = [
       '---', 'type: task', `status: ${params.status}`,
-      `project: ${params.project ? this.wikiLink(params.project) : 'null'}`,
+      `project: ${this.wikiOrNull(params.project)}`,
+      `company: ${this.wikiOrNull(params.company)}`,
       `priority: ${params.priority}`, `urgency: ${params.urgency}`,
       `due_date: ${params.due_date ?? 'null'}`,
       `people: [${people.join(', ')}]`,
-      `tags: [${(params.tags ?? ['task']).join(', ')}]`,
+      `tags: ${this.tagList(params.tags)}`,
+      `source: ${params.source ?? 'manual'}`,
       `created_at: ${this.now()}`, '---',
     ].join('\n');
     fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.title}\n\n`, 'utf-8');
@@ -122,12 +139,16 @@ export class ObsidianService {
     const people = (params.people ?? []).map((p) => this.wikiLink(p));
     const frontmatter = [
       '---', 'type: meeting', `date: ${params.date}`, `title: "${params.title}"`,
-      `project: ${params.project ? this.wikiLink(params.project) : 'null'}`,
+      `project: ${this.wikiOrNull(params.project)}`,
+      `company: ${this.wikiOrNull(params.company)}`,
       `people: [${people.join(', ')}]`, `agreements: ${params.agreements ?? 0}`,
-      'tags: [meeting]', `source: ${params.source ?? 'manual'}`,
+      `tags: ${this.tagList(params.tags)}`,
+      `source: ${params.source ?? 'manual'}`,
       `created_at: ${this.now()}`, '---',
     ].join('\n');
-    fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.title}\n\n${params.summary}\n`, 'utf-8');
+    const companyLine = params.company ? `**Компания:** ${this.wikiLink(params.company)}\n` : '';
+    const projectLine = params.project ? `**Проект:** ${this.wikiLink(params.project)}\n` : '';
+    fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.title}\n\n${companyLine}${projectLine}\n${params.summary}\n`, 'utf-8');
     return this.userRelative('Meetings', filename);
   }
 
@@ -185,11 +206,14 @@ export class ObsidianService {
     this.ensureDir(dir);
     const frontmatter = [
       '---', 'type: idea', `category: ${params.category}`,
-      `project: ${params.project ? this.wikiLink(params.project) : 'null'}`,
-      `source: ${params.source ?? 'manual'}`, 'tags: [idea]',
+      `project: ${this.wikiOrNull(params.project)}`,
+      `company: ${this.wikiOrNull(params.company)}`,
+      `source: ${params.source ?? 'manual'}`,
+      `tags: ${this.tagList(params.tags)}`,
       `created_at: ${this.now()}`, '---',
     ].join('\n');
-    fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.title}\n\n${params.body}\n`, 'utf-8');
+    const companyLine = params.company ? `**Компания:** ${this.wikiLink(params.company)}\n` : '';
+    fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.title}\n\n${companyLine}${params.body}\n`, 'utf-8');
     return this.userRelative('Ideas', filename);
   }
 
