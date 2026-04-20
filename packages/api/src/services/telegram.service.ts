@@ -1091,9 +1091,9 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       const userId = this.resolveUserId(tgId, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
 
-      // If draft awaiting edit — route text as correction
+      // If there's an open draft — ANY text is treated as correction (no need to press ✏️ first)
       const draft = this.drafts.get(tgId);
-      if (draft?.awaitingEdit) {
+      if (draft) {
         await this.applyCorrection(ctx, draft, text);
         return;
       }
@@ -1152,10 +1152,10 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
           return;
         }
 
-        // If draft awaiting edit — route transcript as correction, NOT as new draft
+        // If there's an open draft — voice after audio is treated as correction (context/clarification)
         const tgId = ctx.from!.id;
         const existing = this.drafts.get(tgId);
-        if (existing?.awaitingEdit) {
+        if (existing) {
           await this.applyCorrection(ctx, existing, transcript);
           return;
         }
