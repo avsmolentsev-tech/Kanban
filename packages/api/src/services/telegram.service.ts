@@ -1091,6 +1091,13 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       const userId = this.resolveUserId(tgId, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
 
+      // If draft awaiting edit — route text as correction
+      const draft = this.drafts.get(tgId);
+      if (draft?.awaitingEdit) {
+        await this.applyCorrection(ctx, draft, text);
+        return;
+      }
+
       // Check for claude/клод prefix → save for Claude Code processing
       const claudeMatch = text.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
       if (claudeMatch) {
@@ -1192,10 +1199,14 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
           const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
           ctx.reply(`📝 Транскрипция (${transcript.length} символов):\n${preview}`);
 
-          // Ingest the transcript as text
-          const ingestService = new IngestService();
-          const result = await ingestService.ingestText(transcript, userId);
-          await sendLong(ctx, formatIngestResult(result));
+          // If draft awaiting edit — route transcript as correction
+          const activeDraft = this.drafts.get(ctx.from!.id);
+          if (activeDraft?.awaitingEdit) {
+            await this.applyCorrection(ctx, activeDraft, transcript);
+            return;
+          }
+
+          await this.buildAndSendDraft(ctx, userId!, ctx.from!.id, 'audio', transcript, null);
         } else {
           ctx.reply('📄 Обрабатываю файл...');
           const ingestService = new IngestService();
@@ -1224,9 +1235,14 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
         ctx.reply(`📝 Транскрипция (${transcript.length} символов):\n${preview}`);
 
-        const ingestService = new IngestService();
-        const result = await ingestService.ingestText(transcript, userId);
-        await sendLong(ctx, formatIngestResult(result));
+        // If draft awaiting edit — route transcript as correction
+        const activeDraft = this.drafts.get(ctx.from!.id);
+        if (activeDraft?.awaitingEdit) {
+          await this.applyCorrection(ctx, activeDraft, transcript);
+          return;
+        }
+
+        await this.buildAndSendDraft(ctx, userId!, ctx.from!.id, 'audio', transcript, null);
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
