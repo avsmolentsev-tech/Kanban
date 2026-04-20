@@ -32,7 +32,7 @@ ensure_folder() {
   [ "$parent_rel" = "." ] && parent_rel=""
   parent_id="$(ensure_folder "$parent_rel")"
   name="$(basename "$rel")"
-  id="$(gog drive mkdir "$name" --parent "$parent_id" --account "$ACCOUNT" --plain 2>>"$LOG" | awk 'NR==1{print $1}')"
+  id="$(gog drive mkdir "$name" --parent "$parent_id" --account "$ACCOUNT" --plain 2>>"$LOG" | awk -F'\t' '/^id\t/{print $2}')"
   if [ -z "$id" ]; then
     log "ERROR: mkdir failed for '$rel'"
     exit 1
@@ -61,7 +61,7 @@ upload_file() {
     gog drive rm "$cached_id" --account "$ACCOUNT" --plain -y >>"$LOG" 2>&1 || true
   fi
   local new_id
-  new_id="$(gog drive upload "$abs" --parent "$parent_id" --account "$ACCOUNT" --plain 2>>"$LOG" | awk 'NR==1{print $1}')"
+  new_id="$(gog drive upload "$abs" --parent "$parent_id" --account "$ACCOUNT" --plain 2>>"$LOG" | awk -F'\t' '/^id\t/{print $2}')"
   if [ -z "$new_id" ]; then
     log "ERROR: upload failed for '$rel'"
     return
