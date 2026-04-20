@@ -193,9 +193,9 @@ jobs:
 
       - name: Install Drive backup script + cron + logrotate
         run: |
-          scp -i ~/.ssh/id_ed25519 backup-scripts/scripts/backup-obsidian-md-to-drive.sh \
+          scp -i ~/.ssh/id_ed25519 backup-scripts/backup-obsidian-md-to-drive.sh \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/usr/local/bin/backup-obsidian-md-to-drive.sh
-          scp -i ~/.ssh/id_ed25519 backup-scripts/scripts/logrotate-backup-obsidian-md \
+          scp -i ~/.ssh/id_ed25519 backup-scripts/logrotate-backup-obsidian-md \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/etc/logrotate.d/backup-obsidian-md
           ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "bash -lc '
             chmod 0755 /usr/local/bin/backup-obsidian-md-to-drive.sh
