@@ -986,6 +986,64 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       return msg;
     };
 
+    // Inline button callbacks (draft card actions)
+    this.bot.on('callback_query', async (ctx) => {
+      const data = (ctx.callbackQuery as any).data as string;
+      if (!data) { await ctx.answerCbQuery(); return; }
+      const parsed = parseCallbackData(data);
+      if (!parsed) { await ctx.answerCbQuery('Неверный формат'); return; }
+      const tgId = ctx.from!.id;
+      const draft = this.drafts.get(tgId);
+      if (!draft || draft.id !== parsed.draftId) {
+        await ctx.answerCbQuery('Драфт устарел');
+        return;
+      }
+      switch (parsed.action) {
+        case 'ok': {
+          await this.saveDraftAsIs(draft);
+          this.drafts.close(tgId);
+          await ctx.answerCbQuery('Сохранено');
+          try { await ctx.editMessageReplyMarkup(undefined as any); } catch {}
+          await ctx.reply(`✅ Сохранено: ${draft.title}`);
+          break;
+        }
+        case 'fix': {
+          this.drafts.update(tgId, { awaitingEdit: true });
+          await ctx.answerCbQuery('Жду правку');
+          await ctx.reply('Что поменять? Напиши или надиктуй.');
+          break;
+        }
+        case 'cancel': {
+          const obsidian = new ObsidianService(config.vaultPath).forUser(draft.userId);
+          await obsidian.writeInboxItem(`${draft.date}-отменённый-драфт-${draft.id.slice(0, 8)}.txt`, draft.transcript);
+          this.drafts.close(tgId);
+          await ctx.answerCbQuery('Отменено');
+          try { await ctx.editMessageReplyMarkup(undefined as any); } catch {}
+          await ctx.reply('❌ Отменено, транскрипт сохранён в Inbox.');
+          break;
+        }
+        case 'as-meeting':
+        case 'as-task':
+        case 'as-idea': {
+          const newType = parsed.action.replace('as-', '') as DraftCard['type'];
+          const newTags = draft.tags.map((t) => t.startsWith('type/') ? `type/${newType}` : t);
+          if (!newTags.some((t) => t.startsWith('type/'))) newTags.unshift(`type/${newType}`);
+          const updated = this.drafts.update(tgId, { type: newType, tags: newTags });
+          if (updated?.cardMessageId) {
+            try {
+              await ctx.telegram.editMessageText(
+                ctx.chat!.id, updated.cardMessageId, undefined,
+                renderDraftCard(updated),
+                { reply_markup: inlineKeyboard(updated) },
+              );
+            } catch {}
+          }
+          await ctx.answerCbQuery(`Тип: ${newType}`);
+          break;
+        }
+      }
+    });
+
     // Any text message → smart routing
     this.bot.on(message('text'), async (ctx) => {
       const text = ctx.message.text;
