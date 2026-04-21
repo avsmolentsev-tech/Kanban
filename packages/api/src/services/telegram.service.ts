@@ -68,13 +68,30 @@ export class TelegramService {
     const tagsList = draft.tags;
     if (draft.type === 'meeting') {
       const fullBody = `${draft.summary}\n\n---\n\n## Полная транскрипция\n\n${draft.transcript}`;
+      // Resolve project
+      const cleanProject = (draft.projectName ?? '').replace(/^❓\s*/, '').replace(/\s*\(не найден\)$/, '').trim() || null;
+      let projectId: number | null = null;
+      if (cleanProject) {
+        const proj = db.prepare('SELECT id FROM projects WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(draft.userId, cleanProject) as { id: number } | undefined;
+        projectId = proj?.id ?? null;
+      }
       const result = db.prepare(
-        'INSERT INTO meetings (user_id, title, date, summary_raw, summary_structured, source_file, processed) VALUES (?, ?, ?, ?, ?, ?, 1)'
-      ).run(draft.userId, draft.title, draft.date, fullBody, JSON.stringify({ transcript: draft.transcript }), draft.sourceKind);
+        'INSERT INTO meetings (user_id, title, date, project_id, summary_raw, summary_structured, source_file, processed) VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
+      ).run(draft.userId, draft.title, draft.date, projectId, fullBody, JSON.stringify({ transcript: draft.transcript }), draft.sourceKind);
       const meetingId = Number(result.lastInsertRowid);
+      // Link people
+      for (const personName of draft.people) {
+        const person = db.prepare('SELECT id FROM people WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(draft.userId, personName.trim()) as { id: number } | undefined;
+        if (person) {
+          db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, person.id);
+        } else {
+          const newPerson = db.prepare('INSERT INTO people (user_id, name) VALUES (?, ?)').run(draft.userId, personName.trim());
+          db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, Number(newPerson.lastInsertRowid));
+        }
+      }
       const vaultRel = await obsidian.writeMeeting({
         title: draft.title, date: draft.date, people: draft.people,
-        project: draft.projectName ?? undefined,
+        project: cleanProject ?? undefined,
         company: draft.companyName ?? undefined,
         summary: fullBody, agreements: 0,
         source: `telegram-${draft.sourceKind}`,
@@ -185,19 +202,32 @@ export class TelegramService {
     const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
     const needsFullMeetings = meetingKeywords.test(text);
 
-    let meetings: Array<{ id: number; title: string; date: string; project_id: number | null; preview: string }>;
+    let meetings: Array<{ id: number; title: string; date: string; project_id: number | null; preview: string; people: string[] }>;
     let fullMeetingContent = '';
 
+    // Helper: fetch people linked to a meeting
+    const getMeetingPeople = (meetingId: number): string[] => {
+      return (db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map(r => r.name);
+    };
+
     if (needsFullMeetings) {
-      // Fetch last 5 meetings with FULL content
       const fullMeetings = db.prepare(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 5`).all(...userParams) as Array<{ id: number; title: string; date: string; project_id: number | null; summary_raw: string }>;
-      fullMeetingContent = fullMeetings.map(m =>
-        `## Встреча #${m.id}: ${m.title} (${m.date})\n${(m.summary_raw || '').slice(0, 8000)}`
-      ).join('\n\n---\n\n');
-      meetings = fullMeetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.summary_raw || '').slice(0, 200) }));
+      fullMeetingContent = fullMeetings.map(m => {
+        const ppl = getMeetingPeople(m.id);
+        return `## Встреча #${m.id}: ${m.title} (${m.date})${ppl.length ? ` [Участники: ${ppl.join(', ')}]` : ''}\n${(m.summary_raw || '').slice(0, 8000)}`;
+      }).join('\n\n---\n\n');
+      meetings = fullMeetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.summary_raw || '').slice(0, 200), people: getMeetingPeople(m.id) }));
     } else {
-      meetings = db.prepare(`SELECT id, title, date, project_id, substr(summary_raw, 1, 500) as preview FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 20`).all(...userParams) as Array<{ id: number; title: string; date: string; project_id: number | null; preview: string }>;
+      const rawMeetings = db.prepare(`SELECT id, title, date, project_id, substr(summary_raw, 1, 500) as preview FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 20`).all(...userParams) as Array<{ id: number; title: string; date: string; project_id: number | null; preview: string }>;
+      meetings = rawMeetings.map(m => ({ ...m, people: getMeetingPeople(m.id) }));
     }
+
+    // Recent user actions (what was just transcribed/saved/edited — for context continuity)
+    const tgId = tgUserId ?? 0;
+    const recent = this.recentActions.get(tgId) ?? [];
+    const recentContext = recent.length > 0
+      ? `\n\nНЕДАВНИЕ ДЕЙСТВИЯ ПОЛЬЗОВАТЕЛЯ (что он только что делал в этой сессии):\n${recent.slice(0, 5).map((a, i) => `${i + 1}. [${a.type}] "${a.title}" (id=${a.id}, таблица=${a.table}, дата=${a.date})`).join('\n')}\n\nЕсли пользователь говорит "эта встреча", "последняя встреча", "из неё", "к ней" — он имеет в виду запись #1 из этого списка. НЕ СПРАШИВАЙ "какую встречу вы имеете в виду" если контекст очевиден из недавних действий.`
+      : '';
 
     const systemPrompt = `Ты — персональный ассистент пользователя в Telegram. Ты умный, дружелюбный, вдумчивый собеседник.
 
@@ -206,7 +236,7 @@ export class TelegramService {
 ДАННЫЕ СИСТЕМЫ ПОЛЬЗОВАТЕЛЯ:
 Проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
 Задачи: ${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
-Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.preview || '').slice(0, 200) })))}
+Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, people: m.people, preview: (m.preview || '').slice(0, 200) })))}${recentContext}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 Цели и ключевые результаты (OKR):
 ${goals.map(g => `  ${g.type === 'goal' ? '🎯' : '  📊'} #${g.id} ${g.title} (${g.current_value}/${g.target_value} ${g.unit})${g.parent_id ? ` [KR цели #${g.parent_id}]` : ''}`).join('\n')}
