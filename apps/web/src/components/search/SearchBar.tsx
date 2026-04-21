@@ -106,7 +106,7 @@ export function SearchBar() {
             </svg>
             <input
               ref={inputRef}
-              className="flex-1 text-sm outline-none"
+              className="flex-1 text-sm outline-none bg-transparent"
               placeholder="Поиск задач, встреч, идей, людей..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}

@@ -141,7 +141,7 @@ export function InboxPage() {
       </div>
 
       {/* Right: Claude Chat sidebar */}
-      <div className="w-80 flex-shrink-0 flex flex-col border-l bg-white">
+      <div className="w-80 flex-shrink-0 flex flex-col border-l border-gray-200 bg-white">
         <ClaudeChat />
       </div>
     </div>

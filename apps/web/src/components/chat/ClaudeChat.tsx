@@ -22,8 +22,8 @@ export function ClaudeChat() {
   };
 
   return (
-    <div className="flex flex-col h-full border-l bg-white">
-      <div className="px-3 py-2 border-b text-sm font-medium text-gray-700">Чат с Claude</div>
+    <div className="flex flex-col h-full border-l border-gray-200 bg-white">
+      <div className="px-3 py-2 border-b border-gray-200 text-sm font-medium text-gray-700">Чат с Claude</div>
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.map((m, i) => (
           <div key={i} className={`text-sm ${m.role === 'user' ? 'text-right' : 'text-left'}`}>
@@ -32,8 +32,8 @@ export function ClaudeChat() {
         ))}
         {loading && <div className="text-sm text-gray-400">Думаю...</div>}
       </div>
-      <div className="p-3 border-t flex gap-2">
-        <input className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-300"
+      <div className="p-3 border-t border-gray-200 flex gap-2">
+        <input className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-300"
           value={input} onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
           placeholder="Спросите что угодно..." disabled={loading} />
