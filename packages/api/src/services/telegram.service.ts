@@ -324,6 +324,15 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 3. Создай задачи через actions: type="create_task", title=<цель>, description="[🎯 Цель недели] <контекст>", due_date=<YYYY-MM-DD>, status="todo".
 4. Подтверди пользователю раскладку.
 
+ФОКУС ДНЯ:
+Когда пользователь ставит цели на неделю, также спроси/предложи фокус на каждый день.
+Фокус — это одно слово или короткая фраза (1-5 слов), описывающая главный приоритет дня.
+Примеры: "контент", "встречи и нетворкинг", "продукт V-Cards", "отдых", "документы и отчёты".
+После подтверждения пользователем, сохрани фокусы в дневник через actions:
+- type: "set_focus", date: "YYYY-MM-DD", focus: "текст фокуса"
+
+Если пользователь просит поставить фокус на один конкретный день — тоже используй set_focus.
+
 ВАЖНО: Всегда отвечай в формате JSON с полями "actions" (массив) и "response" (строка).
 Для вопросов actions = [], а ответ в response.
 
@@ -345,7 +354,8 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
     {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number], "summary_raw": "string?"},
     {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?, "person_ids": [number]?, "summary_raw": "string?"},
     {"type": "delete_meeting", "meeting_id": number},
-    {"type": "send_meeting", "meeting_id": number, "kind": "summary|full", "format": "md|pdf|docx"}
+    {"type": "send_meeting", "meeting_id": number, "kind": "summary|full", "format": "md|pdf|docx"},
+    {"type": "set_focus", "date": "YYYY-MM-DD", "focus": "текст фокуса"} — установить фокус дня в дневнике
   ],
   "response": "Ответ пользователю — будь кратким и дружелюбным"
 }
@@ -547,6 +557,20 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
             db.prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(action['meeting_id']);
             db.prepare('DELETE FROM meetings WHERE id = ?').run(action['meeting_id']);
             results.push(`🗑 Встреча #${action['meeting_id']} удалена`);
+            break;
+          }
+          case 'set_focus': {
+            const date = action['date'] as string;
+            const focus = action['focus'] as string;
+            if (date && focus) {
+              const existing = db.prepare('SELECT id FROM journal WHERE date = ? AND user_id = ?').get(date, userId);
+              if (existing) {
+                db.prepare('UPDATE journal SET focus = ? WHERE date = ? AND user_id = ?').run(focus, date, userId);
+              } else {
+                db.prepare('INSERT INTO journal (date, focus, user_id) VALUES (?, ?, ?)').run(date, focus, userId);
+              }
+              results.push(`🎯 Фокус на ${date}: ${focus}`);
+            }
             break;
           }
           case 'send_meeting': {
@@ -971,6 +995,34 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       const selfRow = getDb().prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
       if (selfRow) getDb().prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(tid, selfRow.id);
       ctx.reply(`✅ Задача добавлена: ${text}`);
+    });
+
+    // /focus — show or set today's focus
+    this.bot.command('focus', async (ctx) => {
+      const tgId = ctx.from?.id ?? 0;
+      const userId = this.resolveUserId(tgId);
+      if (!userId) return;
+      const text = ctx.message.text.replace(/^\/focus\s*/, '').trim();
+      const db = getDb();
+      const today = moscowDateString();
+
+      if (!text) {
+        const journal = db.prepare('SELECT focus FROM journal WHERE date = ? AND user_id = ?').get(today, userId) as { focus: string } | undefined;
+        if (journal?.focus) {
+          await ctx.reply(`🎯 Фокус сегодня: ${journal.focus}\n\nИзменить: /focus <новый фокус>`);
+        } else {
+          await ctx.reply('🎯 Фокус на сегодня не задан.\n\nПоставить: /focus контент и видео');
+        }
+        return;
+      }
+
+      const existing = db.prepare('SELECT id FROM journal WHERE date = ? AND user_id = ?').get(today, userId);
+      if (existing) {
+        db.prepare('UPDATE journal SET focus = ? WHERE date = ? AND user_id = ?').run(text, today, userId);
+      } else {
+        db.prepare('INSERT INTO journal (date, focus, user_id) VALUES (?, ?, ?)').run(today, text, userId);
+      }
+      await ctx.reply(`🎯 Фокус на ${today}: ${text}`);
     });
 
     // /brief — daily brief
@@ -1471,6 +1523,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       { command: 'transcribe', description: '🎤 Транскрибация по ссылке' },
       { command: 'projects', description: '📁 Список проектов' },
       { command: 'add', description: '➕ Быстро добавить задачу' },
+      { command: 'focus', description: '🎯 Фокус дня (показать/поставить)' },
       { command: 'search', description: '🔍 Поиск в vault' },
       { command: 'all', description: '📊 Все задачи по статусам' },
       { command: 'cmd', description: '🤖 Выполнить команду' },

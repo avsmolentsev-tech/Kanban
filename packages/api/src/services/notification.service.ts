@@ -82,7 +82,12 @@ function checkMorningBrief(): void {
       msg += `🔄 В работе:\n${tasks.map(t => `  • ${t.title} ${'⭐'.repeat(t.priority)}`).join('\n')}`;
     }
 
-    if (todayMeetings.length > 0 || todayTasks.length > 0 || tasks.length > 0) {
+    // Focus of the day
+    const journal = db.prepare('SELECT focus FROM journal WHERE date = ? AND user_id = ?').get(today, user.id) as { focus: string } | undefined;
+    const focusLine = journal?.focus ? `\n🎯 <b>Фокус дня:</b> ${journal.focus}` : '\n🎯 Фокус дня не задан. Напиши /focus чтобы поставить.';
+    msg += focusLine;
+
+    if (todayMeetings.length > 0 || todayTasks.length > 0 || tasks.length > 0 || focusLine) {
       telegramService.notifyUser(user.tg_id, msg);
     }
   }
