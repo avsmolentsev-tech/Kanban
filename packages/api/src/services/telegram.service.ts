@@ -317,13 +317,20 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 - Если название совпадает с уже существующим проектом/задачей из списка — не дублируй, но скажи об этом явно в response.
 - Принцип: если в response пишешь «создал ✅ X» — в actions ОБЯЗАТЕЛЬНО должна быть соответствующая create_* запись.
 
+ЕЖЕНЕДЕЛЬНЫЕ ЦЕЛИ:
+Когда пользователь отвечает на вопрос о целях на неделю (или сам пишет "цели на неделю: ..."):
+1. Распредели по дням Пн-Вс (не больше 1-2 задач на день, оставь Сб-Вс легче).
+2. Привяжи к проектам из списка если совпадают.
+3. Создай задачи через actions: type="create_task", title=<цель>, description="[🎯 Цель недели] <контекст>", due_date=<YYYY-MM-DD>, status="todo".
+4. Подтверди пользователю раскладку.
+
 ВАЖНО: Всегда отвечай в формате JSON с полями "actions" (массив) и "response" (строка).
 Для вопросов actions = [], а ответ в response.
 
 Верни ТОЛЬКО JSON (без markdown, без \`\`\`):
 {
   "actions": [
-    {"type": "create_task", "title": "string", "project_id": number|null, "status": "todo", "priority": 1-5, "due_date": "YYYY-MM-DD"|null, "person_ids": [number]},
+    {"type": "create_task", "title": "string", "project_id": number|null, "status": "todo", "priority": 1-5, "due_date": "YYYY-MM-DD"|null, "person_ids": [number], "description": "string?"},
     {"type": "move_task", "task_id": number, "status": "string"},
     {"type": "delete_task", "task_id": number},
     {"type": "update_task", "task_id": number, "title": "string?", "priority": number?, "due_date": "YYYY-MM-DD?", "project_id": number?, "person_ids": [number]?},
@@ -380,7 +387,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         switch (action['type']) {
           case 'create_task': {
             const r = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-              action['project_id'] ?? null, action['title'], '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId
+              action['project_id'] ?? null, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId
             );
             const taskId = Number(r.lastInsertRowid);
             // Auto-add self if no people specified
@@ -1009,6 +1016,38 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       ctx.reply(`🔍 Результаты:\n\n${lines.join('\n')}`);
     });
 
+    // /settings — per-user settings (e.g. reminder_time)
+    this.bot.command('settings', async (ctx) => {
+      const tgId = ctx.from?.id ?? 0;
+      const userId = this.resolveUserId(tgId, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      if (!userId) return;
+      const text = ctx.message.text.replace(/^\/settings\s*/, '').trim();
+      const sdb = getDb();
+
+      if (!text) {
+        const rows = sdb.prepare('SELECT key, value FROM settings WHERE user_id = ?').all(userId) as Array<{ key: string; value: string }>;
+        if (rows.length === 0) {
+          await ctx.reply('⚙️ Настройки пусты. Доступные:\n/settings reminder_time 21:00');
+          return;
+        }
+        const lines = rows.map(r => `• ${r.key} = ${r.value}`);
+        await ctx.reply(`⚙️ Настройки:\n${lines.join('\n')}\n\nИзменить: /settings <key> <value>`);
+        return;
+      }
+
+      const parts = text.split(/\s+/);
+      const key = parts[0]!;
+      const value = parts.slice(1).join(' ');
+      if (!value) {
+        const row = sdb.prepare('SELECT value FROM settings WHERE user_id = ? AND key = ?').get(userId, key) as { value: string } | undefined;
+        await ctx.reply(`Текущее значение: ${row?.value ?? 'не задано'}`);
+        return;
+      }
+
+      sdb.prepare('INSERT INTO settings (key, value, user_id) VALUES (?, ?, ?) ON CONFLICT(key, user_id) DO UPDATE SET value = ?').run(key, value, userId, value);
+      await ctx.reply(`✅ ${key} = ${value}`);
+    });
+
     // Send executeCommand result — text + optional file
     const sendCommandResult = async (ctx: { reply: (text: string) => Promise<unknown>; replyWithDocument: (doc: { source: string; filename: string }, opts?: Record<string, unknown>) => Promise<unknown> }, result: { text: string; files?: Array<{ path: string; filename: string }> }): Promise<void> => {
       await sendLong(ctx, result.text);
@@ -1435,6 +1474,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       { command: 'search', description: '🔍 Поиск в vault' },
       { command: 'all', description: '📊 Все задачи по статусам' },
       { command: 'cmd', description: '🤖 Выполнить команду' },
+      { command: 'settings', description: '⚙️ Настройки (время напоминания)' },
       { command: 'start', description: '🚀 Справка' },
     ]).catch(() => {});
 

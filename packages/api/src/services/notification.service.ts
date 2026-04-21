@@ -30,6 +30,8 @@ export function startNotificationScheduler(): void {
     checkDailyDigest();
     checkHabitReminders();
     checkUpcomingDeadlines();
+    checkWeeklyGoalPrompt();
+    checkDailyGoalReminder();
   }, 15 * 60 * 1000);
 
   setTimeout(checkOverdueTasks, 10000);
@@ -258,5 +260,83 @@ function checkUpcomingMeetings(): void {
     const lines = meetings.map(m => `  • ${m.title}`);
     const header = meetings.length === 1 ? '📅 Встреча сегодня:' : `📅 Встречи сегодня (${meetings.length}):`;
     telegramService.notifyUser(user.tg_id, `${header}\n${lines.join('\n')}`);
+  }
+}
+
+function getNextMonday(today: string): string {
+  const d = new Date(today + 'T00:00:00Z');
+  const day = d.getUTCDay();
+  const diff = day === 0 ? 1 : (8 - day); // if Sunday, next Monday is +1; else next Monday
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().split('T')[0]!;
+}
+
+function checkWeeklyGoalPrompt(): void {
+  const now = moscowNow();
+  const hour = now.getUTCHours();
+  const dayOfWeek = now.getUTCDay(); // 0=Sun, 1=Mon
+  const today = moscowDateString();
+  const db = getDb();
+
+  // Sunday 18:00 MSK or Monday 09:00 MSK
+  const isSundayEvening = dayOfWeek === 0 && hour >= 18 && hour < 19;
+  const isMondayMorning = dayOfWeek === 1 && hour >= 9 && hour < 10;
+
+  if (!isSundayEvening && !isMondayMorning) return;
+
+  for (const user of getUsers()) {
+    const notifKey = isSundayEvening ? 'weekly_goal_sunday' : 'weekly_goal_monday';
+    if (!shouldSendNotification(user.id, notifKey, 'all')) continue;
+
+    // Check if user already has weekly-goal tasks for next week
+    const nextMonday = isSundayEvening ? getNextMonday(today) : today; // Monday morning = this week
+    const nextSundayDate = (() => {
+      const d = new Date(nextMonday + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + 6);
+      return d.toISOString().split('T')[0]!;
+    })();
+    const existing = db.prepare(
+      "SELECT COUNT(*) as c FROM tasks WHERE user_id = ? AND description LIKE '%[🎯 Цель недели]%' AND due_date >= ? AND due_date <= ? AND archived = 0"
+    ).get(user.id, nextMonday, nextSundayDate) as { c: number };
+
+    if (existing.c > 0) continue; // already set
+
+    const message = isSundayEvening
+      ? '🎯 Какие цели на следующую неделю? Напиши или надиктуй список — я распределю по дням.'
+      : '🌅 Неделя началась! Расставим цели? Напиши что планируешь на эту неделю.';
+
+    telegramService.notifyUser(user.tg_id, message);
+  }
+}
+
+function checkDailyGoalReminder(): void {
+  const now = moscowNow();
+  const today = moscowDateString();
+  const db = getDb();
+
+  for (const user of getUsers()) {
+    // Get user's reminder time (default 21:00)
+    const timeSetting = db.prepare('SELECT value FROM settings WHERE user_id = ? AND key = ?').get(user.id, 'reminder_time') as { value: string } | undefined;
+    const reminderTime = timeSetting?.value ?? '21:00';
+    const [rHourStr, rMinStr] = reminderTime.split(':');
+    const rHour = Number(rHourStr);
+    const rMin = Number(rMinStr ?? 0);
+
+    const hour = now.getUTCHours();
+    const minute = now.getUTCMinutes();
+
+    // Check if current time is within the reminder window (±7 min since scheduler runs every 15 min)
+    if (hour !== rHour || minute < rMin - 7 || minute > rMin + 7) continue;
+
+    if (!shouldSendNotification(user.id, 'daily_goal_reminder', 'all')) continue;
+
+    // Find today's weekly-goal task that's not done
+    const goalTask = db.prepare(
+      "SELECT title FROM tasks WHERE user_id = ? AND description LIKE '%[🎯 Цель недели]%' AND due_date = ? AND status != 'done' AND archived = 0 LIMIT 1"
+    ).get(user.id, today) as { title: string } | undefined;
+
+    if (!goalTask) continue;
+
+    telegramService.notifyUser(user.tg_id, `🎯 Главная цель сегодня: <b>${goalTask.title}</b>\n\nУспел? Отметь задачу как выполненную или перенеси на завтра.`);
   }
 }
