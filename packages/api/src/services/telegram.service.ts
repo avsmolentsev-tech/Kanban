@@ -1185,6 +1185,12 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         const mime = doc.mime_type ?? '';
         const isAudio = mime.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|webm|flac|aac|wma)$/i.test(filename);
 
+        const fileSizeMb = (doc.file_size ?? 0) / (1024 * 1024);
+        if (fileSizeMb > 20) {
+          await ctx.reply(`⚠️ Файл слишком большой (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
+          return;
+        }
+
         const fileLink = await ctx.telegram.getFileLink(doc.file_id);
         const response = await fetch(fileLink.href);
         const buffer = Buffer.from(await response.arrayBuffer());
@@ -1223,8 +1229,13 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       try {
         const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
         // userId auto-created by resolveUserId
-        ctx.reply('🎤 Транскрибирую аудио...');
         const audio = ctx.message.audio;
+        const fileSizeMb = (audio.file_size ?? 0) / (1024 * 1024);
+        if (fileSizeMb > 20) {
+          await ctx.reply(`⚠️ Аудио слишком большое (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
+          return;
+        }
+        ctx.reply('🎤 Транскрибирую аудио...');
         const fileLink = await ctx.telegram.getFileLink(audio.file_id);
         const response = await fetch(fileLink.href);
         const buffer = Buffer.from(await response.arrayBuffer());
