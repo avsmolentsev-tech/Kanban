@@ -100,10 +100,23 @@ export class TelegramService {
       db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultRel, meetingId);
       this.pushRecentAction(draft.tgId, { type: 'meeting', title: draft.title, id: meetingId, table: 'meetings', date: draft.date, savedAt: Date.now() });
     } else if (draft.type === 'task') {
+      // Resolve project
+      const cleanProject = (draft.projectName ?? '').replace(/^❓\s*/, '').replace(/\s*\(не найден\)$/, '').trim() || null;
+      let projectId: number | null = null;
+      if (cleanProject) {
+        const proj = db.prepare('SELECT id FROM projects WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(draft.userId, cleanProject) as { id: number } | undefined;
+        projectId = proj?.id ?? null;
+      }
       const result = db.prepare(
-        'INSERT INTO tasks (user_id, title, description, status, priority, urgency) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(draft.userId, draft.title, draft.summary, 'todo', 3, 3);
+        'INSERT INTO tasks (user_id, title, description, status, priority, urgency, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(draft.userId, draft.title, draft.summary, 'todo', 3, 3, projectId);
       const taskId = Number(result.lastInsertRowid);
+      // Link people
+      for (const personName of draft.people) {
+        const person = db.prepare('SELECT id FROM people WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(draft.userId, personName.trim()) as { id: number } | undefined;
+        const personId = person?.id ?? Number(db.prepare('INSERT INTO people (user_id, name) VALUES (?, ?)').run(draft.userId, personName.trim()).lastInsertRowid);
+        db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(taskId, personId);
+      }
       const vaultRel = await obsidian.writeTask({
         title: draft.title, status: 'todo', priority: 3, urgency: 3,
         project: draft.projectName ?? undefined,
@@ -115,9 +128,16 @@ export class TelegramService {
       db.prepare('UPDATE tasks SET vault_path = ? WHERE id = ?').run(vaultRel, taskId);
       this.pushRecentAction(draft.tgId, { type: 'task', title: draft.title, id: taskId, table: 'tasks', date: draft.date, savedAt: Date.now() });
     } else if (draft.type === 'idea') {
+      // Resolve project
+      const cleanProjectIdea = (draft.projectName ?? '').replace(/^❓\s*/, '').replace(/\s*\(не найден\)$/, '').trim() || null;
+      let ideaProjectId: number | null = null;
+      if (cleanProjectIdea) {
+        const proj = db.prepare('SELECT id FROM projects WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(draft.userId, cleanProjectIdea) as { id: number } | undefined;
+        ideaProjectId = proj?.id ?? null;
+      }
       const ideaResult = db.prepare(
-        'INSERT INTO ideas (user_id, title, body, category, status) VALUES (?, ?, ?, ?, ?)'
-      ).run(draft.userId, draft.title, draft.summary, 'personal', 'backlog');
+        'INSERT INTO ideas (user_id, title, body, category, status, project_id) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(draft.userId, draft.title, draft.summary, 'personal', 'backlog', ideaProjectId);
       const ideaId = Number(ideaResult.lastInsertRowid);
       await obsidian.writeIdea({
         title: draft.title, body: draft.summary,
@@ -1316,9 +1336,9 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
           const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
           ctx.reply(`📝 Транскрипция (${transcript.length} символов):\n${preview}`);
 
-          // If draft awaiting edit — route transcript as correction
+          // If there's an open draft — voice/audio is treated as correction
           const activeDraft = this.drafts.get(ctx.from!.id);
-          if (activeDraft?.awaitingEdit) {
+          if (activeDraft) {
             await this.applyCorrection(ctx, activeDraft, transcript);
             return;
           }
@@ -1357,9 +1377,9 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
         const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
         ctx.reply(`📝 Транскрипция (${transcript.length} символов):\n${preview}`);
 
-        // If draft awaiting edit — route transcript as correction
+        // If there's an open draft — audio is treated as correction
         const activeDraft = this.drafts.get(ctx.from!.id);
-        if (activeDraft?.awaitingEdit) {
+        if (activeDraft) {
           await this.applyCorrection(ctx, activeDraft, transcript);
           return;
         }
