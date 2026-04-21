@@ -32,6 +32,21 @@ header.font = Font.boldSystemFont(14);
 header.textColor = Color.white();
 w.addSpacer(4);
 
+// Focus of the day
+if (d.focus) {
+  const f = w.addText(`🎯 ${d.focus}`);
+  f.font = Font.mediumSystemFont(11);
+  f.textColor = new Color('#fbbf24');
+  f.lineLimit = 2;
+  w.addSpacer(3);
+} else if (d.weekly_goal) {
+  const g = w.addText(`🎯 ${d.weekly_goal}`);
+  g.font = Font.mediumSystemFont(11);
+  g.textColor = new Color('#a78bfa');
+  g.lineLimit = 2;
+  w.addSpacer(3);
+}
+
 // Overdue
 if (d.overdue_count > 0) {
   const o = w.addText(`! Overdue: ${d.overdue_count}`);

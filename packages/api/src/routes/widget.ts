@@ -69,12 +69,23 @@ widgetRouter.get('/today', (_req: Request, res: Response) => {
     "SELECT title, date FROM meetings WHERE date = ? AND user_id = ? LIMIT 5"
   ).all(today, userId);
 
+  // Journal focus of the day
+  const journal = db.prepare("SELECT focus FROM journal WHERE date = ? AND user_id = ?").get(today, userId) as { focus: string } | undefined;
+  const focusOfDay = journal?.focus || null;
+
+  // Weekly goal for today
+  const weeklyGoal = db.prepare(
+    "SELECT title FROM tasks WHERE user_id = ? AND description LIKE '%[🎯 Цель недели]%' AND due_date = ? AND status != 'done' AND archived = 0 LIMIT 1"
+  ).get(userId, today) as { title: string } | undefined;
+
   res.json(ok({
     date: today,
     tasks,
     meetings,
     habits: habits.map(h => ({ ...h, done: doneHabitIds.has(h.id) })),
     overdue_count: overdue,
+    focus: focusOfDay,
+    weekly_goal: weeklyGoal?.title ?? null,
   }));
 });
 
