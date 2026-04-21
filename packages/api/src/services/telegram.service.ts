@@ -19,6 +19,7 @@ export class TelegramService {
   private chatHistories = new Map<number, Array<{ role: 'user' | 'assistant'; content: string }>>();
   private pendingLogins = new Map<number, 'email' | 'password'>(); // tg_id → waiting state
   private pendingEmails = new Map<number, string>(); // tg_id → email entered
+  private recentActions = new Map<number, Array<{ type: string; title: string; id: number; table: string; date: string; savedAt: number }>>();
   private drafts = new DraftSession({
     timeoutMs: 30 * 60_000,
     onTimeout: (c) => { this.saveDraftAsIs(c).catch((e) => console.error('[draft] timeout save failed:', e)); },
@@ -54,6 +55,13 @@ export class TelegramService {
     }
   }
 
+  private pushRecentAction(tgId: number, action: { type: string; title: string; id: number; table: string; date: string; savedAt: number }): void {
+    const actions = this.recentActions.get(tgId) ?? [];
+    actions.unshift(action);
+    if (actions.length > 10) actions.length = 10;
+    this.recentActions.set(tgId, actions);
+  }
+
   private async saveDraftAsIs(draft: DraftCard): Promise<void> {
     const db = getDb();
     const obsidian = new ObsidianService(config.vaultPath).forUser(draft.userId);
@@ -73,6 +81,7 @@ export class TelegramService {
         tags: tagsList,
       });
       db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultRel, meetingId);
+      this.pushRecentAction(draft.tgId, { type: 'meeting', title: draft.title, id: meetingId, table: 'meetings', date: draft.date, savedAt: Date.now() });
     } else if (draft.type === 'task') {
       const result = db.prepare(
         'INSERT INTO tasks (user_id, title, description, status, priority, urgency) VALUES (?, ?, ?, ?, ?, ?)'
@@ -87,10 +96,12 @@ export class TelegramService {
         source: `telegram-${draft.sourceKind}`,
       });
       db.prepare('UPDATE tasks SET vault_path = ? WHERE id = ?').run(vaultRel, taskId);
+      this.pushRecentAction(draft.tgId, { type: 'task', title: draft.title, id: taskId, table: 'tasks', date: draft.date, savedAt: Date.now() });
     } else if (draft.type === 'idea') {
-      db.prepare(
+      const ideaResult = db.prepare(
         'INSERT INTO ideas (user_id, title, body, category, status) VALUES (?, ?, ?, ?, ?)'
       ).run(draft.userId, draft.title, draft.summary, 'personal', 'backlog');
+      const ideaId = Number(ideaResult.lastInsertRowid);
       await obsidian.writeIdea({
         title: draft.title, body: draft.summary,
         category: 'personal',
@@ -100,6 +111,7 @@ export class TelegramService {
         tags: tagsList,
         source: `telegram-${draft.sourceKind}`,
       });
+      this.pushRecentAction(draft.tgId, { type: 'idea', title: draft.title, id: ideaId, table: 'ideas', date: draft.date, savedAt: Date.now() });
     } else {
       await obsidian.writeInboxItem(`${draft.date}-${draft.title}.txt`, draft.transcript);
     }
@@ -144,7 +156,15 @@ export class TelegramService {
     const claude = new ClaudeService();
     const extraction: ExtractionResult = await claude.extractDraft(transcript);
     const card = this.drafts.create(tgId, userId, extraction, sourceKind, transcript, sourceLocalPath);
-    const msg = await ctx.reply(renderDraftCard(card), { reply_markup: inlineKeyboard(card) });
+    // Validate project exists in DB; mark if not found
+    if (card.projectName) {
+      const db = getDb();
+      const projectExists = db.prepare('SELECT 1 FROM projects WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(userId, card.projectName);
+      if (!projectExists) {
+        this.drafts.update(tgId, { projectName: `❓ ${card.projectName} (не найден)` });
+      }
+    }
+    const msg = await ctx.reply(renderDraftCard(this.drafts.get(tgId) ?? card), { reply_markup: inlineKeyboard(this.drafts.get(tgId) ?? card) });
     this.drafts.update(tgId, { cardMessageId: msg.message_id });
   }
 
@@ -1096,6 +1116,67 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
       if (draft) {
         await this.applyCorrection(ctx, draft, text);
         return;
+      }
+
+      // Check if user is referencing a recent action (e.g. "в последней встрече поставь проект X")
+      const recent = this.recentActions.get(tgId);
+      if (recent && recent.length > 0) {
+        const refMatch = text.match(/послед(?:н|ую|ей|яя|юю|ий)|предыдущ|только что|эт(?:у|ой|а|о) встреч|эт(?:у|ой|а|о) задач|эт(?:у|ой|а|о) иде/i);
+        if (refMatch) {
+          const lastAction = recent[0]!;
+          const claude = new ClaudeService();
+          try {
+            const patchPrompt = `Пользователь хочет внести изменения в недавно сохранённую запись.
+
+Запись:
+- Тип: ${lastAction.type}
+- Название: "${lastAction.title}"
+- ID: ${lastAction.id}
+- Таблица: ${lastAction.table}
+- Дата: ${lastAction.date}
+
+Запрос пользователя: "${text}"
+
+Верни JSON: {"action": "update", "field_updates": {"project": "...", "company": "...", "people_add": ["..."], "tags_add": ["..."], "title": "...", "type": "..."}}
+Включай ТОЛЬКО поля которые пользователь хочет изменить. Если поле не упомянуто — не включай. СТРОГО JSON.`;
+
+            const resp = await claude.openai.chat.completions.create({
+              model: 'gpt-4.1-mini',
+              temperature: 0.1,
+              messages: [{ role: 'system', content: 'Ты парсишь запросы на редактирование записей. Отвечаешь СТРОГО JSON.' }, { role: 'user', content: patchPrompt }],
+              response_format: { type: 'json_object' },
+            });
+            const patch = JSON.parse(resp.choices[0]?.message?.content ?? '{}');
+
+            if (patch.field_updates && Object.keys(patch.field_updates).length > 0) {
+              const db = getDb();
+              const updates: string[] = [];
+              const fu = patch.field_updates;
+
+              if (fu.project) {
+                const proj = db.prepare('SELECT id, name FROM projects WHERE user_id = ? AND LOWER(name) LIKE LOWER(?)').get(userId, `%${fu.project}%`) as { id: number; name: string } | undefined;
+                if (proj) {
+                  db.prepare(`UPDATE ${lastAction.table} SET project_id = ? WHERE id = ? AND user_id = ?`).run(proj.id, lastAction.id, userId);
+                  updates.push(`проект → ${proj.name}`);
+                } else {
+                  updates.push(`проект "${fu.project}" не найден в базе`);
+                }
+              }
+              if (fu.type && fu.type !== lastAction.type) {
+                updates.push(`тип изменён: ${lastAction.type} → ${fu.type} (требует ручной миграции)`);
+              }
+
+              if (updates.length > 0) {
+                await ctx.reply(`✏️ Обновил "${lastAction.title}":\n${updates.map((u: string) => `• ${u}`).join('\n')}`);
+              } else {
+                await ctx.reply(`Не смог определить что именно изменить в "${lastAction.title}". Уточни.`);
+              }
+              return;
+            }
+          } catch (err) {
+            console.error('[recent-action] parse failed:', err);
+          }
+        }
       }
 
       // Check for claude/клод prefix → save for Claude Code processing

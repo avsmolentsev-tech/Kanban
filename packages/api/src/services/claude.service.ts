@@ -190,7 +190,13 @@ ${text}`;
 - Свободные теги короткие, на русском, без спецсимволов, до 5 штук.
 - Если дата не указана — сегодняшняя.
 - agreements = 0 для task/idea/inbox.
-- tasks = [] для task/idea/inbox.`;
+- tasks = [] для task/idea/inbox.
+
+КРИТИЧЕСКИ ВАЖНО для detected_type:
+- Если в тексте упоминаются ЛЮДИ по имени + обсуждение/разговор/встреча/созвон/переговоры → ВСЕГДА "meeting", НЕ "idea".
+- "idea" — только если автор описывает абстрактную мысль/концепт БЕЗ привязки к конкретным людям и событию.
+- Если сомневаешься между meeting и idea → выбирай meeting.
+- Если автор говорит "встреча", "встречался", "обсуждали с кем-то" — ВСЕГДА meeting.`;
     const userPrompt = `Сегодня: ${today}\n\nТекст:\n${text}\n\nВерни JSON.`;
     const resp = await this.openai.chat.completions.create({
       model: 'gpt-4.1-mini',
@@ -220,7 +226,7 @@ ${text}`;
       model: 'gpt-4.1-mini',
       temperature: 0.1,
       messages: [
-        { role: 'system', content: 'Ты обновляешь черновик карточки. Возвращаешь JSON с точно такой же схемой: {detected_type, title, date, project_hints, company_hints, people, tags_hierarchical, tags_free, summary, agreements, tasks}. Берёшь текущие поля и применяешь правку пользователя. Если правка не касается поля — оставь как было. СТРОГО JSON без пояснений.' },
+        { role: 'system', content: 'Ты обновляешь черновик карточки по запросу пользователя. Возвращаешь JSON с точно такой же схемой: {detected_type, title, date, project_hints, company_hints, people, tags_hierarchical, tags_free, summary, agreements, tasks}. Берёшь текущие поля и применяешь правку. Если правка не касается поля — оставь как было. ВАЖНО: если пользователь говорит "встреча" или "доправляю встречу" — меняй detected_type на "meeting". Если упоминает людей — добавляй в people. Если упоминает проект — обновляй project_hints. СТРОГО JSON без пояснений.' },
         { role: 'user', content: `Текущий черновик:\n${JSON.stringify({
           detected_type: current.type,
           title: current.title,
