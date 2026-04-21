@@ -72,7 +72,9 @@ export class TelegramService {
       const cleanProject = (draft.projectName ?? '').replace(/^❓\s*/, '').replace(/\s*\(не найден\)$/, '').trim() || null;
       let projectId: number | null = null;
       if (cleanProject) {
-        const proj = db.prepare('SELECT id FROM projects WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(draft.userId, cleanProject) as { id: number } | undefined;
+        const allProjects = db.prepare('SELECT id, name FROM projects WHERE user_id = ? AND archived = 0').all(draft.userId) as Array<{ id: number; name: string }>;
+        const lowerClean = cleanProject.toLowerCase();
+        const proj = allProjects.find(p => p.name.toLowerCase() === lowerClean || p.name.toLowerCase().includes(lowerClean) || lowerClean.includes(p.name.toLowerCase()));
         projectId = proj?.id ?? null;
       }
       const result = db.prepare(
@@ -104,7 +106,9 @@ export class TelegramService {
       const cleanProject = (draft.projectName ?? '').replace(/^❓\s*/, '').replace(/\s*\(не найден\)$/, '').trim() || null;
       let projectId: number | null = null;
       if (cleanProject) {
-        const proj = db.prepare('SELECT id FROM projects WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(draft.userId, cleanProject) as { id: number } | undefined;
+        const allProjects = db.prepare('SELECT id, name FROM projects WHERE user_id = ? AND archived = 0').all(draft.userId) as Array<{ id: number; name: string }>;
+        const lowerClean = cleanProject.toLowerCase();
+        const proj = allProjects.find(p => p.name.toLowerCase() === lowerClean || p.name.toLowerCase().includes(lowerClean) || lowerClean.includes(p.name.toLowerCase()));
         projectId = proj?.id ?? null;
       }
       const result = db.prepare(
@@ -190,14 +194,24 @@ export class TelegramService {
     sourceLocalPath: string | null,
   ): Promise<void> {
     if (!transcript.trim()) { await ctx.reply('⚠️ Пустой текст, нечего сохранять'); return; }
+    const db = getDb();
     const claude = new ClaudeService();
-    const extraction: ExtractionResult = await claude.extractDraft(transcript);
+    // Pass existing project names to Claude so it picks from the list
+    const existingProjects = db.prepare('SELECT name FROM projects WHERE user_id = ? AND archived = 0').all(userId) as Array<{ name: string }>;
+    const projectNames = existingProjects.map(p => p.name);
+    const extraction: ExtractionResult = await claude.extractDraft(transcript, undefined, projectNames);
     const card = this.drafts.create(tgId, userId, extraction, sourceKind, transcript, sourceLocalPath);
-    // Validate project exists in DB; mark if not found
+    // Fuzzy-match project against DB
     if (card.projectName) {
-      const db = getDb();
-      const projectExists = db.prepare('SELECT 1 FROM projects WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(userId, card.projectName);
-      if (!projectExists) {
+      const hint = card.projectName.toLowerCase();
+      const match = existingProjects.find(p =>
+        p.name.toLowerCase() === hint ||
+        p.name.toLowerCase().includes(hint) ||
+        hint.includes(p.name.toLowerCase())
+      );
+      if (match) {
+        this.drafts.update(tgId, { projectName: match.name });
+      } else {
         this.drafts.update(tgId, { projectName: `❓ ${card.projectName} (не найден)` });
       }
     }

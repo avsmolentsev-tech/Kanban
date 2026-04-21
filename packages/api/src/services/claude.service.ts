@@ -163,8 +163,11 @@ ${text}`;
     return parsed;
   }
 
-  async extractDraft(text: string, todayIso?: string): Promise<ExtractionResult> {
+  async extractDraft(text: string, todayIso?: string, existingProjectNames?: string[]): Promise<ExtractionResult> {
     const today = todayIso ?? new Date().toISOString().split('T')[0]!;
+    const projectListBlock = existingProjectNames && existingProjectNames.length > 0
+      ? `\n\nСПИСОК ПРОЕКТОВ ПОЛЬЗОВАТЕЛЯ (выбирай из этого списка, НЕ придумывай новые):\n${existingProjectNames.map(n => `- ${n}`).join('\n')}\nЕсли тема совпадает с одним из проектов — используй ТОЧНОЕ название из списка в project_hints. Если ни один не подходит — оставь project_hints пустым.`
+      : '';
     const systemPrompt = `Ты помощник который превращает транскрипт голосовой заметки или свободный текст в структурированную карточку.
 
 Верни СТРОГО JSON без пояснений со следующей схемой:
@@ -172,7 +175,7 @@ ${text}`;
   "detected_type": "meeting" | "task" | "idea" | "inbox",
   "title": "краткое название 4-10 слов на русском",
   "date": "YYYY-MM-DD (сегодня, если автор явно не указал другую)",
-  "project_hints": ["строка"],
+  "project_hints": ["строка — ТОЧНОЕ название из списка проектов пользователя"],
   "company_hints": ["строка"],
   "people": ["имя как произнесено"],
   "tags_hierarchical": ["type/<type>", "project/<slug>", "company/<slug>"],
@@ -196,7 +199,7 @@ ${text}`;
 - Если в тексте упоминаются ЛЮДИ по имени + обсуждение/разговор/встреча/созвон/переговоры → ВСЕГДА "meeting", НЕ "idea".
 - "idea" — только если автор описывает абстрактную мысль/концепт БЕЗ привязки к конкретным людям и событию.
 - Если сомневаешься между meeting и idea → выбирай meeting.
-- Если автор говорит "встреча", "встречался", "обсуждали с кем-то" — ВСЕГДА meeting.`;
+- Если автор говорит "встреча", "встречался", "обсуждали с кем-то" — ВСЕГДА meeting.${projectListBlock}`;
     const userPrompt = `Сегодня: ${today}\n\nТекст:\n${text}\n\nВерни JSON.`;
     const resp = await this.openai.chat.completions.create({
       model: 'gpt-4.1-mini',
