@@ -15,7 +15,7 @@ import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 import { nodeTypes } from './MindMapNode';
 import { NodeDetailPanel } from './NodeDetailPanel';
-import { apiGet, apiPost } from '../../api/client';
+import { apiGet, apiPost, apiPatch } from '../../api/client';
 import { Plus } from 'lucide-react';
 
 type SelectedNodeData = { id: string; type: string; label: string; status: string; progress: number; due_date?: string };
@@ -91,6 +91,7 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
   const [selectedBhag, setSelectedBhag] = useState<number | null>(bhagId);
   const [fullscreen, setFullscreen] = useState(false);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
+  const [kanbanMsg, setKanbanMsg] = useState('');
 
   const handleAddChildRef = { current: null as null | ((nodeId: string, nodeType: string) => void) };
 
@@ -223,6 +224,36 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
     }
   };
 
+  const handleAddAllToKanban = useCallback(async () => {
+    if (!selectedBhag) return;
+    setLoading(true);
+    try {
+      const data = await apiGet<MindMapData>(`/goals/${selectedBhag}/mindmap`);
+      if (!data) return;
+      const taskNodes = (data as MindMapData).nodes.filter(n => n.type === 'task');
+
+      const bhag = await apiGet<Record<string, unknown>>(`/goals/${selectedBhag}`);
+      const bhagProjectId = (bhag as Record<string, unknown>)?.project_id as number | null ?? null;
+
+      for (const t of taskNodes) {
+        const taskId = Number(t.id.split('-')[1]);
+        const updates: Record<string, unknown> = {};
+        if (t.status === 'backlog' || !t.status) updates.status = 'todo';
+        else updates.status = t.status;
+        if (bhagProjectId) updates.project_id = bhagProjectId;
+        if (Object.keys(updates).length > 0) {
+          await apiPatch(`/tasks/${taskId}`, updates);
+        }
+      }
+
+      await fetchMindmap(selectedBhag, false);
+      setKanbanMsg(`${taskNodes.length} задач добавлено в Канбан!`);
+      setTimeout(() => setKanbanMsg(''), 3000);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedBhag, fetchMindmap]);
+
   if (bhags.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-gray-500 dark:text-gray-400">
@@ -250,9 +281,14 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
       <button onClick={onCreateBhag} className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-white">
         <Plus size={14} className="inline mr-1" /> Новая BHAG
       </button>
+      <button onClick={handleAddAllToKanban} disabled={loading || !selectedBhag}
+        className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50">
+        Все задачи в Канбан
+      </button>
       <button onClick={() => setFullscreen(!fullscreen)} className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-white">
         {fullscreen ? '\u2199 \u0421\u0432\u0435\u0440\u043d\u0443\u0442\u044c' : '\u26F6 \u041d\u0430 \u0432\u0435\u0441\u044c \u044d\u043a\u0440\u0430\u043d'}
       </button>
+      {kanbanMsg && <span className="text-xs text-green-500 dark:text-green-400">{kanbanMsg}</span>}
     </div>
   );
 

@@ -302,6 +302,30 @@ goalsRouter.patch('/:id/nodes', (req: AuthRequest, res: Response) => {
   res.json(ok({ moved: moves.length }));
 });
 
+goalsRouter.post('/:id/tasks-to-kanban', (req: AuthRequest, res: Response) => {
+  const goalId = Number(req.params['id']);
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Auth required')); return; }
+  const db = getDb();
+
+  const goal = db.prepare('SELECT project_id FROM goals WHERE id = ? AND user_id = ?').get(goalId, userId) as { project_id: number | null } | undefined;
+  if (!goal) { res.status(404).json(fail('Goal not found')); return; }
+  const projectId = (req.body['project_id'] as number | null) ?? goal.project_id;
+
+  const updates: string[] = ["status = CASE WHEN status = 'backlog' THEN 'todo' ELSE status END"];
+  const params: unknown[] = [];
+  if (projectId) {
+    updates.push('project_id = ?');
+    params.push(projectId);
+  }
+
+  const result = db.prepare(
+    `UPDATE tasks SET ${updates.join(', ')} WHERE goal_id = ? AND user_id = ? AND archived = 0`
+  ).run(...params, goalId, userId);
+
+  res.json(ok({ updated: result.changes }));
+});
+
 goalsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);

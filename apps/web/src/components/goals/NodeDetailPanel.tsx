@@ -27,6 +27,7 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [projects, setProjects] = useState<Array<{id: number; name: string}>>([]);
   const [projectId, setProjectId] = useState<number | null>(null);
+  const [savedMsg, setSavedMsg] = useState('');
 
   useEffect(() => {
     apiGet<Array<{id: number; name: string}>>('/projects').then((data) => {
@@ -178,6 +179,65 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
+
+      {savedMsg && <div className="text-xs text-green-500 dark:text-green-400 mb-2 text-center">{savedMsg}</div>}
+
+      {isTask && (
+        <div className="mb-3">
+          <button
+            onClick={async () => {
+              let pid = projectId;
+              if (!pid) {
+                try {
+                  const taskData = await apiGet<Record<string, unknown>>(`/tasks/${entityId}`);
+                  const goalId = (taskData as Record<string, unknown>)?.goal_id as number | null;
+                  const parentId = (taskData as Record<string, unknown>)?.parent_id as number | null;
+                  if (goalId) {
+                    const goal = await apiGet<Record<string, unknown>>(`/goals/${goalId}`);
+                    pid = (goal as Record<string, unknown>)?.project_id as number | null ?? null;
+                  } else if (parentId) {
+                    const parent = await apiGet<Record<string, unknown>>(`/tasks/${parentId}`);
+                    pid = (parent as Record<string, unknown>)?.project_id as number | null ?? null;
+                  }
+                } catch { /* ignore */ }
+              }
+              const updates: Record<string, unknown> = {};
+              if (status === 'backlog' || !status) updates.status = 'todo';
+              if (pid) updates.project_id = pid;
+              if (Object.keys(updates).length === 0) updates.status = 'todo';
+              await apiPatch(`/tasks/${entityId}`, updates);
+              if (pid) setProjectId(pid);
+              if (updates.status) setStatus(updates.status as string);
+              onRefresh();
+              setSavedMsg('Добавлено в Канбан!');
+              setTimeout(() => setSavedMsg(''), 2000);
+            }}
+            className="w-full px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 flex items-center justify-center gap-2"
+          >
+            Добавить в Канбан
+          </button>
+        </div>
+      )}
+
+      {isGoal && node.type !== 'bhag' && (
+        <div className="mb-3">
+          <button
+            onClick={async () => {
+              try {
+                const goal = await apiGet<Record<string, unknown>>(`/goals/${entityId}`);
+                const pid = (goal as Record<string, unknown>)?.project_id as number | null ?? null;
+                await apiPost(`/goals/${entityId}/tasks-to-kanban`, { project_id: pid });
+                onRefresh();
+                setSavedMsg('Подзадачи добавлены в Канбан!');
+                setTimeout(() => setSavedMsg(''), 2000);
+              } catch { /* ignore */ }
+            }}
+            className="w-full px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 flex items-center justify-center gap-2"
+          >
+            Подзадачи в Канбан
+          </button>
+        </div>
+      )}
 
       {(node.type === 'bhag' || node.type === 'milestone') && (
         <div className="mb-4">
