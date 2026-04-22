@@ -8,6 +8,8 @@ interface MindMapNodeData {
   progress: number;
   status: string;
   due_date?: string;
+  onAddChild?: (nodeId: string, nodeType: string) => void;
+  nodeId?: string;
 }
 
 const statusColor: Record<string, string> = {
@@ -33,7 +35,7 @@ function MindMapNodeComponent({ data }: NodeProps) {
 
   return (
     <div
-      className={`rounded-xl border-2 px-4 py-2 bg-white dark:bg-gray-800 shadow-md transition-all hover:shadow-lg ${isBhag ? 'min-w-[260px]' : 'min-w-[190px]'}`}
+      className={`group relative rounded-xl border-2 px-4 py-2 bg-white dark:bg-gray-800 shadow-md transition-all hover:shadow-lg ${isBhag ? 'min-w-[260px]' : 'min-w-[190px]'}`}
       style={{ borderColor: color }}
     >
       <Handle type="target" position={Position.Right} className="!bg-gray-400 !w-2 !h-2" />
@@ -53,6 +55,16 @@ function MindMapNodeComponent({ data }: NodeProps) {
       )}
       {d.due_date && (
         <div className="text-[10px] text-gray-400 mt-0.5">{d.due_date}</div>
+      )}
+      {/* Add child button - visible on hover */}
+      {(d.nodeType === 'bhag' || d.nodeType === 'milestone' || d.nodeType === 'task') && d.onAddChild && (
+        <button
+          onClick={(e) => { e.stopPropagation(); d.onAddChild!(d.nodeId!, d.nodeType); }}
+          className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-indigo-600 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-indigo-700"
+          title="Добавить задачу"
+        >
+          +
+        </button>
       )}
       <Handle type="source" position={Position.Left} className="!bg-gray-400 !w-2 !h-2" />
     </div>

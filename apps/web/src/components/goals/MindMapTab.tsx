@@ -16,6 +16,8 @@ import { NodeDetailPanel } from './NodeDetailPanel';
 import { apiGet, apiPost } from '../../api/client';
 import { Plus } from 'lucide-react';
 
+type SelectedNodeData = { id: string; type: string; label: string; status: string; progress: number; due_date?: string };
+
 interface MindMapNodeData {
   id: string;
   type: string;
@@ -37,7 +39,7 @@ interface MindMapData {
   edges: MindMapEdgeData[];
 }
 
-function layoutGraph(data: MindMapData): { nodes: Node[]; edges: Edge[] } {
+function layoutGraph(data: MindMapData, onAddChild?: (nodeId: string, nodeType: string) => void): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: 'RL', ranksep: 120, nodesep: 50 });
@@ -58,7 +60,7 @@ function layoutGraph(data: MindMapData): { nodes: Node[]; edges: Edge[] } {
       id: n.id,
       type: n.type,
       position: { x: (pos?.x ?? 0) - (n.type === 'bhag' ? 140 : 110), y: pos?.y ?? 0 },
-      data: { label: n.label, nodeType: n.type, progress: n.progress, status: n.status, due_date: n.due_date },
+      data: { label: n.label, nodeType: n.type, progress: n.progress, status: n.status, due_date: n.due_date, nodeId: n.id, onAddChild },
     };
   });
   const edges: Edge[] = data.edges.map((e, i) => ({
@@ -83,27 +85,44 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
   const [loading, setLoading] = useState(false);
   const [selectedBhag, setSelectedBhag] = useState<number | null>(bhagId);
   const [fullscreen, setFullscreen] = useState(false);
-  const [selectedNode, setSelectedNode] = useState<{ id: string; type: string; label: string; status: string; progress: number; due_date?: string } | null>(null);
+  const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
+
+  const handleAddChildRef = { current: null as null | ((nodeId: string, nodeType: string) => void) };
 
   const fetchMindmap = useCallback(async (id: number, applyLayout = false) => {
     setLoading(true);
     try {
       const data = await apiGet<MindMapData>(`/goals/${id}/mindmap`);
       if (applyLayout) {
-        const { nodes: n, edges: e } = layoutGraph(data);
+        const { nodes: n, edges: e } = layoutGraph(data, handleAddChildRef.current ?? undefined);
         setNodes(n);
         setEdges(e);
       } else {
         // Refresh data only, keep positions
+        const addChildFn = handleAddChildRef.current ?? undefined;
         setNodes(prev => {
           const updatedMap = new Map(data.nodes.map(n => [n.id, n]));
-          return prev.map(node => {
+          // Add new nodes that weren't in previous set
+          const existingIds = new Set(prev.map(n => n.id));
+          const newNodes: Node[] = [];
+          for (const n of data.nodes) {
+            if (!existingIds.has(n.id)) {
+              newNodes.push({
+                id: n.id,
+                type: n.type,
+                position: { x: 0, y: 0 },
+                data: { label: n.label, nodeType: n.type, progress: n.progress, status: n.status, due_date: n.due_date, nodeId: n.id, onAddChild: addChildFn },
+              });
+            }
+          }
+          const updated = prev.map(node => {
             const upd = updatedMap.get(node.id);
             if (upd) {
-              return { ...node, data: { label: upd.label, nodeType: upd.type, progress: upd.progress, status: upd.status, due_date: upd.due_date } };
+              return { ...node, data: { label: upd.label, nodeType: upd.type, progress: upd.progress, status: upd.status, due_date: upd.due_date, nodeId: upd.id, onAddChild: addChildFn } };
             }
             return node;
           });
+          return [...updated, ...newNodes];
         });
       }
     } catch (err) {
@@ -111,7 +130,7 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [setNodes, setEdges]);
+  }, [setNodes, setEdges]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-select latest BHAG when list updates
   useEffect(() => {
@@ -138,6 +157,42 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
+  const handleAddChild = useCallback(async (parentNodeId: string, _parentType: string) => {
+    const [pType, pIdStr] = parentNodeId.split('-');
+    const parentId = Number(pIdStr);
+
+    // Auto-detect project from parent
+    let projectId: number | null = null;
+    try {
+      if (pType === 'goal') {
+        const goal = await apiGet<Record<string, unknown>>(`/goals/${parentId}`);
+        projectId = (goal as Record<string, unknown>)?.project_id as number | null ?? null;
+      } else if (pType === 'task') {
+        const task = await apiGet<Record<string, unknown>>(`/tasks/${parentId}`);
+        projectId = (task as Record<string, unknown>)?.project_id as number | null ?? null;
+      }
+    } catch { /* ignore */ }
+
+    try {
+      let resp: Record<string, unknown> | undefined;
+      const body: Record<string, unknown> = { title: 'Новая задача', status: 'todo', priority: 3, project_id: projectId };
+      if (pType === 'goal') {
+        body.goal_id = parentId;
+        resp = await apiPost<Record<string, unknown>>('/tasks', body);
+      } else if (pType === 'task') {
+        body.parent_id = parentId;
+        resp = await apiPost<Record<string, unknown>>('/tasks', body);
+      }
+      if (selectedBhag) await fetchMindmap(selectedBhag, true);
+      // Auto-select the new task for editing
+      if (resp?.id) {
+        setSelectedNode({ id: `task-${resp.id}`, type: 'task', label: 'Новая задача', status: 'todo', progress: 0, due_date: undefined });
+      }
+    } catch { /* ignore */ }
+  }, [selectedBhag, fetchMindmap]);
+
+  handleAddChildRef.current = handleAddChild;
 
   const handleDecompose = async () => {
     if (!selectedBhag) return;

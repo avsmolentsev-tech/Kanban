@@ -178,6 +178,25 @@ goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
     }
   }
 
+  // Subtasks (children of displayed tasks via parent_id)
+  const displayedTaskIds = tasks.map(t => t['id'] as number);
+  if (displayedTaskIds.length > 0) {
+    const subPlaceholders = displayedTaskIds.map(() => '?').join(',');
+    const subtasks = db.prepare(
+      `SELECT id, title, status, priority, due_date, parent_id FROM tasks WHERE parent_id IN (${subPlaceholders}) AND user_id = ? AND archived = 0`
+    ).all(...displayedTaskIds, userId) as Array<Record<string, unknown>>;
+
+    for (const st of subtasks) {
+      const stId = st['id'] as number;
+      const parentTaskId = st['parent_id'] as number;
+      const sp = st['status'] === 'done' ? 100 : 0;
+      const stNode: MindMapNode = { id: `task-${stId}`, type: 'task', label: st['title'] as string, progress: sp, status: st['status'] as string, parent: `task-${parentTaskId}` };
+      if (st['due_date']) stNode.due_date = st['due_date'] as string;
+      nodes.push(stNode);
+      edges.push({ source: `task-${parentTaskId}`, target: `task-${stId}` });
+    }
+  }
+
   // BHAG node
   const milestoneProgresses = milestones.map(m => {
     const node = nodes.find(n => n.id === `goal-${m['id']}`);

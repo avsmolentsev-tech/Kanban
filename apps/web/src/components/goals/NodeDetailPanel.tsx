@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
-import { apiPost, apiPatch, apiDelete } from '../../api/client';
+import { apiGet, apiPost, apiPatch, apiDelete } from '../../api/client';
 
 interface NodeData {
   id: string;
@@ -24,6 +24,14 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [projects, setProjects] = useState<Array<{id: number; name: string}>>([]);
+  const [projectId, setProjectId] = useState<number | null>(null);
+
+  useEffect(() => {
+    apiGet<Array<{id: number; name: string}>>('/projects').then((data) => {
+      if (Array.isArray(data)) setProjects(data);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (node) {
@@ -33,6 +41,19 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
       setShowAddTask(false);
       setShowConfirmDelete(false);
       setNewTaskTitle('');
+
+      // Fetch current project_id
+      const [type, idStr] = node.id.split('-');
+      const id = Number(idStr);
+      if (type === 'task') {
+        apiGet<Record<string, unknown>>(`/tasks/${id}`).then((data) => {
+          setProjectId((data as Record<string, unknown>)?.project_id as number | null ?? null);
+        }).catch(() => {});
+      } else if (type === 'goal') {
+        apiGet<Record<string, unknown>>(`/goals/${id}`).then((data) => {
+          setProjectId((data as Record<string, unknown>)?.project_id as number | null ?? null);
+        }).catch(() => {});
+      }
     }
   }, [node]);
 
@@ -56,9 +77,14 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
 
   const handleAddTask = async () => {
     if (!newTaskTitle.trim()) return;
-    const goalId = entityId;
+    const body: Record<string, unknown> = { title: newTaskTitle, status: 'todo', priority: 3 };
+    if (isTask) {
+      body.parent_id = entityId;
+    } else {
+      body.goal_id = entityId;
+    }
     try {
-      await apiPost('/tasks', { title: newTaskTitle, status: 'todo', priority: 3, goal_id: goalId });
+      await apiPost('/tasks', body);
       setNewTaskTitle('');
       setShowAddTask(false);
       onRefresh();
@@ -118,6 +144,25 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
         />
       </div>
 
+      <div className="mb-3">
+        <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">Проект</label>
+        <select
+          className="w-full border rounded-lg px-3 py-1.5 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+          value={projectId ?? ''}
+          onChange={e => {
+            const newPid = e.target.value ? Number(e.target.value) : null;
+            setProjectId(newPid);
+            const [type] = node!.id.split('-');
+            const id = Number(node!.id.split('-')[1]);
+            if (type === 'task') apiPatch(`/tasks/${id}`, { project_id: newPid }).then(onRefresh);
+            else if (type === 'goal') apiPatch(`/goals/${id}`, { project_id: newPid }).then(onRefresh);
+          }}
+        >
+          <option value="">Без проекта</option>
+          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </div>
+
       {(node.type === 'bhag' || node.type === 'milestone') && (
         <div className="mb-4">
           <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
@@ -130,13 +175,13 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
         </div>
       )}
 
-      {(node.type === 'bhag' || node.type === 'milestone') && (
+      {(node.type === 'bhag' || node.type === 'milestone' || node.type === 'task') && (
         <div className="border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
           {showAddTask ? (
             <div className="flex gap-2 mb-2">
               <input
                 className="flex-1 border rounded-lg px-2 py-1.5 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                placeholder="Новая задача..."
+                placeholder={node.type === 'task' ? 'Новая подзадача...' : 'Новая задача...'}
                 value={newTaskTitle}
                 onChange={e => setNewTaskTitle(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleAddTask()}
@@ -146,7 +191,7 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
             </div>
           ) : (
             <button onClick={() => setShowAddTask(true)} className="flex items-center gap-1 text-sm text-indigo-600 dark:text-indigo-400 hover:underline">
-              <Plus size={14} /> Добавить задачу
+              <Plus size={14} /> {node.type === 'task' ? 'Добавить подзадачу' : 'Добавить задачу'}
             </button>
           )}
         </div>

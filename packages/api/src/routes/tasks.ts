@@ -131,6 +131,14 @@ tasksRouter.get('/', (req: AuthRequest, res: Response) => {
   res.json(ok(enrichTasksWithPeople(tasks)));
 });
 
+tasksRouter.get('/:id', (req: AuthRequest, res: Response) => {
+  const taskId = Number(req.params['id']);
+  const userId = getUserId(req);
+  const task = getDb().prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(taskId, userId) as Record<string, unknown> | undefined;
+  if (!task) { res.status(404).json(fail('Task not found')); return; }
+  res.json(ok(task));
+});
+
 tasksRouter.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
