@@ -45,11 +45,11 @@ interface MindMapData {
 function layoutGraph(data: MindMapData, onAddChild?: (nodeId: string, nodeType: string) => void): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'RL', ranksep: 120, nodesep: 50 });
+  g.setGraph({ rankdir: 'RL', ranksep: 160, nodesep: 60 });
 
   for (const n of data.nodes) {
-    const w = n.type === 'bhag' ? 280 : 220;
-    const h = n.type === 'bhag' ? 90 : 60;
+    const w = n.type === 'bhag' ? 340 : 260;
+    const h = n.type === 'bhag' ? 100 : 75;
     g.setNode(n.id, { width: w, height: h });
   }
   for (const e of data.edges) {
