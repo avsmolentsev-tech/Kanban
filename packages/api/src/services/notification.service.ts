@@ -32,6 +32,7 @@ export function startNotificationScheduler(): void {
     checkUpcomingDeadlines();
     checkWeeklyGoalPrompt();
     checkDailyGoalReminder();
+    checkBhagCoach();
   }, 15 * 60 * 1000);
 
   setTimeout(checkOverdueTasks, 10000);
@@ -343,5 +344,54 @@ function checkDailyGoalReminder(): void {
     if (!goalTask) continue;
 
     telegramService.notifyUser(user.tg_id, `🎯 Главная цель сегодня: <b>${goalTask.title}</b>\n\nУспел? Отметь задачу как выполненную или перенеси на завтра.`);
+  }
+}
+
+function checkBhagCoach(): void {
+  const now = moscowNow();
+  const hour = now.getUTCHours();
+  const dayOfWeek = now.getUTCDay(); // 5 = Friday
+  const today = moscowDateString();
+
+  if (dayOfWeek !== 5 || hour < 18 || hour >= 19) return;
+
+  const db = getDb();
+  for (const user of getUsers()) {
+    if (!shouldSendNotification(user.id, 'bhag_coach', today)) continue;
+
+    // Get active BHAGs
+    const bhags = db.prepare("SELECT id, title, due_date FROM goals WHERE type = 'bhag' AND status = 'active' AND user_id = ?").all(user.id) as Array<{ id: number; title: string; due_date: string }>;
+    if (bhags.length === 0) continue;
+
+    for (const bhag of bhags) {
+      // Get milestones with progress
+      const milestones = db.prepare("SELECT id, title, due_date FROM goals WHERE parent_id = ? AND user_id = ?").all(bhag.id, user.id) as Array<{ id: number; title: string; due_date: string }>;
+
+      let totalTasks = 0, doneTasks = 0;
+      const milestoneStats: string[] = [];
+
+      for (const m of milestones) {
+        const tasks = db.prepare("SELECT status FROM tasks WHERE goal_id = ? AND user_id = ? AND archived = 0").all(m.id, user.id) as Array<{ status: string }>;
+        const done = tasks.filter(t => t.status === 'done').length;
+        totalTasks += tasks.length;
+        doneTasks += done;
+        const pct = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0;
+        const emoji = pct === 100 ? '✅' : pct > 0 ? '🟡' : '⚪';
+        milestoneStats.push(`${emoji} ${m.title}: ${done}/${tasks.length} (${pct}%)`);
+      }
+
+      const overallPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+      const daysLeft = Math.max(0, Math.ceil((new Date(bhag.due_date).getTime() - Date.now()) / 86400000));
+
+      const message = `🎯 <b>BHAG Coach: ${bhag.title}</b>\n\n` +
+        `Прогресс: ${overallPct}% (${doneTasks}/${totalTasks} задач)\n` +
+        `Осталось дней: ${daysLeft}\n\n` +
+        `<b>Milestones:</b>\n${milestoneStats.join('\n')}\n\n` +
+        (overallPct < 30 && daysLeft < 180 ? '⚠️ Темп ниже нужного! Стоит пересмотреть план или ускориться.' :
+         overallPct > 70 ? '🔥 Отличный прогресс! Финишная прямая.' :
+         '💪 Продолжай в том же духе!');
+
+      telegramService.notifyUser(user.tg_id, message);
+    }
   }
 }
