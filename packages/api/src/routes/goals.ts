@@ -233,8 +233,14 @@ goalsRouter.put('/:id/mindmap-positions', (req: AuthRequest, res: Response) => {
   const positions = req.body['positions'];
   if (!positions || typeof positions !== 'object') { res.status(400).json(fail('positions object required')); return; }
   const db = getDb();
-  db.prepare("INSERT INTO settings (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = ?")
-    .run(userId, `mindmap_positions_${goalId}`, JSON.stringify(positions), JSON.stringify(positions));
+  const settingsKey = `mindmap_positions_${goalId}`;
+  const jsonValue = JSON.stringify(positions);
+  const existing = db.prepare("SELECT 1 FROM settings WHERE user_id = ? AND key = ?").get(userId, settingsKey);
+  if (existing) {
+    db.prepare("UPDATE settings SET value = ? WHERE user_id = ? AND key = ?").run(jsonValue, userId, settingsKey);
+  } else {
+    db.prepare("INSERT INTO settings (user_id, key, value) VALUES (?, ?, ?)").run(userId, settingsKey, jsonValue);
+  }
   res.json(ok({ saved: true }));
 });
 
