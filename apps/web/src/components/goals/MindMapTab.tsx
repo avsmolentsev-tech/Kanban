@@ -320,6 +320,21 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
         className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50">
         Все задачи в Канбан
       </button>
+      <button onClick={() => {
+        const positions: Record<string, {x: number; y: number}> = {};
+        for (const n of nodes) {
+          positions[n.id] = { x: n.position.x, y: n.position.y };
+        }
+        if (selectedBhag && Object.keys(positions).length > 0) {
+          apiPut(`/goals/${selectedBhag}/mindmap-positions`, { positions })
+            .then(() => setKanbanMsg('Layout сохранён!'))
+            .catch(() => setKanbanMsg('Ошибка сохранения'));
+          setTimeout(() => setKanbanMsg(''), 2000);
+        }
+      }} disabled={!selectedBhag}
+        className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+        Сохранить layout
+      </button>
       <button onClick={() => setFullscreen(!fullscreen)} className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-white">
         {fullscreen ? '\u2199 \u0421\u0432\u0435\u0440\u043d\u0443\u0442\u044c' : '\u26F6 \u041d\u0430 \u0432\u0435\u0441\u044c \u044d\u043a\u0440\u0430\u043d'}
       </button>
@@ -360,6 +375,8 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
           due_date: (node.data as Record<string, unknown>).due_date as string | undefined,
         })}
         fitView
+        minZoom={0.1}
+        maxZoom={2}
         attributionPosition="bottom-left"
         className="bg-gray-50 dark:bg-gray-900"
       >

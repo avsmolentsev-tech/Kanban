@@ -232,7 +232,7 @@ export function GoalsPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'list' | 'mindmap'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'mindmap'>('mindmap');
   const [showCreateBhag, setShowCreateBhag] = useState(false);
   const { projects, fetchProjects } = useProjectsStore();
 
