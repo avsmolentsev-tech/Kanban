@@ -41,12 +41,12 @@ async function start(): Promise<void> {
   telegramService.start();
   startNotificationScheduler();
   app.listen(config.port, () => {
-    console.log(`[PIS API] running on port ${config.port}`);
+    console.log(`[Clarity Space API] running on port ${config.port}`);
   });
 }
 
 start().catch((err) => {
-  console.error('[PIS API] startup error:', err);
+  console.error('[Clarity Space API] startup error:', err);
   process.exit(1);
 });
 

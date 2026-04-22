@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'Personal Intelligence System',
-        short_name: 'PIS',
+        name: 'Clarity Space',
+        short_name: 'CS',
         description: 'Personal life and project management',
         theme_color: '#6366f1',
         background_color: '#f9fafb',

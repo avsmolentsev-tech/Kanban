@@ -35,8 +35,8 @@ export function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">PIS</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Personal Intelligence System</p>
+          <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Clarity Space</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Your Space for Clarity</p>
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">

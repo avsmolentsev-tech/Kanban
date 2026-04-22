@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'ru.myaipro.pis',
-  appName: 'PIS',
+  appName: 'Clarity Space',
   webDir: 'dist',
   server: {
     // Use the live server URL — app loads from your server

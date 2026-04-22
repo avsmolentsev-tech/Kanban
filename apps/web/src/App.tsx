@@ -187,11 +187,11 @@ export default function App() {
             {/* Logo */}
             <div className="flex items-center gap-3 px-5 py-5">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                <span className="text-white font-bold text-sm">P</span>
+                <span className="text-white font-bold text-xs">CS</span>
               </div>
               <div>
-                <div className="text-sm font-bold text-gray-800 dark:text-gray-100">PIS</div>
-                <div className="text-[10px] text-gray-400">Intelligence System</div>
+                <div className="text-sm font-bold text-gray-800 dark:text-gray-100">Clarity</div>
+                <div className="text-[10px] text-gray-400">Space</div>
               </div>
             </div>
 

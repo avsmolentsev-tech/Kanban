@@ -1,4 +1,4 @@
-// PIS Widget for Scriptable (iPhone)
+// Clarity Space Widget for Scriptable (iPhone)
 // 1. Get your API key at kanban.myaipro.ru → Profile → iPhone Widget
 // 2. Paste it below
 // 3. Run this script, then add Scriptable widget to home screen
@@ -27,7 +27,7 @@ w.backgroundColor = new Color('#0f172a');
 w.setPadding(12, 12, 12, 12);
 
 // Header
-const header = w.addText('PIS');
+const header = w.addText('CS');
 header.font = Font.boldSystemFont(14);
 header.textColor = Color.white();
 w.addSpacer(4);

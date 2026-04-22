@@ -699,7 +699,7 @@ BHAG (Большая Дерзкая Цель на год):
       } else {
         // Not linked — offer choice
         ctx.reply(
-          '👋 Добро пожаловать в PIS!\n\nВыбери вариант:',
+          '👋 Добро пожаловать в Clarity Space!\n\nВыбери вариант:',
           Markup.inlineKeyboard([
             [Markup.button.callback('🆕 Новый аккаунт', 'onboard_new')],
             [Markup.button.callback('🔑 У меня есть аккаунт', 'onboard_login')],
