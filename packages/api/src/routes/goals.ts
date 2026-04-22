@@ -131,7 +131,7 @@ goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
   // Build nodes + edges
   type MindMapNode = { id: string; type: string; label: string; progress: number; status: string; due_date?: string; parent?: string };
   const nodes: MindMapNode[] = [];
-  const edges: Array<{ source: string; target: string }> = [];
+  const edges: Array<{ source: string; target: string; edgeType?: string }> = [];
 
   // Helper: calculate progress
   const calcProgress = (items: Array<Record<string, unknown>>): number => {
@@ -194,6 +194,18 @@ goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
       if (st['due_date']) stNode.due_date = st['due_date'] as string;
       nodes.push(stNode);
       edges.push({ source: `task-${parentTaskId}`, target: `task-${stId}` });
+    }
+  }
+
+  // Dependency edges between displayed tasks
+  const allTaskIds = nodes.filter(n => n.id.startsWith('task-')).map(n => Number(n.id.split('-')[1]));
+  if (allTaskIds.length > 0) {
+    const depPlaceholders = allTaskIds.map(() => '?').join(',');
+    const deps = db.prepare(
+      `SELECT task_id, depends_on_id FROM task_dependencies WHERE task_id IN (${depPlaceholders}) AND depends_on_id IN (${depPlaceholders})`
+    ).all(...allTaskIds, ...allTaskIds) as Array<{ task_id: number; depends_on_id: number }>;
+    for (const dep of deps) {
+      edges.push({ source: `task-${dep.depends_on_id}`, target: `task-${dep.task_id}`, edgeType: 'dependency' });
     }
   }
 

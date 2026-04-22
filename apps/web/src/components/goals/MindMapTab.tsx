@@ -6,8 +6,10 @@ import {
   MiniMap,
   useNodesState,
   useEdgesState,
+  addEdge,
   type Node,
   type Edge,
+  type Connection,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
@@ -31,6 +33,7 @@ interface MindMapNodeData {
 interface MindMapEdgeData {
   source: string;
   target: string;
+  edgeType?: string;
 }
 
 interface MindMapData {
@@ -67,8 +70,10 @@ function layoutGraph(data: MindMapData, onAddChild?: (nodeId: string, nodeType: 
     id: `e-${i}`,
     source: e.source,
     target: e.target,
-    style: { stroke: '#94a3b8', strokeWidth: 2 },
-    animated: false,
+    style: e.edgeType === 'dependency'
+      ? { stroke: '#f59e0b', strokeWidth: 2, strokeDasharray: '5,5' }
+      : { stroke: '#94a3b8', strokeWidth: 2 },
+    animated: e.edgeType === 'dependency',
   }));
   return { nodes, edges };
 }
@@ -194,6 +199,19 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
 
   handleAddChildRef.current = handleAddChild;
 
+  const handleConnect = useCallback(async (connection: Connection) => {
+    if (!connection.source || !connection.target) return;
+    // Only allow task-to-task connections
+    if (!connection.source.startsWith('task-') || !connection.target.startsWith('task-')) return;
+    const fromId = Number(connection.source.split('-')[1]);
+    const toId = Number(connection.target.split('-')[1]);
+
+    try {
+      await apiPost(`/tasks/${toId}/dependencies`, { depends_on_id: fromId });
+      setEdges(prev => addEdge({ ...connection, style: { stroke: '#f59e0b', strokeWidth: 2, strokeDasharray: '5,5' }, animated: true }, prev));
+    } catch { /* ignore */ }
+  }, [setEdges]);
+
   const handleDecompose = async () => {
     if (!selectedBhag) return;
     setLoading(true);
@@ -245,6 +263,8 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onConnect={handleConnect}
+        connectionLineStyle={{ stroke: '#f59e0b' }}
         nodeTypes={nodeTypes}
         onNodeClick={(_, node) => setSelectedNode({
           id: node.id,

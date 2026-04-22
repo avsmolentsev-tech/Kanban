@@ -19,6 +19,7 @@ interface Props {
 
 export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [status, setStatus] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -38,20 +39,23 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
       setTitle(node.label);
       setStatus(node.status);
       setDueDate(node.due_date ?? '');
+      setDescription('');
       setShowAddTask(false);
       setShowConfirmDelete(false);
       setNewTaskTitle('');
 
-      // Fetch current project_id
+      // Fetch current project_id and description
       const [type, idStr] = node.id.split('-');
       const id = Number(idStr);
       if (type === 'task') {
         apiGet<Record<string, unknown>>(`/tasks/${id}`).then((data) => {
           setProjectId((data as Record<string, unknown>)?.project_id as number | null ?? null);
+          setDescription(((data as Record<string, unknown>)?.description as string) ?? '');
         }).catch(() => {});
       } else if (type === 'goal') {
         apiGet<Record<string, unknown>>(`/goals/${id}`).then((data) => {
           setProjectId((data as Record<string, unknown>)?.project_id as number | null ?? null);
+          setDescription(((data as Record<string, unknown>)?.description as string) ?? '');
         }).catch(() => {});
       }
     }
@@ -67,9 +71,9 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
   const handleSave = async () => {
     try {
       if (isGoal) {
-        await apiPatch(`/goals/${entityId}`, { title, status, due_date: dueDate || undefined });
+        await apiPatch(`/goals/${entityId}`, { title, status, due_date: dueDate || undefined, description });
       } else if (isTask) {
-        await apiPatch(`/tasks/${entityId}`, { title, status, due_date: dueDate || undefined });
+        await apiPatch(`/tasks/${entityId}`, { title, status, due_date: dueDate || undefined, description });
       }
       onRefresh();
     } catch { /* ignore */ }
@@ -120,6 +124,18 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
         onChange={e => setTitle(e.target.value)}
         onBlur={handleSave}
       />
+
+      <div className="mb-3">
+        <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">Описание</label>
+        <textarea
+          className="w-full border rounded-lg px-3 py-2 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white resize-y"
+          rows={6}
+          placeholder="Описание задачи..."
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          onBlur={handleSave}
+        />
+      </div>
 
       <div className="mb-3">
         <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">Статус</label>
