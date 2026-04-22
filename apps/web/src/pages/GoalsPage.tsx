@@ -3,12 +3,13 @@ import { apiGet, apiPost, apiPatch, apiDelete } from '../api/client';
 import { useProjectsStore } from '../store/projects.store';
 import { useLangStore } from '../store/lang.store';
 import { Target } from 'lucide-react';
+import { MindMapTab } from '../components/goals/MindMapTab';
 
 interface Goal {
   id: number;
   title: string;
   description: string;
-  type: 'goal' | 'key_result';
+  type: 'goal' | 'key_result' | 'bhag' | 'milestone';
   parent_id: number | null;
   project_id: number | null;
   target_value: number | null;
@@ -230,6 +231,8 @@ export function GoalsPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'list' | 'mindmap'>('list');
+  const [showCreateBhag, setShowCreateBhag] = useState(false);
   const { projects, fetchProjects } = useProjectsStore();
 
   const load = useCallback(async () => {
@@ -254,6 +257,7 @@ export function GoalsPage() {
     load();
   };
 
+  const bhags = goals.filter((g) => g.type === 'bhag');
   const activeGoals = goals.filter((g) => g.status === 'active');
   const completedGoals = goals.filter((g) => g.status !== 'active');
 
@@ -265,6 +269,20 @@ export function GoalsPage() {
             <Target size={20} className="text-white" />
           </div>
           <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Цели', 'Goals')}</h1>
+          <div className="flex gap-2 ml-4">
+            <button
+              onClick={() => setActiveTab('list')}
+              className={`px-3 py-1 rounded-lg text-sm ${activeTab === 'list' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
+            >
+              {t('Список', 'List')}
+            </button>
+            <button
+              onClick={() => setActiveTab('mindmap')}
+              className={`px-3 py-1 rounded-lg text-sm ${activeTab === 'mindmap' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
+            >
+              Mind Map
+            </button>
+          </div>
         </div>
         <button onClick={() => setAdding(true)}
           className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">
@@ -278,35 +296,45 @@ export function GoalsPage() {
         </div>
       )}
 
-      {loading ? (
-        <div className="text-center text-gray-400 py-12">{t('Загрузка...', 'Loading...')}</div>
-      ) : goals.length === 0 && !adding ? (
-        <div className="text-center py-16">
-          <div className="text-5xl mb-4">🎯</div>
-          <p className="text-gray-500 dark:text-gray-400 text-lg mb-2">{t('Пока нет целей', 'No goals yet')}</p>
-          <p className="text-gray-400 dark:text-gray-500 text-sm">{t('Добавьте первую цель и ключевые результаты', 'Add your first goal and key results')}</p>
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {activeGoals.length > 0 && (
-            <div className="space-y-4">
-              {activeGoals.map((g) => (
-                <GoalCard key={g.id} goal={g} projects={projects} onRefresh={load} />
-              ))}
+      {activeTab === 'list' ? (
+        <>
+          {loading ? (
+            <div className="text-center text-gray-400 py-12">{t('Загрузка...', 'Loading...')}</div>
+          ) : goals.length === 0 && !adding ? (
+            <div className="text-center py-16">
+              <div className="text-5xl mb-4">🎯</div>
+              <p className="text-gray-500 dark:text-gray-400 text-lg mb-2">{t('Пока нет целей', 'No goals yet')}</p>
+              <p className="text-gray-400 dark:text-gray-500 text-sm">{t('Добавьте первую цель и ключевые результаты', 'Add your first goal and key results')}</p>
             </div>
-          )}
+          ) : (
+            <div className="space-y-8">
+              {activeGoals.length > 0 && (
+                <div className="space-y-4">
+                  {activeGoals.map((g) => (
+                    <GoalCard key={g.id} goal={g} projects={projects} onRefresh={load} />
+                  ))}
+                </div>
+              )}
 
-          {completedGoals.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold text-gray-500 dark:text-gray-400 mb-3">{t('Завершённые', 'Completed')}</h2>
-              <div className="space-y-4 opacity-60">
-                {completedGoals.map((g) => (
-                  <GoalCard key={g.id} goal={g} projects={projects} onRefresh={load} />
-                ))}
-              </div>
+              {completedGoals.length > 0 && (
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-500 dark:text-gray-400 mb-3">{t('Завершённые', 'Completed')}</h2>
+                  <div className="space-y-4 opacity-60">
+                    {completedGoals.map((g) => (
+                      <GoalCard key={g.id} goal={g} projects={projects} onRefresh={load} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </>
+      ) : (
+        <MindMapTab
+          bhagId={bhags[0]?.id ?? null}
+          bhags={bhags.map(b => ({ id: b.id, title: b.title }))}
+          onCreateBhag={() => setShowCreateBhag(true)}
+        />
       )}
     </div>
   );
