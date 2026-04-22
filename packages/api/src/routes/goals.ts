@@ -225,6 +225,29 @@ goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
   res.json(ok({ bhag: { id: goalId, title: bhag['title'], progress: bhagProgress }, nodes, edges }));
 });
 
+// Save mind map positions
+goalsRouter.put('/:id/mindmap-positions', (req: AuthRequest, res: Response) => {
+  const goalId = Number(req.params['id']);
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Auth required')); return; }
+  const positions = req.body['positions'];
+  if (!positions || typeof positions !== 'object') { res.status(400).json(fail('positions object required')); return; }
+  const db = getDb();
+  db.prepare("INSERT INTO settings (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = ?")
+    .run(userId, `mindmap_positions_${goalId}`, JSON.stringify(positions), JSON.stringify(positions));
+  res.json(ok({ saved: true }));
+});
+
+// Get saved positions
+goalsRouter.get('/:id/mindmap-positions', (req: AuthRequest, res: Response) => {
+  const goalId = Number(req.params['id']);
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Auth required')); return; }
+  const db = getDb();
+  const row = db.prepare("SELECT value FROM settings WHERE user_id = ? AND key = ?").get(userId, `mindmap_positions_${goalId}`) as { value: string } | undefined;
+  res.json(ok(row ? JSON.parse(row.value) : {}));
+});
+
 goalsRouter.post('/:id/decompose', async (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);

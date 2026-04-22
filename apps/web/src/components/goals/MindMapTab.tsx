@@ -15,7 +15,7 @@ import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 import { nodeTypes } from './MindMapNode';
 import { NodeDetailPanel } from './NodeDetailPanel';
-import { apiGet, apiPost, apiPatch } from '../../api/client';
+import { apiGet, apiPost, apiPatch, apiPut } from '../../api/client';
 import { Plus } from 'lucide-react';
 
 type SelectedNodeData = { id: string; type: string; label: string; status: string; progress: number; due_date?: string };
@@ -45,11 +45,11 @@ interface MindMapData {
 function layoutGraph(data: MindMapData, onAddChild?: (nodeId: string, nodeType: string) => void): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'RL', ranksep: 180, nodesep: 70 });
+  g.setGraph({ rankdir: 'RL', ranksep: 200, nodesep: 80 });
 
   for (const n of data.nodes) {
-    const w = n.type === 'bhag' ? 400 : 300;
-    const h = n.type === 'bhag' ? 110 : 85;
+    const w = n.type === 'bhag' ? 460 : 340;
+    const h = n.type === 'bhag' ? 120 : 95;
     g.setNode(n.id, { width: w, height: h });
   }
   for (const e of data.edges) {
@@ -101,6 +101,18 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
       const data = await apiGet<MindMapData>(`/goals/${id}/mindmap`);
       if (applyLayout) {
         const { nodes: n, edges: e } = layoutGraph(data, handleAddChildRef.current ?? undefined);
+        // Load saved positions and override dagre layout
+        try {
+          const savedPositions = await apiGet<Record<string, {x: number; y: number}>>(`/goals/${id}/mindmap-positions`);
+          if (savedPositions && typeof savedPositions === 'object') {
+            for (const node of n) {
+              const saved = savedPositions[node.id];
+              if (saved) {
+                node.position = { x: saved.x, y: saved.y };
+              }
+            }
+          }
+        } catch { /* ignore — use dagre layout */ }
         setNodes(n);
         setEdges(e);
       } else {
@@ -228,6 +240,20 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
     try {
       await apiPost(`/goals/${selectedBhag}/decompose`, {});
       await fetchMindmap(selectedBhag, true);
+      // Save positions of newly laid-out nodes
+      const positions: Record<string, {x: number; y: number}> = {};
+      // Use a small delay to let React state settle
+      setTimeout(() => {
+        setNodes(curr => {
+          for (const n of curr) {
+            positions[n.id] = { x: n.position.x, y: n.position.y };
+          }
+          if (Object.keys(positions).length > 0) {
+            apiPut(`/goals/${selectedBhag}/mindmap-positions`, { positions }).catch(() => {});
+          }
+          return curr;
+        });
+      }, 100);
     } finally {
       setLoading(false);
     }
@@ -309,6 +335,15 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
+        onNodeDragStop={(_event, _node, allNodes) => {
+          const positions: Record<string, {x: number; y: number}> = {};
+          for (const n of allNodes) {
+            positions[n.id] = { x: n.position.x, y: n.position.y };
+          }
+          if (selectedBhag) {
+            apiPut(`/goals/${selectedBhag}/mindmap-positions`, { positions }).catch(() => {});
+          }
+        }}
         connectionMode={'loose' as any}
         connectionLineStyle={{ stroke: '#f59e0b', strokeWidth: 2 }}
         nodeTypes={nodeTypes}
