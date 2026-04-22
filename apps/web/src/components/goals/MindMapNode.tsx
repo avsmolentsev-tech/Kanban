@@ -38,7 +38,7 @@ function MindMapNodeComponent({ data }: NodeProps) {
       className={`group relative rounded-xl border-2 px-4 py-3 bg-white dark:bg-gray-800 shadow-md transition-all hover:shadow-lg ${isBhag ? 'min-w-[300px] max-w-[360px]' : 'min-w-[240px] max-w-[300px]'}`}
       style={{ borderColor: color }}
     >
-      <Handle type="target" position={Position.Right} className="!bg-gray-400 !w-3 !h-3" />
+      <Handle type="target" position={Position.Right} className="!bg-indigo-400 !w-4 !h-4 !border-2 !border-white dark:!border-gray-800 hover:!bg-indigo-600 !transition-colors" />
       <div className="flex items-start gap-2">
         <Icon size={isBhag ? 22 : 18} style={{ color, flexShrink: 0, marginTop: 2 }} />
         <span className={`${isBhag ? 'font-bold text-base leading-tight' : 'text-sm leading-tight'} text-gray-900 dark:text-white`}>
@@ -66,7 +66,7 @@ function MindMapNodeComponent({ data }: NodeProps) {
           +
         </button>
       )}
-      <Handle type="source" position={Position.Left} className="!bg-gray-400 !w-3 !h-3" />
+      <Handle type="source" position={Position.Left} className="!bg-indigo-400 !w-4 !h-4 !border-2 !border-white dark:!border-gray-800 hover:!bg-indigo-600 !transition-colors" />
     </div>
   );
 }
