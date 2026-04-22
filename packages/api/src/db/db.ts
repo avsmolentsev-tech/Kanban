@@ -343,6 +343,10 @@ export function initDb(): void {
       )
     `);
   } catch {}
+
+  // BHAG mind map: link tasks and meetings to goals
+  try { _db.exec('ALTER TABLE tasks ADD COLUMN goal_id INTEGER REFERENCES goals(id)'); } catch {}
+  try { _db.exec('ALTER TABLE meetings ADD COLUMN goal_id INTEGER REFERENCES goals(id)'); } catch {}
 }
 
 export function initTestDb(): void {
