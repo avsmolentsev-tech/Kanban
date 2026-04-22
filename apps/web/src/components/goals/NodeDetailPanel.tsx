@@ -113,14 +113,15 @@ export function NodeDetailPanel({ node, onClose, onRefresh }: Props) {
     : [{ value: 'todo', label: 'Todo' }, { value: 'in_progress', label: 'В работе' }, { value: 'done', label: 'Готово' }];
 
   return (
-    <div className="fixed right-0 top-0 bottom-0 w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-xl z-[60] p-5 overflow-y-auto">
+    <div className="fixed right-0 top-0 bottom-0 w-96 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-xl z-[60] p-5 overflow-y-auto">
       <div className="flex justify-between items-center mb-4">
         <span className="text-xs font-medium px-2 py-1 rounded bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 uppercase">{node.type}</span>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20} /></button>
       </div>
 
-      <input
-        className="w-full border rounded-lg px-3 py-2 mb-3 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+      <textarea
+        className="w-full border rounded-lg px-3 py-2 mb-3 text-base font-semibold dark:bg-gray-700 dark:border-gray-600 dark:text-white resize-none leading-snug"
+        rows={3}
         value={title}
         onChange={e => setTitle(e.target.value)}
         onBlur={handleSave}
