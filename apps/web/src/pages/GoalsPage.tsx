@@ -4,6 +4,7 @@ import { useProjectsStore } from '../store/projects.store';
 import { useLangStore } from '../store/lang.store';
 import { Target } from 'lucide-react';
 import { MindMapTab } from '../components/goals/MindMapTab';
+import { DecomposeModal } from '../components/goals/DecomposeModal';
 
 interface Goal {
   id: number;
@@ -336,6 +337,12 @@ export function GoalsPage() {
           onCreateBhag={() => setShowCreateBhag(true)}
         />
       )}
+
+      <DecomposeModal
+        open={showCreateBhag}
+        onClose={() => setShowCreateBhag(false)}
+        onCreated={() => { load(); setActiveTab('mindmap'); setShowCreateBhag(false); }}
+      />
     </div>
   );
 }
