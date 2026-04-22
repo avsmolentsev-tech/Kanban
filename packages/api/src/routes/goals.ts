@@ -4,6 +4,7 @@ import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
+import { ClaudeService } from '../services/claude.service';
 
 export const goalsRouter = Router();
 
@@ -197,6 +198,57 @@ goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
   });
 
   res.json(ok({ bhag: { id: goalId, title: bhag['title'], progress: bhagProgress }, nodes, edges }));
+});
+
+goalsRouter.post('/:id/decompose', async (req: AuthRequest, res: Response) => {
+  const goalId = Number(req.params['id']);
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Auth required')); return; }
+  const db = getDb();
+
+  const bhag = db.prepare('SELECT * FROM goals WHERE id = ? AND user_id = ?').get(goalId, userId) as Record<string, unknown> | undefined;
+  if (!bhag) { res.status(404).json(fail('Goal not found')); return; }
+
+  try {
+    const claude = new ClaudeService();
+    const projects = db.prepare('SELECT name FROM projects WHERE user_id = ? AND archived = 0').all(userId) as Array<{ name: string }>;
+    const today = new Date().toISOString().split('T')[0]!;
+    const result = await claude.decomposeBhag(
+      bhag['title'] as string,
+      (bhag['description'] as string) ?? '',
+      projects.map(p => p.name),
+      today,
+    );
+
+    // Save milestones + tasks + meetings
+    const created: { milestones: number; tasks: number; meetings: number } = { milestones: 0, tasks: 0, meetings: 0 };
+
+    for (const m of result.milestones) {
+      const mResult = db.prepare(
+        'INSERT INTO goals (title, type, parent_id, due_date, status, user_id) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(m.title, 'milestone', goalId, m.due_date ?? null, 'active', userId);
+      const milestoneId = Number(mResult.lastInsertRowid);
+      created.milestones++;
+
+      for (const t of m.tasks ?? []) {
+        db.prepare(
+          'INSERT INTO tasks (title, status, priority, urgency, due_date, goal_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).run(t.title, 'todo', 3, 3, t.due_date ?? null, milestoneId, userId);
+        created.tasks++;
+      }
+
+      for (const mt of m.meetings ?? []) {
+        db.prepare(
+          'INSERT INTO meetings (title, date, goal_id, user_id, processed) VALUES (?, ?, ?, ?, 0)'
+        ).run(mt.title, mt.date ?? today, milestoneId, userId);
+        created.meetings++;
+      }
+    }
+
+    res.json(ok({ ...created, milestones_data: result.milestones }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Decomposition failed'));
+  }
 });
 
 goalsRouter.delete('/:id', (req: AuthRequest, res: Response) => {

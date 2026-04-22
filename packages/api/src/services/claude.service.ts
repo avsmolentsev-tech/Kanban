@@ -297,4 +297,47 @@ Upcoming meetings:
 ${meetingsContext}`;
     return this.chat([{ role: 'user', content: prompt }]);
   }
+
+  async decomposeBhag(bhagTitle: string, bhagDescription: string, existingProjects: string[], today: string): Promise<{
+    milestones: Array<{ title: string; due_date: string; tasks: Array<{ title: string; due_date?: string }>; meetings: Array<{ title: string; date?: string }> }>;
+  }> {
+    const resp = await this.openai.chat.completions.create({
+      model: 'gpt-4.1',
+      temperature: 0.3,
+      messages: [
+        { role: 'system', content: `Ты декомпозируешь большую годовую цель (BHAG) на конкретные milestones и задачи.
+
+Верни СТРОГО JSON:
+{
+  "milestones": [
+    {
+      "title": "Название milestone",
+      "due_date": "YYYY-MM-DD",
+      "tasks": [
+        { "title": "Конкретная задача", "due_date": "YYYY-MM-DD" }
+      ],
+      "meetings": [
+        { "title": "Встреча с кем/зачем", "date": "YYYY-MM-DD" }
+      ]
+    }
+  ]
+}
+
+Правила:
+- 4-6 milestones, распределённых по году от сегодня до конца года
+- Каждый milestone: 3-5 задач
+- Встречи только если реально нужны (не выдумывай)
+- due_date реалистичные, от ближайшего до конца года
+- Если цель связана с существующими проектами — упомяни в title задач
+- Задачи конкретные и actionable (не "подумать о...", а "составить план...")
+
+Существующие проекты пользователя: ${existingProjects.join(', ')}
+Сегодня: ${today}` },
+        { role: 'user', content: `BHAG: ${bhagTitle}\n${bhagDescription ? 'Описание: ' + bhagDescription : ''}\n\nДекомпозируй.` },
+      ],
+      response_format: { type: 'json_object' },
+    });
+    const raw = resp.choices[0]?.message?.content ?? '{"milestones":[]}';
+    return JSON.parse(raw);
+  }
 }
