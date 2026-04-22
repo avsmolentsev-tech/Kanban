@@ -324,6 +324,12 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 3. Создай задачи через actions: type="create_task", title=<цель>, description="[🎯 Цель недели] <контекст>", due_date=<YYYY-MM-DD>, status="todo".
 4. Подтверди пользователю раскладку.
 
+BHAG (Большая Дерзкая Цель на год):
+Когда пользователь ставит BHAG ("моя цель на год...", "хочу достичь...", "главная цель на год..."):
+1. Создай goal: {"type": "create_goal", "title": "...", "description": "...", "goal_type": "bhag", "due_date": "YYYY-12-31"}
+2. Скажи: "🎯 BHAG создана! Открой Mind Map в приложении — я помогу декомпозировать на milestones и задачи."
+3. НЕ пытайся декомпозировать прямо в чате — для этого есть Mind Map.
+
 ФОКУС ДНЯ:
 Когда пользователь ставит цели на неделю, также спроси/предложи фокус на каждый день.
 Фокус — это одно слово или короткая фраза (1-5 слов), описывающая главный приоритет дня.
@@ -475,8 +481,9 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
             break;
           }
           case 'create_goal': {
+            const goalType = (action['goal_type'] as string) ?? 'goal';
             const r = db.prepare('INSERT INTO goals (title, description, type, project_id, target_value, unit, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-              action['title'], (action['description'] as string) ?? '', 'goal',
+              action['title'], (action['description'] as string) ?? '', goalType,
               action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%', action['due_date'] ?? null, userId
             );
             results.push(`🎯 Цель "${action['title']}" создана`);
