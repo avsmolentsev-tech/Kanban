@@ -17,6 +17,7 @@ import { nodeTypes } from './MindMapNode';
 import { NodeDetailPanel } from './NodeDetailPanel';
 import { apiGet, apiPost, apiPatch, apiPut } from '../../api/client';
 import { Plus } from 'lucide-react';
+import { toPng } from 'html-to-image';
 
 type SelectedNodeData = { id: string; type: string; label: string; status: string; progress: number; due_date?: string };
 
@@ -290,6 +291,28 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
     }
   }, [selectedBhag, fetchMindmap]);
 
+  const handleExport = useCallback(async () => {
+    const flowEl = document.querySelector('.react-flow') as HTMLElement;
+    if (!flowEl) return;
+    try {
+      setKanbanMsg('Экспортирую...');
+      const dataUrl = await toPng(flowEl, {
+        backgroundColor: '#0f172a',
+        quality: 1,
+        pixelRatio: 2,
+      });
+      const link = document.createElement('a');
+      link.download = `bhag-mindmap-${new Date().toISOString().split('T')[0]}.png`;
+      link.href = dataUrl;
+      link.click();
+      setKanbanMsg('Экспортировано!');
+      setTimeout(() => setKanbanMsg(''), 2000);
+    } catch {
+      setKanbanMsg('Ошибка экспорта');
+      setTimeout(() => setKanbanMsg(''), 2000);
+    }
+  }, []);
+
   if (bhags.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-gray-500 dark:text-gray-400">
@@ -320,6 +343,10 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
       <button onClick={handleAddAllToKanban} disabled={loading || !selectedBhag}
         className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50">
         Все задачи в Канбан
+      </button>
+      <button onClick={handleExport} disabled={!selectedBhag}
+        className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-white">
+        Экспорт PNG
       </button>
       <button onClick={() => setFullscreen(!fullscreen)} className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-white">
         {fullscreen ? '\u2199 \u0421\u0432\u0435\u0440\u043d\u0443\u0442\u044c' : '\u26F6 \u041d\u0430 \u0432\u0435\u0441\u044c \u044d\u043a\u0440\u0430\u043d'}
