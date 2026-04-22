@@ -33,13 +33,13 @@ function MindMapNodeComponent({ data }: NodeProps) {
 
   return (
     <div
-      className={`rounded-xl border-2 px-4 py-2 bg-white dark:bg-gray-800 shadow-md transition-all hover:shadow-lg ${isBhag ? 'min-w-[220px]' : 'min-w-[160px]'}`}
+      className={`rounded-xl border-2 px-4 py-2 bg-white dark:bg-gray-800 shadow-md transition-all hover:shadow-lg ${isBhag ? 'min-w-[260px]' : 'min-w-[190px]'}`}
       style={{ borderColor: color }}
     >
-      <Handle type="target" position={Position.Top} className="!bg-gray-400 !w-2 !h-2" />
+      <Handle type="target" position={Position.Right} className="!bg-gray-400 !w-2 !h-2" />
       <div className="flex items-center gap-2">
         <Icon size={isBhag ? 20 : 16} style={{ color }} />
-        <span className={`${isBhag ? 'font-bold text-sm' : 'text-xs'} text-gray-900 dark:text-white truncate max-w-[180px]`}>
+        <span className={`${isBhag ? 'font-bold text-sm' : 'text-xs'} text-gray-900 dark:text-white truncate max-w-[220px]`}>
           {d.label}
         </span>
       </div>
@@ -54,7 +54,7 @@ function MindMapNodeComponent({ data }: NodeProps) {
       {d.due_date && (
         <div className="text-[10px] text-gray-400 mt-0.5">{d.due_date}</div>
       )}
-      <Handle type="source" position={Position.Bottom} className="!bg-gray-400 !w-2 !h-2" />
+      <Handle type="source" position={Position.Left} className="!bg-gray-400 !w-2 !h-2" />
     </div>
   );
 }

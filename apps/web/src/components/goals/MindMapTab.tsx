@@ -39,10 +39,10 @@ interface MindMapData {
 function layoutGraph(data: MindMapData): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'TB', ranksep: 80, nodesep: 60 });
+  g.setGraph({ rankdir: 'RL', ranksep: 120, nodesep: 50 });
 
   for (const n of data.nodes) {
-    const w = n.type === 'bhag' ? 240 : 180;
+    const w = n.type === 'bhag' ? 280 : 220;
     const h = n.type === 'bhag' ? 90 : 60;
     g.setNode(n.id, { width: w, height: h });
   }
@@ -56,7 +56,7 @@ function layoutGraph(data: MindMapData): { nodes: Node[]; edges: Edge[] } {
     return {
       id: n.id,
       type: n.type,
-      position: { x: (pos?.x ?? 0) - (n.type === 'bhag' ? 120 : 90), y: pos?.y ?? 0 },
+      position: { x: (pos?.x ?? 0) - (n.type === 'bhag' ? 140 : 110), y: pos?.y ?? 0 },
       data: { label: n.label, nodeType: n.type, progress: n.progress, status: n.status, due_date: n.due_date },
     };
   });
@@ -82,13 +82,27 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
   const [loading, setLoading] = useState(false);
   const [selectedBhag, setSelectedBhag] = useState<number | null>(bhagId);
 
-  const fetchMindmap = useCallback(async (id: number) => {
+  const fetchMindmap = useCallback(async (id: number, applyLayout = false) => {
     setLoading(true);
     try {
       const data = await apiGet<MindMapData>(`/goals/${id}/mindmap`);
-      const { nodes: n, edges: e } = layoutGraph(data);
-      setNodes(n);
-      setEdges(e);
+      if (applyLayout) {
+        const { nodes: n, edges: e } = layoutGraph(data);
+        setNodes(n);
+        setEdges(e);
+      } else {
+        // Refresh data only, keep positions
+        setNodes(prev => {
+          const updatedMap = new Map(data.nodes.map(n => [n.id, n]));
+          return prev.map(node => {
+            const upd = updatedMap.get(node.id);
+            if (upd) {
+              return { ...node, data: { label: upd.label, nodeType: upd.type, progress: upd.progress, status: upd.status, due_date: upd.due_date } };
+            }
+            return node;
+          });
+        });
+      }
     } catch (err) {
       console.error('Failed to fetch mindmap', err);
     } finally {
@@ -96,14 +110,22 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
     }
   }, [setNodes, setEdges]);
 
+  // Auto-select latest BHAG when list updates
   useEffect(() => {
-    if (selectedBhag) fetchMindmap(selectedBhag);
-  }, [selectedBhag, fetchMindmap]);
+    if (!selectedBhag && bhags.length > 0) {
+      setSelectedBhag(bhags[0]!.id);
+    }
+  }, [bhags, selectedBhag]);
 
-  // Auto-refresh every 30s
+  // Initial load with layout
+  useEffect(() => {
+    if (selectedBhag) fetchMindmap(selectedBhag, true);
+  }, [selectedBhag]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh every 30s (data only, preserve positions)
   useEffect(() => {
     if (!selectedBhag) return;
-    const interval = setInterval(() => fetchMindmap(selectedBhag), 30000);
+    const interval = setInterval(() => fetchMindmap(selectedBhag, false), 30000);
     return () => clearInterval(interval);
   }, [selectedBhag, fetchMindmap]);
 
@@ -112,7 +134,7 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
     setLoading(true);
     try {
       await apiPost(`/goals/${selectedBhag}/decompose`, {});
-      await fetchMindmap(selectedBhag);
+      await fetchMindmap(selectedBhag, true);
     } finally {
       setLoading(false);
     }
