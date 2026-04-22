@@ -31,6 +31,7 @@ const CreateSchema = z.object({
   start_date: z.string().optional(),
   person_ids: z.array(z.number().int()).optional(),
   recurrence: z.string().nullable().optional(),
+  goal_id: z.number().int().nullable().optional(),
 });
 
 const UpdateSchema = z.object({
@@ -133,9 +134,9 @@ tasksRouter.get('/', (req: AuthRequest, res: Response) => {
 tasksRouter.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const { project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, person_ids, recurrence } = parsed.data;
+  const { project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, person_ids, recurrence, goal_id } = parsed.data;
   const userId = getUserId(req);
-  const result = getDb().prepare('INSERT INTO tasks (project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, recurrence, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(project_id ?? null, parent_id ?? null, title, description, status, priority, urgency, due_date ?? null, start_date ?? null, recurrence ?? null, userId);
+  const result = getDb().prepare('INSERT INTO tasks (project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, recurrence, goal_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(project_id ?? null, parent_id ?? null, title, description, status, priority, urgency, due_date ?? null, start_date ?? null, recurrence ?? null, goal_id ?? null, userId);
   const taskId = result.lastInsertRowid as number;
 
   // Auto-add self if no people specified

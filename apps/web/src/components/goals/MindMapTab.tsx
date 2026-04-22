@@ -12,6 +12,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 import { nodeTypes } from './MindMapNode';
+import { NodeDetailPanel } from './NodeDetailPanel';
 import { apiGet, apiPost } from '../../api/client';
 import { Plus } from 'lucide-react';
 
@@ -81,6 +82,8 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
   const [edges, setEdges, onEdgesChange] = useEdgesState([] as Edge[]);
   const [loading, setLoading] = useState(false);
   const [selectedBhag, setSelectedBhag] = useState<number | null>(bhagId);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<{ id: string; type: string; label: string; status: string; progress: number; due_date?: string } | null>(null);
 
   const fetchMindmap = useCallback(async (id: number, applyLayout = false) => {
     setLoading(true);
@@ -129,6 +132,13 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
     return () => clearInterval(interval);
   }, [selectedBhag, fetchMindmap]);
 
+  // Escape to exit fullscreen
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const handleDecompose = async () => {
     if (!selectedBhag) return;
     setLoading(true);
@@ -151,48 +161,69 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
     );
   }
 
-  return (
-    <div className="h-[calc(100vh-200px)] w-full">
-      {/* BHAG selector + actions */}
-      <div className="flex items-center gap-3 mb-3">
-        <select
-          className="text-sm border rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 dark:border-gray-600 dark:text-white border-gray-300"
-          value={selectedBhag ?? ''}
-          onChange={(e) => setSelectedBhag(Number(e.target.value) || null)}
-        >
-          {bhags.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
-        </select>
-        <button onClick={handleDecompose} disabled={loading || !selectedBhag}
-          className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
-          {loading ? 'AI декомпозирует...' : 'Декомпозировать'}
-        </button>
-        <button onClick={onCreateBhag} className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-700 dark:text-white">
-          <Plus size={14} className="inline mr-1" /> Новая BHAG
-        </button>
-      </div>
+  const toolbar = (
+    <div className="flex items-center gap-3 mb-3">
+      <select
+        className="text-sm border rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 dark:border-gray-600 dark:text-white border-gray-300"
+        value={selectedBhag ?? ''}
+        onChange={(e) => setSelectedBhag(Number(e.target.value) || null)}
+      >
+        {bhags.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
+      </select>
+      <button onClick={handleDecompose} disabled={loading || !selectedBhag}
+        className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
+        {loading ? 'AI декомпозирует...' : 'Декомпозировать'}
+      </button>
+      <button onClick={onCreateBhag} className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-white">
+        <Plus size={14} className="inline mr-1" /> Новая BHAG
+      </button>
+      <button onClick={() => setFullscreen(!fullscreen)} className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-white">
+        {fullscreen ? '\u2199 \u0421\u0432\u0435\u0440\u043d\u0443\u0442\u044c' : '\u26F6 \u041d\u0430 \u0432\u0435\u0441\u044c \u044d\u043a\u0440\u0430\u043d'}
+      </button>
+    </div>
+  );
 
-      {/* React Flow */}
-      <div className="h-full border rounded-xl border-gray-200 dark:border-gray-700 overflow-hidden">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          nodeTypes={nodeTypes}
-          fitView
-          attributionPosition="bottom-left"
-          className="bg-gray-50 dark:bg-gray-900"
-        >
-          <Background color="#94a3b8" gap={20} size={1} />
-          <Controls className="!bg-white dark:!bg-gray-800 !border-gray-200 dark:!border-gray-600 !shadow-lg" />
-          <MiniMap nodeColor={(n) => {
-            const p = (n.data as Record<string, unknown>)?.progress as number ?? 0;
-            if (p === 100) return '#22c55e';
-            if (p > 0) return '#eab308';
-            return '#6b7280';
-          }} className="!bg-white dark:!bg-gray-800 !border-gray-200 dark:!border-gray-600" />
-        </ReactFlow>
-      </div>
+  const flowContent = (
+    <div className="flex-1 border rounded-xl border-gray-200 dark:border-gray-700 overflow-hidden">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={nodeTypes}
+        onNodeClick={(_, node) => setSelectedNode({
+          id: node.id,
+          type: (node.data as Record<string, unknown>).nodeType as string,
+          label: (node.data as Record<string, unknown>).label as string,
+          status: (node.data as Record<string, unknown>).status as string,
+          progress: (node.data as Record<string, unknown>).progress as number,
+          due_date: (node.data as Record<string, unknown>).due_date as string | undefined,
+        })}
+        fitView
+        attributionPosition="bottom-left"
+        className="bg-gray-50 dark:bg-gray-900"
+      >
+        <Background color="#94a3b8" gap={20} size={1} />
+        <Controls className="!bg-white dark:!bg-gray-800 !border-gray-200 dark:!border-gray-600 !shadow-lg" />
+        <MiniMap nodeColor={(n) => {
+          const p = (n.data as Record<string, unknown>)?.progress as number ?? 0;
+          if (p === 100) return '#22c55e';
+          if (p > 0) return '#eab308';
+          return '#6b7280';
+        }} className="!bg-white dark:!bg-gray-800 !border-gray-200 dark:!border-gray-600" />
+      </ReactFlow>
+    </div>
+  );
+
+  return (
+    <div className={fullscreen ? 'fixed inset-0 z-50 bg-white dark:bg-gray-900 flex flex-col p-4' : 'h-[calc(100vh-200px)] w-full flex flex-col'}>
+      {toolbar}
+      {flowContent}
+      <NodeDetailPanel
+        node={selectedNode}
+        onClose={() => setSelectedNode(null)}
+        onRefresh={() => { if (selectedBhag) fetchMindmap(selectedBhag, true); }}
+      />
     </div>
   );
 }
