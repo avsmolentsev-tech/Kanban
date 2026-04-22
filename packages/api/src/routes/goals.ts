@@ -251,6 +251,32 @@ goalsRouter.post('/:id/decompose', async (req: AuthRequest, res: Response) => {
   }
 });
 
+goalsRouter.patch('/:id/nodes', (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Auth required')); return; }
+  const db = getDb();
+  const moves = req.body['moves'] as Array<{ nodeId: string; newParent: string }> | undefined;
+  if (!moves || !Array.isArray(moves)) { res.status(400).json(fail('moves array required')); return; }
+
+  for (const move of moves) {
+    const [nodeType, nodeIdStr] = move.nodeId.split('-');
+    const [, parentIdStr] = move.newParent.split('-');
+    const nodeId = Number(nodeIdStr);
+    const parentId = Number(parentIdStr);
+    if (!nodeId || !parentId) continue;
+
+    if (nodeType === 'task') {
+      db.prepare('UPDATE tasks SET goal_id = ? WHERE id = ? AND user_id = ?').run(parentId, nodeId, userId);
+    } else if (nodeType === 'meeting') {
+      db.prepare('UPDATE meetings SET goal_id = ? WHERE id = ? AND user_id = ?').run(parentId, nodeId, userId);
+    } else if (nodeType === 'goal') {
+      db.prepare('UPDATE goals SET parent_id = ? WHERE id = ? AND user_id = ?').run(parentId, nodeId, userId);
+    }
+  }
+
+  res.json(ok({ moved: moves.length }));
+});
+
 goalsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);
