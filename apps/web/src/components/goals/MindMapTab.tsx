@@ -335,14 +335,18 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
-        onNodeDragStop={(_event, _node, allNodes) => {
-          const positions: Record<string, {x: number; y: number}> = {};
-          for (const n of allNodes) {
-            positions[n.id] = { x: n.position.x, y: n.position.y };
-          }
-          if (selectedBhag) {
-            apiPut(`/goals/${selectedBhag}/mindmap-positions`, { positions }).catch(() => {});
-          }
+        onNodeDragStop={() => {
+          // Save all current node positions from React state
+          setNodes(currentNodes => {
+            const positions: Record<string, {x: number; y: number}> = {};
+            for (const n of currentNodes) {
+              positions[n.id] = { x: n.position.x, y: n.position.y };
+            }
+            if (selectedBhag && Object.keys(positions).length > 0) {
+              apiPut(`/goals/${selectedBhag}/mindmap-positions`, { positions }).catch((err) => console.error('[mindmap] save positions failed:', err));
+            }
+            return currentNodes;
+          });
         }}
         connectionMode={'loose' as any}
         connectionLineStyle={{ stroke: '#f59e0b', strokeWidth: 2 }}
