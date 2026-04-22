@@ -103,6 +103,102 @@ goalsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   res.json(ok(goal));
 });
 
+goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
+  const goalId = Number(req.params['id']);
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Auth required')); return; }
+  const db = getDb();
+
+  const bhag = db.prepare('SELECT * FROM goals WHERE id = ? AND user_id = ?').get(goalId, userId) as Record<string, unknown> | undefined;
+  if (!bhag) { res.status(404).json(fail('Goal not found')); return; }
+
+  // Milestones (direct children)
+  const milestones = db.prepare('SELECT * FROM goals WHERE parent_id = ? AND user_id = ?').all(goalId, userId) as Array<Record<string, unknown>>;
+  const milestoneIds = milestones.map(m => m['id'] as number);
+
+  // Tasks linked to milestones or directly to BHAG
+  const allGoalIds = [goalId, ...milestoneIds];
+  const placeholders = allGoalIds.map(() => '?').join(',');
+  const tasks = allGoalIds.length > 0
+    ? db.prepare(`SELECT id, title, status, priority, due_date, goal_id FROM tasks WHERE goal_id IN (${placeholders}) AND user_id = ? AND archived = 0`).all(...allGoalIds, userId) as Array<Record<string, unknown>>
+    : [];
+
+  const meetings = allGoalIds.length > 0
+    ? db.prepare(`SELECT id, title, date, goal_id FROM meetings WHERE goal_id IN (${placeholders}) AND user_id = ?`).all(...allGoalIds, userId) as Array<Record<string, unknown>>
+    : [];
+
+  // Build nodes + edges
+  const nodes: Array<{ id: string; type: string; label: string; progress: number; status: string; due_date?: string; parent?: string }> = [];
+  const edges: Array<{ source: string; target: string }> = [];
+
+  // Helper: calculate progress
+  const calcProgress = (items: Array<Record<string, unknown>>): number => {
+    if (items.length === 0) return 0;
+    const done = items.filter(i => i['status'] === 'done').length;
+    return Math.round((done / items.length) * 100);
+  };
+
+  const getStatus = (progress: number): string => {
+    if (progress === 100) return 'done';
+    if (progress > 0) return 'in_progress';
+    return 'not_started';
+  };
+
+  // Milestone nodes
+  for (const m of milestones) {
+    const mId = m['id'] as number;
+    const childTasks = tasks.filter(t => t['goal_id'] === mId);
+    const childMeetings = meetings.filter(mt => mt['goal_id'] === mId);
+    const allChildren = [...childTasks, ...childMeetings.map(mt => ({ ...mt, status: mt['processed'] ? 'done' : 'todo' }))];
+    const progress = calcProgress(allChildren);
+    nodes.push({
+      id: `goal-${mId}`,
+      type: 'milestone',
+      label: m['title'] as string,
+      progress,
+      status: getStatus(progress),
+      due_date: m['due_date'] as string | undefined,
+      parent: `goal-${goalId}`,
+    });
+    edges.push({ source: `goal-${goalId}`, target: `goal-${mId}` });
+
+    // Task nodes under this milestone
+    for (const t of childTasks) {
+      const tId = t['id'] as number;
+      const tp = t['status'] === 'done' ? 100 : 0;
+      nodes.push({ id: `task-${tId}`, type: 'task', label: t['title'] as string, progress: tp, status: t['status'] as string, due_date: t['due_date'] as string | undefined, parent: `goal-${mId}` });
+      edges.push({ source: `goal-${mId}`, target: `task-${tId}` });
+    }
+
+    // Meeting nodes under this milestone
+    for (const mt of childMeetings) {
+      const mtId = mt['id'] as number;
+      nodes.push({ id: `meeting-${mtId}`, type: 'meeting', label: mt['title'] as string, progress: 0, status: 'todo', due_date: mt['date'] as string | undefined, parent: `goal-${mId}` });
+      edges.push({ source: `goal-${mId}`, target: `meeting-${mtId}` });
+    }
+  }
+
+  // BHAG node
+  const milestoneProgresses = milestones.map(m => {
+    const node = nodes.find(n => n.id === `goal-${m['id']}`);
+    return node?.progress ?? 0;
+  });
+  const bhagProgress = milestoneProgresses.length > 0
+    ? Math.round(milestoneProgresses.reduce((a, b) => a + b, 0) / milestoneProgresses.length)
+    : 0;
+
+  nodes.unshift({
+    id: `goal-${goalId}`,
+    type: 'bhag',
+    label: bhag['title'] as string,
+    progress: bhagProgress,
+    status: getStatus(bhagProgress),
+    due_date: bhag['due_date'] as string | undefined,
+  });
+
+  res.json(ok({ bhag: { id: goalId, title: bhag['title'], progress: bhagProgress }, nodes, edges }));
+});
+
 goalsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);
