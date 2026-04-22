@@ -309,7 +309,7 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
-        connectionMode="loose"
+        connectionMode={'loose' as any}
         connectionLineStyle={{ stroke: '#f59e0b', strokeWidth: 2 }}
         nodeTypes={nodeTypes}
         onNodeClick={(_, node) => setSelectedNode({
