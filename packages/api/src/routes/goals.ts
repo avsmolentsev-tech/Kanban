@@ -35,7 +35,7 @@ const UpdateSchema = z.object({
 goalsRouter.get('/', (req: AuthRequest, res: Response) => {
   const scope = userScopeWhere(req);
   const goals = getDb()
-    .prepare(`SELECT * FROM goals WHERE type = 'goal' AND ${scope.sql} ORDER BY created_at DESC`)
+    .prepare(`SELECT * FROM goals WHERE type IN ('goal', 'bhag') AND ${scope.sql} ORDER BY created_at DESC`)
     .all(...scope.params) as Record<string, unknown>[];
 
   const goalIds = goals.map((g) => g['id'] as number);
@@ -43,7 +43,7 @@ goalsRouter.get('/', (req: AuthRequest, res: Response) => {
   if (goalIds.length > 0) {
     keyResults = getDb()
       .prepare(
-        `SELECT * FROM goals WHERE type = 'key_result' AND parent_id IN (${goalIds.map(() => '?').join(',')}) ORDER BY created_at ASC`
+        `SELECT * FROM goals WHERE type IN ('key_result', 'milestone') AND parent_id IN (${goalIds.map(() => '?').join(',')}) ORDER BY created_at ASC`
       )
       .all(...goalIds) as Record<string, unknown>[];
   }
