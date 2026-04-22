@@ -11,7 +11,7 @@ export const goalsRouter = Router();
 const CreateSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional().default(''),
-  type: z.enum(['goal', 'key_result']).optional().default('goal'),
+  type: z.enum(['goal', 'key_result', 'bhag', 'milestone']).optional().default('goal'),
   parent_id: z.number().int().nullable().optional(),
   project_id: z.number().int().nullable().optional(),
   target_value: z.number().nullable().optional(),
