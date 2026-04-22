@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as fs from 'fs';
 import { Telegraf, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { config } from '../config';
@@ -28,6 +29,22 @@ export class TelegramService {
   private getChatHistory(tgId: number): Array<{ role: 'user' | 'assistant'; content: string }> {
     if (!this.chatHistories.has(tgId)) this.chatHistories.set(tgId, []);
     return this.chatHistories.get(tgId)!;
+  }
+
+  /** Download file from Telegram. In local Bot API mode, reads from disk. Otherwise fetches via URL. */
+  private async downloadTelegramFile(ctx: any, fileId: string): Promise<Buffer> {
+    if (process.env.TELEGRAM_LOCAL_API_ROOT) {
+      // Local mode: getFile returns absolute file_path on disk
+      const file = await ctx.telegram.getFile(fileId);
+      const filePath = file.file_path;
+      if (filePath && fs.existsSync(filePath)) {
+        return fs.readFileSync(filePath);
+      }
+      // Fallback: try URL-based download
+    }
+    const fileLink = await ctx.telegram.getFileLink(fileId);
+    const response = await fetch(fileLink.href);
+    return Buffer.from(await response.arrayBuffer());
   }
 
   /** Resolve internal user id from Telegram user id. Auto-creates account if not found. */
@@ -1381,9 +1398,7 @@ BHAG (Большая Дерзкая Цель на год):
 
         ctx.reply('🎤 Транскрибирую...');
         const fileId = ctx.message.voice.file_id;
-        const fileLink = await ctx.telegram.getFileLink(fileId);
-        const response = await fetch(fileLink.href);
-        const buffer = Buffer.from(await response.arrayBuffer());
+        const buffer = await this.downloadTelegramFile(ctx, fileId);
 
         // Transcribe via Whisper
         const transcript = await this.transcribeAudio(buffer, 'voice.ogg');
@@ -1445,9 +1460,7 @@ BHAG (Большая Дерзкая Цель на год):
           await ctx.reply(`⬇️ Большой файл (${Math.round(fileSizeMb)} МБ), скачиваю через локальный сервер...`);
         }
 
-        const fileLink = await ctx.telegram.getFileLink(doc.file_id);
-        const response = await fetch(fileLink.href);
-        const buffer = Buffer.from(await response.arrayBuffer());
+        const buffer = await this.downloadTelegramFile(ctx, doc.file_id);
 
         if (isAudio) {
           // Transcribe audio file
@@ -1490,9 +1503,7 @@ BHAG (Большая Дерзкая Цель на год):
           return;
         }
         ctx.reply(fileSizeMb > 20 ? `⬇️ Большой файл (${Math.round(fileSizeMb)} МБ), скачиваю и транскрибирую...` : '🎤 Транскрибирую аудио...');
-        const fileLink = await ctx.telegram.getFileLink(audio.file_id);
-        const response = await fetch(fileLink.href);
-        const buffer = Buffer.from(await response.arrayBuffer());
+        const buffer = await this.downloadTelegramFile(ctx, audio.file_id);
 
         const transcript = await this.transcribeAudio(buffer, audio.file_name ?? 'audio.mp3');
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
@@ -1518,9 +1529,7 @@ BHAG (Большая Дерзкая Цель на год):
         const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
         // userId auto-created by resolveUserId
         const photo = ctx.message.photo[ctx.message.photo.length - 1]!;
-        const fileLink = await ctx.telegram.getFileLink(photo.file_id);
-        const response = await fetch(fileLink.href);
-        const buffer = Buffer.from(await response.arrayBuffer());
+        const buffer = await this.downloadTelegramFile(ctx, photo.file_id);
 
         const ingestService = new IngestService();
         const result = await ingestService.ingestBuffer(buffer, 'photo.jpg', userId);
