@@ -45,11 +45,11 @@ interface MindMapData {
 function layoutGraph(data: MindMapData, onAddChild?: (nodeId: string, nodeType: string) => void): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'RL', ranksep: 160, nodesep: 60 });
+  g.setGraph({ rankdir: 'RL', ranksep: 180, nodesep: 70 });
 
   for (const n of data.nodes) {
-    const w = n.type === 'bhag' ? 340 : 260;
-    const h = n.type === 'bhag' ? 100 : 75;
+    const w = n.type === 'bhag' ? 400 : 300;
+    const h = n.type === 'bhag' ? 110 : 85;
     g.setNode(n.id, { width: w, height: h });
   }
   for (const e of data.edges) {
@@ -202,15 +202,24 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
 
   const handleConnect = useCallback(async (connection: Connection) => {
     if (!connection.source || !connection.target) return;
-    // Only allow task-to-task connections
-    if (!connection.source.startsWith('task-') || !connection.target.startsWith('task-')) return;
-    const fromId = Number(connection.source.split('-')[1]);
-    const toId = Number(connection.target.split('-')[1]);
+    if (connection.source === connection.target) return;
 
-    try {
-      await apiPost(`/tasks/${toId}/dependencies`, { depends_on_id: fromId });
-      setEdges(prev => addEdge({ ...connection, style: { stroke: '#f59e0b', strokeWidth: 2, strokeDasharray: '5,5' }, animated: true }, prev));
-    } catch { /* ignore */ }
+    // Task-to-task: create dependency in DB
+    if (connection.source.startsWith('task-') && connection.target.startsWith('task-')) {
+      const fromId = Number(connection.source.split('-')[1]);
+      const toId = Number(connection.target.split('-')[1]);
+      try {
+        await apiPost(`/tasks/${toId}/dependencies`, { depends_on_id: fromId });
+      } catch {}
+    }
+
+    // Always add visual edge (for any node type)
+    setEdges(prev => addEdge({
+      ...connection,
+      id: `dep-${connection.source}-${connection.target}`,
+      style: { stroke: '#f59e0b', strokeWidth: 2, strokeDasharray: '5,5' },
+      animated: true,
+    }, prev));
   }, [setEdges]);
 
   const handleDecompose = async () => {
@@ -300,7 +309,8 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
-        connectionLineStyle={{ stroke: '#f59e0b' }}
+        connectionMode="loose"
+        connectionLineStyle={{ stroke: '#f59e0b', strokeWidth: 2 }}
         nodeTypes={nodeTypes}
         onNodeClick={(_, node) => setSelectedNode({
           id: node.id,

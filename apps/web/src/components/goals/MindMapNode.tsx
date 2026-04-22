@@ -35,13 +35,13 @@ function MindMapNodeComponent({ data }: NodeProps) {
 
   return (
     <div
-      className={`group relative rounded-xl border-2 px-4 py-3 bg-white dark:bg-gray-800 shadow-md transition-all hover:shadow-lg ${isBhag ? 'min-w-[300px] max-w-[360px]' : 'min-w-[240px] max-w-[300px]'}`}
+      className={`group relative rounded-2xl border-2 px-5 py-4 bg-white dark:bg-gray-800 shadow-md transition-all hover:shadow-lg ${isBhag ? 'min-w-[340px] max-w-[420px]' : 'min-w-[280px] max-w-[360px]'}`}
       style={{ borderColor: color }}
     >
       <Handle type="target" position={Position.Right} className="!bg-indigo-400 !w-4 !h-4 !border-2 !border-white dark:!border-gray-800 hover:!bg-indigo-600 !transition-colors" />
-      <div className="flex items-start gap-2">
-        <Icon size={isBhag ? 22 : 18} style={{ color, flexShrink: 0, marginTop: 2 }} />
-        <span className={`${isBhag ? 'font-bold text-base leading-tight' : 'text-sm leading-tight'} text-gray-900 dark:text-white`}>
+      <div className="flex items-start gap-3">
+        <Icon size={isBhag ? 24 : 20} style={{ color, flexShrink: 0, marginTop: 2 }} />
+        <span className={`${isBhag ? 'font-bold text-lg leading-snug' : 'text-sm leading-snug font-medium'} text-gray-900 dark:text-white`}>
           {d.label}
         </span>
       </div>
