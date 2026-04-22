@@ -664,7 +664,14 @@ BHAG (Большая Дерзкая Цель на год):
 
     // handlerTimeout: Infinity — long-running handlers (whisper on 15+ min audio,
     // AI command chains) must not be killed mid-flight.
-    this.bot = new Telegraf(config.telegramBotToken, { handlerTimeout: Infinity });
+    // TELEGRAM_LOCAL_API_ROOT — point to local Bot API server to remove 20MB file limit.
+    const localApiRoot = process.env.TELEGRAM_LOCAL_API_ROOT;
+    const tgOpts: any = { handlerTimeout: Infinity };
+    if (localApiRoot) {
+      tgOpts.telegram = { apiRoot: localApiRoot };
+      console.log(`[telegram] using local Bot API: ${localApiRoot}`);
+    }
+    this.bot = new Telegraf(config.telegramBotToken, tgOpts);
 
     this.bot.catch((err: unknown) => {
       console.error('[telegram] bot error:', err instanceof Error ? err.message : err);
@@ -1429,9 +1436,13 @@ BHAG (Большая Дерзкая Цель на год):
         const isAudio = mime.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|webm|flac|aac|wma)$/i.test(filename);
 
         const fileSizeMb = (doc.file_size ?? 0) / (1024 * 1024);
-        if (fileSizeMb > 20) {
+        // Local Bot API server removes 20MB limit; only block if no local API
+        if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
           await ctx.reply(`⚠️ Файл слишком большой (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
           return;
+        }
+        if (fileSizeMb > 20) {
+          await ctx.reply(`⬇️ Большой файл (${Math.round(fileSizeMb)} МБ), скачиваю через локальный сервер...`);
         }
 
         const fileLink = await ctx.telegram.getFileLink(doc.file_id);
@@ -1474,11 +1485,11 @@ BHAG (Большая Дерзкая Цель на год):
         // userId auto-created by resolveUserId
         const audio = ctx.message.audio;
         const fileSizeMb = (audio.file_size ?? 0) / (1024 * 1024);
-        if (fileSizeMb > 20) {
+        if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
           await ctx.reply(`⚠️ Аудио слишком большое (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
           return;
         }
-        ctx.reply('🎤 Транскрибирую аудио...');
+        ctx.reply(fileSizeMb > 20 ? `⬇️ Большой файл (${Math.round(fileSizeMb)} МБ), скачиваю и транскрибирую...` : '🎤 Транскрибирую аудио...');
         const fileLink = await ctx.telegram.getFileLink(audio.file_id);
         const response = await fetch(fileLink.href);
         const buffer = Buffer.from(await response.arrayBuffer());
