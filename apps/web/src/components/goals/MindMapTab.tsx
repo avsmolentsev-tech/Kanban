@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -92,6 +92,7 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
   const [kanbanMsg, setKanbanMsg] = useState('');
+  const saveTimerRef = useRef<number | null>(null);
 
   const handleAddChildRef = { current: null as null | ((nodeId: string, nodeType: string) => void) };
 
@@ -351,17 +352,19 @@ export function MindMapTab({ bhagId, bhags, onCreateBhag }: Props) {
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
         onNodeDragStop={() => {
-          // Save all current node positions from React state
-          setNodes(currentNodes => {
+          // Auto-save positions after drag with debounce
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = window.setTimeout(() => {
             const positions: Record<string, {x: number; y: number}> = {};
-            for (const n of currentNodes) {
+            for (const n of nodes) {
               positions[n.id] = { x: n.position.x, y: n.position.y };
             }
             if (selectedBhag && Object.keys(positions).length > 0) {
-              apiPut(`/goals/${selectedBhag}/mindmap-positions`, { positions }).catch((err) => console.error('[mindmap] save positions failed:', err));
+              apiPut(`/goals/${selectedBhag}/mindmap-positions`, { positions })
+                .then(() => { setKanbanMsg('Сохранено'); setTimeout(() => setKanbanMsg(''), 1500); })
+                .catch(() => {});
             }
-            return currentNodes;
-          });
+          }, 500);
         }}
         connectionMode={'loose' as any}
         connectionLineStyle={{ stroke: '#f59e0b', strokeWidth: 2 }}
