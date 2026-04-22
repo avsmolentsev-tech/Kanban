@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
@@ -129,7 +129,8 @@ goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
     : [];
 
   // Build nodes + edges
-  const nodes: Array<{ id: string; type: string; label: string; progress: number; status: string; due_date?: string; parent?: string }> = [];
+  type MindMapNode = { id: string; type: string; label: string; progress: number; status: string; due_date?: string; parent?: string };
+  const nodes: MindMapNode[] = [];
   const edges: Array<{ source: string; target: string }> = [];
 
   // Helper: calculate progress
@@ -152,29 +153,27 @@ goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
     const childMeetings = meetings.filter(mt => mt['goal_id'] === mId);
     const allChildren = [...childTasks, ...childMeetings.map(mt => ({ ...mt, status: mt['processed'] ? 'done' : 'todo' }))];
     const progress = calcProgress(allChildren);
-    nodes.push({
-      id: `goal-${mId}`,
-      type: 'milestone',
-      label: m['title'] as string,
-      progress,
-      status: getStatus(progress),
-      due_date: m['due_date'] as string | undefined,
-      parent: `goal-${goalId}`,
-    });
+    const mNode: MindMapNode = { id: `goal-${mId}`, type: 'milestone', label: m['title'] as string, progress, status: getStatus(progress), parent: `goal-${goalId}` };
+    if (m['due_date']) mNode.due_date = m['due_date'] as string;
+    nodes.push(mNode);
     edges.push({ source: `goal-${goalId}`, target: `goal-${mId}` });
 
     // Task nodes under this milestone
     for (const t of childTasks) {
       const tId = t['id'] as number;
       const tp = t['status'] === 'done' ? 100 : 0;
-      nodes.push({ id: `task-${tId}`, type: 'task', label: t['title'] as string, progress: tp, status: t['status'] as string, due_date: t['due_date'] as string | undefined, parent: `goal-${mId}` });
+      const tNode: MindMapNode = { id: `task-${tId}`, type: 'task', label: t['title'] as string, progress: tp, status: t['status'] as string, parent: `goal-${mId}` };
+      if (t['due_date']) tNode.due_date = t['due_date'] as string;
+      nodes.push(tNode);
       edges.push({ source: `goal-${mId}`, target: `task-${tId}` });
     }
 
     // Meeting nodes under this milestone
     for (const mt of childMeetings) {
       const mtId = mt['id'] as number;
-      nodes.push({ id: `meeting-${mtId}`, type: 'meeting', label: mt['title'] as string, progress: 0, status: 'todo', due_date: mt['date'] as string | undefined, parent: `goal-${mId}` });
+      const mtNode: MindMapNode = { id: `meeting-${mtId}`, type: 'meeting', label: mt['title'] as string, progress: 0, status: 'todo', parent: `goal-${mId}` };
+      if (mt['date']) mtNode.due_date = mt['date'] as string;
+      nodes.push(mtNode);
       edges.push({ source: `goal-${mId}`, target: `meeting-${mtId}` });
     }
   }
@@ -188,14 +187,9 @@ goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
     ? Math.round(milestoneProgresses.reduce((a, b) => a + b, 0) / milestoneProgresses.length)
     : 0;
 
-  nodes.unshift({
-    id: `goal-${goalId}`,
-    type: 'bhag',
-    label: bhag['title'] as string,
-    progress: bhagProgress,
-    status: getStatus(bhagProgress),
-    due_date: bhag['due_date'] as string | undefined,
-  });
+  const bhagNode: MindMapNode = { id: `goal-${goalId}`, type: 'bhag', label: bhag['title'] as string, progress: bhagProgress, status: getStatus(bhagProgress) };
+  if (bhag['due_date']) bhagNode.due_date = bhag['due_date'] as string;
+  nodes.unshift(bhagNode);
 
   res.json(ok({ bhag: { id: goalId, title: bhag['title'], progress: bhagProgress }, nodes, edges }));
 });
