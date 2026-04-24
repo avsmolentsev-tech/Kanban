@@ -650,12 +650,29 @@ BHAG (Большая Дерзкая Цель на год):
   /** Transcribe audio via Whisper API */
   /** Transcribe audio — tries local whisper.cpp first (free), falls back to OpenAI API */
   private async transcribeAudio(buffer: Buffer, filename: string): Promise<string> {
+    const sizeMb = buffer.length / (1024 * 1024);
+
+    // Pre-compress large files (>10MB) to reduce whisper processing time
+    let audioBuffer = buffer;
+    let audioFilename = filename;
+    if (sizeMb > 10) {
+      try {
+        const { compressForTranscription } = require('./whisper-local.service');
+        console.log(`[whisper] pre-compressing ${Math.round(sizeMb)}MB ${filename}`);
+        audioBuffer = await compressForTranscription(buffer, filename);
+        audioFilename = filename.replace(/\.[^.]+$/, '.mp3');
+        console.log(`[whisper] compressed → ${Math.round(audioBuffer.length / (1024 * 1024))}MB`);
+      } catch (err) {
+        console.warn('[whisper] compression failed, using original:', err instanceof Error ? err.message : err);
+      }
+    }
+
     // Try local whisper.cpp first (FREE)
     try {
       const { isLocalWhisperAvailable, transcribeLocal } = require('./whisper-local.service');
       if (isLocalWhisperAvailable()) {
         console.log('[whisper] using local whisper.cpp');
-        return transcribeLocal(buffer, filename);
+        return transcribeLocal(audioBuffer, audioFilename);
       }
     } catch (err) {
       console.warn('[whisper] local failed, falling back to OpenAI:', err instanceof Error ? err.message : err);
@@ -664,7 +681,7 @@ BHAG (Большая Дерзкая Цель на год):
     // Fallback to OpenAI Whisper API ($$$)
     console.log('[whisper] using OpenAI API');
     const openai = new OpenAI({ apiKey: config.openaiApiKey });
-    const file = new File([buffer], filename, { type: 'audio/ogg' });
+    const file = new File([audioBuffer], audioFilename, { type: 'audio/mpeg' });
     const result = await openai.audio.transcriptions.create({
       model: 'whisper-1',
       file,
