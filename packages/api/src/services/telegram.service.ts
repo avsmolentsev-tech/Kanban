@@ -647,47 +647,14 @@ BHAG (Большая Дерзкая Цель на год):
     return 'command';
   }
 
-  /** Transcribe audio via Whisper API */
-  /** Transcribe audio — tries local whisper.cpp first (free), falls back to OpenAI API */
+  /** Transcribe audio — queued with concurrency limit, OpenAI overflow */
   private async transcribeAudio(buffer: Buffer, filename: string): Promise<string> {
-    const sizeMb = buffer.length / (1024 * 1024);
-
-    // Pre-compress large files (>10MB) to reduce whisper processing time
-    let audioBuffer = buffer;
-    let audioFilename = filename;
-    if (sizeMb > 10) {
-      try {
-        const { compressForTranscription } = require('./whisper-local.service');
-        console.log(`[whisper] pre-compressing ${Math.round(sizeMb)}MB ${filename}`);
-        audioBuffer = await compressForTranscription(buffer, filename);
-        audioFilename = filename.replace(/\.[^.]+$/, '.mp3');
-        console.log(`[whisper] compressed → ${Math.round(audioBuffer.length / (1024 * 1024))}MB`);
-      } catch (err) {
-        console.warn('[whisper] compression failed, using original:', err instanceof Error ? err.message : err);
-      }
+    const { transcribeWithOverflow, getQueueStatus } = require('./whisper-queue');
+    const status = getQueueStatus();
+    if (status.queued > 0) {
+      console.log(`[whisper] queue status: ${status.active} active, ${status.queued} waiting`);
     }
-
-    // Try local whisper.cpp first (FREE)
-    try {
-      const { isLocalWhisperAvailable, transcribeLocal } = require('./whisper-local.service');
-      if (isLocalWhisperAvailable()) {
-        console.log('[whisper] using local whisper.cpp');
-        return transcribeLocal(audioBuffer, audioFilename);
-      }
-    } catch (err) {
-      console.warn('[whisper] local failed, falling back to OpenAI:', err instanceof Error ? err.message : err);
-    }
-
-    // Fallback to OpenAI Whisper API ($$$)
-    console.log('[whisper] using OpenAI API');
-    const openai = new OpenAI({ apiKey: config.openaiApiKey });
-    const file = new File([audioBuffer], audioFilename, { type: 'audio/mpeg' });
-    const result = await openai.audio.transcriptions.create({
-      model: 'whisper-1',
-      file,
-      language: 'ru',
-    });
-    return result.text;
+    return transcribeWithOverflow(buffer, filename);
   }
 
   start(): void {
@@ -1413,7 +1380,17 @@ BHAG (Большая Дерзкая Цель на год):
         const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
         // userId auto-created by resolveUserId
 
-        ctx.reply('🎤 Транскрибирую...');
+        {
+          const { getQueueStatus } = require('./whisper-queue');
+          const qStatus = getQueueStatus();
+          if (qStatus.active >= 2 && qStatus.queued > 0) {
+            ctx.reply(`🎤 В очереди (позиция ${qStatus.queued + 1}). Транскрибирую когда освободится...`);
+          } else if (qStatus.active >= 2) {
+            ctx.reply('🎤 Транскрибирую (очередь занята, может занять дольше)...');
+          } else {
+            ctx.reply('🎤 Транскрибирую...');
+          }
+        }
         const fileId = ctx.message.voice.file_id;
         const buffer = await this.downloadTelegramFile(ctx, fileId);
 
@@ -1481,7 +1458,17 @@ BHAG (Большая Дерзкая Цель на год):
 
         if (isAudio) {
           // Transcribe audio file
-          ctx.reply('🎤 Транскрибирую аудиофайл...');
+          {
+            const { getQueueStatus } = require('./whisper-queue');
+            const qStatus = getQueueStatus();
+            if (qStatus.active >= 2 && qStatus.queued > 0) {
+              ctx.reply(`🎤 В очереди (позиция ${qStatus.queued + 1}). Транскрибирую когда освободится...`);
+            } else if (qStatus.active >= 2) {
+              ctx.reply('🎤 Транскрибирую (очередь занята, может занять дольше)...');
+            } else {
+              ctx.reply('🎤 Транскрибирую аудиофайл...');
+            }
+          }
           const transcript = await this.transcribeAudio(buffer, filename);
           if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
 
@@ -1519,7 +1506,19 @@ BHAG (Большая Дерзкая Цель на год):
           await ctx.reply(`⚠️ Аудио слишком большое (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
           return;
         }
-        ctx.reply(fileSizeMb > 20 ? `⬇️ Большой файл (${Math.round(fileSizeMb)} МБ), скачиваю и транскрибирую...` : '🎤 Транскрибирую аудио...');
+        {
+          const { getQueueStatus } = require('./whisper-queue');
+          const qStatus = getQueueStatus();
+          if (fileSizeMb > 20) {
+            ctx.reply(`⬇️ Большой файл (${Math.round(fileSizeMb)} МБ), скачиваю и транскрибирую...`);
+          } else if (qStatus.active >= 2 && qStatus.queued > 0) {
+            ctx.reply(`🎤 В очереди (позиция ${qStatus.queued + 1}). Транскрибирую когда освободится...`);
+          } else if (qStatus.active >= 2) {
+            ctx.reply('🎤 Транскрибирую (очередь занята, может занять дольше)...');
+          } else {
+            ctx.reply('🎤 Транскрибирую аудио...');
+          }
+        }
         const buffer = await this.downloadTelegramFile(ctx, audio.file_id);
 
         const transcript = await this.transcribeAudio(buffer, audio.file_name ?? 'audio.mp3');
