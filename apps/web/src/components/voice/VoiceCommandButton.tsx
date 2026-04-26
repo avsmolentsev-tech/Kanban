@@ -49,15 +49,29 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
   // Airport-style chime — soft, short, pleasant
-  const playChime = (freq: number) => {
+  // Reuse single AudioContext (iOS Safari requires user-gesture activation)
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const getAudioCtx = (): AudioContext | null => {
     try {
-      const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume();
+      }
+      return audioCtxRef.current;
+    } catch { return null; }
+  };
+  const playChime = (freq: number) => {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    try {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, ctx.currentTime);
       gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+      gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
       osc.connect(gain);
       gain.connect(ctx.destination);
@@ -65,8 +79,8 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
       osc.stop(ctx.currentTime + 0.6);
     } catch {}
   };
-  const playStart = () => playChime(830);  // higher — start
-  const playStop = () => playChime(620);   // lower — stop
+  const playStart = () => playChime(830);
+  const playStop = () => playChime(620);
 
   // Close on outside click
   useEffect(() => {
