@@ -33,6 +33,7 @@ import { useProjectsStore } from './store/projects.store';
 import { useLangStore } from './store/lang.store';
 import { useAuthStore } from './store/auth.store';
 import { LoginPage } from './pages/LoginPage';
+import { AboutPage } from './pages/AboutPage';
 import {
   LayoutDashboard, Columns3, BarChart3, FolderKanban, Users, CalendarDays,
   Lightbulb, FileText, MessageCircle, Target, BookOpen, GanttChart,
@@ -165,11 +166,14 @@ export default function App() {
   const fetchProjects = useProjectsStore((s) => s.fetchProjects);
   const refreshAll = () => { fetchTasks(); fetchProjects(); };
 
-  // Show login page if not authenticated
+  // Show login page if not authenticated (but allow /about)
   if (!isAuthenticated) {
     return (
       <BrowserRouter>
-        <LoginPage />
+        <Routes>
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="*" element={<LoginPage />} />
+        </Routes>
       </BrowserRouter>
     );
   }
@@ -280,6 +284,7 @@ export default function App() {
               <Route path="/gantt" element={<AnimatedPage><GanttPage /></AnimatedPage>} />
               <Route path="/more" element={<AnimatedPage><MorePage /></AnimatedPage>} />
               <Route path="/profile" element={<AnimatedPage><ProfilePage /></AnimatedPage>} />
+              <Route path="/about" element={<AboutPage />} />
             </Routes>
           </main>
 
