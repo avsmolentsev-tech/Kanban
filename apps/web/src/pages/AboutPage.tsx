@@ -124,7 +124,7 @@ export function AboutPage() {
             className="reveal inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-indigo-500/40 hover:brightness-110"
             style={{ animationDelay: '200ms' }}
           >
-            Начать бесплатно
+            Попробовать
             <ArrowRight size={18} />
           </a>
         </div>
@@ -169,7 +169,7 @@ export function AboutPage() {
         <div className="reveal grid grid-cols-2 gap-8 sm:grid-cols-4">
           <StatBlock icon={Infinity} label="Безлимит аудио" />
           <StatBlock icon={Target}   label="4 шаблона BHAG" />
-          <StatBlock icon={Zap}      label="Бесплатный whisper" />
+          <StatBlock icon={Zap}      label="Локальный whisper" />
           <StatBlock icon={Rocket}   label="Автодеплой" />
         </div>
       </section>
