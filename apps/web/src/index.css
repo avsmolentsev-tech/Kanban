@@ -142,6 +142,15 @@ html.dark select option {
   color: rgb(243 244 246);
 }
 
+/* Decorative floating circles — force GPU on iOS */
+.pointer-events-none.absolute.rounded-full {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: transform;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
 /* Range slider styling */
 input[type="range"].zoom-slider {
   -webkit-appearance: none;
