@@ -93,7 +93,7 @@ export function AboutPage() {
             </div>
             <div>
               <div className="text-base font-bold leading-tight">Clarity Space</div>
-              <div className="text-[11px] text-slate-500">Personal Intelligence System</div>
+              <div className="text-[11px] text-slate-500">Your personal workspace</div>
             </div>
           </div>
           <a

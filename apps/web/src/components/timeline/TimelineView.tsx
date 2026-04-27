@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 // Timeline uses dragMode="draggable" on TaskCards (not sortable) so cards can move between columns
@@ -11,6 +11,8 @@ export type TimePeriod = 'today' | 'tomorrow' | 'week' | 'month' | 'year';
 
 export { classifyTask };
 
+type AllPeriod = TimePeriod | 'none' | 'done' | 'someday' | 'backlog';
+
 const PERIOD_LABELS: Record<TimePeriod, string> = {
   today: 'Сегодня',
   tomorrow: 'Завтра',
@@ -18,6 +20,15 @@ const PERIOD_LABELS: Record<TimePeriod, string> = {
   month: 'В этом месяце',
   year: 'В этом году',
 };
+
+const MOBILE_TABS: Array<{ key: AllPeriod; label: string; short: string }> = [
+  { key: 'today', label: 'Сегодня', short: 'Сег' },
+  { key: 'tomorrow', label: 'Завтра', short: 'Завт' },
+  { key: 'week', label: 'На неделе', short: 'Нед' },
+  { key: 'month', label: 'В этом месяце', short: 'Мес' },
+  { key: 'backlog', label: 'Бэклог', short: 'Бэк' },
+  { key: 'done', label: 'Готово', short: 'Гот' },
+];
 
 const PERIODS: TimePeriod[] = ['today', 'tomorrow', 'week', 'month', 'year'];
 
@@ -115,25 +126,128 @@ interface Props {
   onRefresh: () => void;
 }
 
-export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDone, onReorderProjects, onRefresh }: Props) {
-  const activeTasks = tasks.filter((t) => !t.archived);
-
-  // Group by project
-  const tasksByProject = new Map<number | null, Task[]>();
-  for (const t of activeTasks) {
-    const key = t.project_id;
-    if (!tasksByProject.has(key)) tasksByProject.set(key, []);
-    tasksByProject.get(key)!.push(t);
+function groupTasks(tasks: Task[]): Record<AllPeriod, Task[]> {
+  const grouped: Record<AllPeriod, Task[]> = { backlog: [], today: [], tomorrow: [], week: [], month: [], year: [], none: [], done: [], someday: [] };
+  for (const t of tasks) {
+    if (t.status === 'done') grouped.done.push(t);
+    else if (t.status === 'someday') grouped.someday.push(t);
+    else if (t.status === 'backlog') grouped.backlog.push(t);
+    else grouped[classifyTask(t.due_date)].push(t);
   }
+  return grouped;
+}
 
-  const projectOrder: Array<{ project: Project | null; tasks: Task[] }> = [];
+function buildProjectOrder(tasks: Task[], projects: Project[]): Array<{ project: Project | null; tasks: Task[] }> {
+  const tasksByProject = new Map<number | null, Task[]>();
+  for (const t of tasks.filter(t => !t.archived)) {
+    if (!tasksByProject.has(t.project_id)) tasksByProject.set(t.project_id, []);
+    tasksByProject.get(t.project_id)!.push(t);
+  }
+  const order: Array<{ project: Project | null; tasks: Task[] }> = [];
   for (const p of projects) {
-    const pts = tasksByProject.get(p.id);
-    projectOrder.push({ project: p, tasks: pts ?? [] });
+    order.push({ project: p, tasks: tasksByProject.get(p.id) ?? [] });
   }
   const unassigned = tasksByProject.get(null);
   if (unassigned && unassigned.length > 0) {
-    projectOrder.push({ project: null, tasks: unassigned });
+    order.push({ project: null, tasks: unassigned });
+  }
+  return order;
+}
+
+/** Mobile: tabs by period, vertical list grouped by project */
+function MobileTimelineView({ tasks, projects, people, onTaskClick, onToggleDone, onRefresh }: Omit<Props, 'onReorderProjects'>) {
+  const [activeTab, setActiveTab] = useState<AllPeriod>('today');
+  const pMap = new Map(projects.map(p => [p.id, p]));
+
+  // Group ALL tasks by period
+  const allGrouped = groupTasks(tasks.filter(t => !t.archived));
+
+  // Tasks for active tab, grouped by project
+  const tabTasks = allGrouped[activeTab];
+  const byProject = new Map<number | null, Task[]>();
+  for (const t of tabTasks) {
+    if (!byProject.has(t.project_id)) byProject.set(t.project_id, []);
+    byProject.get(t.project_id)!.push(t);
+  }
+
+  // Ordered list: existing projects first, then unassigned
+  const projectGroups: Array<{ project: Project | null; tasks: Task[] }> = [];
+  for (const p of projects) {
+    const pts = byProject.get(p.id);
+    if (pts && pts.length > 0) projectGroups.push({ project: p, tasks: pts });
+  }
+  const unassigned = byProject.get(null);
+  if (unassigned && unassigned.length > 0) projectGroups.push({ project: null, tasks: unassigned });
+
+  // Count per tab for badges
+  const tabCounts: Record<string, number> = {};
+  for (const tab of MOBILE_TABS) tabCounts[tab.key] = allGrouped[tab.key].length;
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Tab bar */}
+      <div className="flex gap-1 px-3 py-2 overflow-x-auto bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+        {MOBILE_TABS.map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+              activeTab === tab.key
+                ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}>
+            {tab.short}
+            {(tabCounts[tab.key] ?? 0) > 0 && (
+              <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold ${
+                activeTab === tab.key
+                  ? 'bg-indigo-600 text-white'
+                  : tab.key === 'today' && (tabCounts[tab.key] ?? 0) > 0 ? 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+              }`}>{tabCounts[tab.key]}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Task list grouped by project */}
+      <div className="flex-1 overflow-auto px-3 py-2 space-y-4 pb-24">
+        {projectGroups.length === 0 && (
+          <div className="text-gray-400 dark:text-gray-500 text-sm text-center py-12">
+            {activeTab === 'done' ? 'Нет завершённых задач' : 'Нет задач'}
+          </div>
+        )}
+        {projectGroups.map(({ project, tasks: groupTasks }) => (
+          <div key={project?.id ?? 'none'}>
+            {/* Project header */}
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{project?.name ?? 'Без проекта'}</span>
+              <span className="text-[10px] text-gray-400 dark:text-gray-500">{groupTasks.length}</span>
+            </div>
+            {/* Task cards */}
+            <div className="space-y-2">
+              {groupTasks.map(t => (
+                <TaskCard key={t.id} task={t} project={t.project_id ? pMap.get(t.project_id) : undefined}
+                  onClick={() => onTaskClick(t)} onToggleDone={onToggleDone} dragMode="draggable" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDone, onReorderProjects, onRefresh }: Props) {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const projectOrder = buildProjectOrder(tasks, projects);
+
+  if (isMobile) {
+    return <MobileTimelineView tasks={tasks} projects={projects} people={people}
+      onTaskClick={onTaskClick} onToggleDone={onToggleDone} onRefresh={onRefresh} />;
   }
 
   return (
@@ -157,18 +271,7 @@ export function TimelineView({ tasks, projects, people, onTaskClick, onToggleDon
       <div className="p-4 pt-2">
         <SortableContext items={projectOrder.map((p) => `project-row-${p.project?.id ?? 'none'}`)} strategy={verticalListSortingStrategy}>
           {projectOrder.map(({ project, tasks: pTasks }) => {
-            const grouped: Record<TimePeriod | 'none' | 'done' | 'someday' | 'backlog', Task[]> = { backlog: [], today: [], tomorrow: [], week: [], month: [], year: [], none: [], done: [], someday: [] };
-            for (const t of pTasks) {
-              if (t.status === 'done') {
-                grouped.done.push(t);
-              } else if (t.status === 'someday') {
-                grouped.someday.push(t);
-              } else if (t.status === 'backlog') {
-                grouped.backlog.push(t);
-              } else {
-                grouped[classifyTask(t.due_date)].push(t);
-              }
-            }
+            const grouped = groupTasks(pTasks);
 
             return (
               <SortableProjectRow key={project?.id ?? 'none'} id={`project-row-${project?.id ?? 'none'}`}>

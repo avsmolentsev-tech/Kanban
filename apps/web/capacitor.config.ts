@@ -12,7 +12,7 @@ const config: CapacitorConfig = {
   ios: {
     contentInset: 'automatic',
     preferredContentMode: 'mobile',
-    scheme: 'PIS',
+    scheme: 'ClaritySpace',
   },
   android: {
     allowMixedContent: false,
