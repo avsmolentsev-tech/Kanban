@@ -157,11 +157,19 @@ widgetRouter.get('/render', (_req: Request, res: Response) => {
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0f172a;font-family:-apple-system,sans-serif;padding:12px;min-height:100vh}</style>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0f172a;font-family:-apple-system,sans-serif;padding:12px;min-height:100vh;overflow:hidden;position:relative}
+.circle{position:absolute;border-radius:50%;pointer-events:none}
+.c1{width:200px;height:200px;top:-60px;right:-40px;border:1px solid rgba(99,102,241,0.12)}
+.c2{width:140px;height:140px;top:-20px;right:-10px;border:1px solid rgba(139,92,246,0.1)}
+.c3{width:180px;height:180px;bottom:-50px;left:-50px;background:rgba(99,102,241,0.06);filter:blur(40px)}
+</style>
 </head><body>
+<div class="circle c1"></div><div class="circle c2"></div><div class="circle c3"></div>
+<div style="position:relative;z-index:1">
 <div style="color:#fff;font-size:14px;font-weight:bold;margin-bottom:4px">CS</div>
 ${body}
 <div style="position:fixed;bottom:12px;right:12px;color:#64748b;font-size:9px;text-align:right">${today}</div>
+</div>
 </body></html>`;
 
   res.type('html').send(html);
