@@ -154,22 +154,22 @@ html.dark select option {
 /* Global circle drift animations — harmonious, directional */
 @keyframes circleLeft {
   0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(-35px) translateY(18px); }
+  50%  { transform: translateX(-45px) translateY(25px); }
   100% { transform: translateX(0) translateY(0); }
 }
 @keyframes circleRight {
   0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(30px) translateY(-15px); }
+  50%  { transform: translateX(40px) translateY(-20px); }
   100% { transform: translateX(0) translateY(0); }
 }
 @keyframes circleLeftSlow {
   0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(-28px) translateY(-12px); }
+  50%  { transform: translateX(-35px) translateY(-18px); }
   100% { transform: translateX(0) translateY(0); }
 }
 @keyframes circleRightSlow {
   0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(25px) translateY(20px); }
+  50%  { transform: translateX(35px) translateY(22px); }
   100% { transform: translateX(0) translateY(0); }
 }
 
