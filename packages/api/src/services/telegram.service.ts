@@ -217,6 +217,19 @@ export class TelegramService {
     const existingProjects = db.prepare('SELECT name FROM projects WHERE user_id = ? AND archived = 0').all(userId) as Array<{ name: string }>;
     const projectNames = existingProjects.map(p => p.name);
     const extraction: ExtractionResult = await claude.extractDraft(transcript, undefined, projectNames);
+
+    // Safety net: save raw transcript to vault inbox immediately (survives PM2 restart)
+    try {
+      const obsidian = new ObsidianService(config.vaultPath).forUser(userId);
+      const safeTitle = extraction.title.replace(/[/\\?%*:|"<>]/g, '').slice(0, 60);
+      const inboxName = `${extraction.date}-draft-${safeTitle}.md`;
+      const inboxContent = `---\nstatus: draft\ntype: ${extraction.detected_type}\ntitle: "${extraction.title}"\ndate: ${extraction.date}\npeople: [${extraction.people.join(', ')}]\nproject: "${extraction.project_hints[0] ?? ''}"\n---\n\n## Резюме\n\n${extraction.summary}\n\n---\n\n## Транскрипция\n\n${transcript}`;
+      await obsidian.writeInboxItem(inboxName, inboxContent);
+      console.log(`[draft] saved transcript to inbox: ${inboxName}`);
+    } catch (e) {
+      console.error('[draft] failed to save transcript to inbox:', e);
+    }
+
     const card = this.drafts.create(tgId, userId, extraction, sourceKind, transcript, sourceLocalPath);
     // Fuzzy-match project against DB
     if (card.projectName) {
