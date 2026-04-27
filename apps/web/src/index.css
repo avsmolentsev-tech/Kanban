@@ -151,26 +151,30 @@ html.dark select option {
   transform: translateZ(0);
 }
 
-/* Global circle drift animations — harmonious, directional */
+/* Global circle drift animations — circles fly across and loop */
 @keyframes circleLeft {
-  0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(-45px) translateY(25px); }
-  100% { transform: translateX(0) translateY(0); }
+  0%   { transform: translate(100px, -40px); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translate(-120px, 60px); opacity: 0; }
 }
 @keyframes circleRight {
-  0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(40px) translateY(-20px); }
-  100% { transform: translateX(0) translateY(0); }
+  0%   { transform: translate(-100px, 40px); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translate(120px, -50px); opacity: 0; }
 }
 @keyframes circleLeftSlow {
-  0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(-35px) translateY(-18px); }
-  100% { transform: translateX(0) translateY(0); }
+  0%   { transform: translate(80px, -30px); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translate(-100px, 50px); opacity: 0; }
 }
 @keyframes circleRightSlow {
-  0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(35px) translateY(22px); }
-  100% { transform: translateX(0) translateY(0); }
+  0%   { transform: translate(-80px, 30px); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translate(100px, -40px); opacity: 0; }
 }
 
 /* Range slider styling */
