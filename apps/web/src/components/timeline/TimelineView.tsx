@@ -186,10 +186,10 @@ function MobileTimelineView({ tasks, projects, people, onTaskClick, onToggleDone
   return (
     <div className="flex flex-col h-full relative overflow-hidden">
       {/* Animated decorative circles */}
-      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border-2 border-indigo-400/30 dark:border-white/[0.12]" style={{ animation: 'circleLeft 16s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border-2 border-purple-400/35 dark:border-white/[0.12]" style={{ animation: 'circleLeftSlow 12s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border-4 border-indigo-400/30 dark:border-white/[0.12]" style={{ animation: 'circleLeft 16s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border-4 border-purple-400/35 dark:border-white/[0.12]" style={{ animation: 'circleLeftSlow 12s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-white/[0.06] blur-[80px]" style={{ animation: 'circleRight 20s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border-2 border-purple-400/25 dark:border-white/[0.12]" style={{ animation: 'circleRightSlow 18s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border-4 border-purple-400/25 dark:border-white/[0.12]" style={{ animation: 'circleRightSlow 18s cubic-bezier(0.45,0,0.55,1) infinite' }} />
 
       {/* Tab bar */}
       <div className="relative z-10 flex gap-1 px-3 py-2 overflow-x-auto bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex-shrink-0">

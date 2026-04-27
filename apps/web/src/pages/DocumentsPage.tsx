@@ -155,7 +155,7 @@ function DocumentDropZone({
       <div
         ref={setNodeRef}
         className={`flex gap-3 flex-wrap flex-1 min-h-[60px] rounded-xl p-2 transition-colors ${
-          isOver ? 'bg-indigo-50 border-2 border-dashed border-indigo-300' : ''
+          isOver ? 'bg-indigo-50 border-4 border-dashed border-indigo-300' : ''
         }`}
       >
         {groupDocs.map((d) => (
@@ -293,8 +293,8 @@ export function DocumentsPage() {
 
   return (
     <div className="relative overflow-hidden flex flex-col h-full">
-      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border-2 border-indigo-400/30 dark:border-white/[0.12]" style={{ animation: 'circleLeft 16s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border-2 border-purple-400/35 dark:border-white/[0.12]" style={{ animation: 'circleLeftSlow 12s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border-4 border-indigo-400/30 dark:border-white/[0.12]" style={{ animation: 'circleLeft 16s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border-4 border-purple-400/35 dark:border-white/[0.12]" style={{ animation: 'circleLeftSlow 12s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-white/[0.06] blur-[80px]" style={{ animation: 'circleRight 20s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="relative z-10 page-header flex items-center justify-between px-4 pt-4 pb-2 border-b bg-white dark:bg-gray-900 dark:border-gray-700">
         <div className="flex items-center gap-2.5">
@@ -435,7 +435,7 @@ export function DocumentsPage() {
 
         <DragOverlay>
           {draggingDoc && (
-            <div className="bg-white rounded-xl border-2 border-indigo-400 shadow-xl p-4 w-64 opacity-90">
+            <div className="bg-white rounded-xl border-4 border-indigo-400 shadow-xl p-4 w-64 opacity-90">
               <div className="font-medium text-gray-800 truncate">{draggingDoc.title}</div>
               <div className="mt-1.5">
                 <CategoryBadge category={draggingDoc.category} />

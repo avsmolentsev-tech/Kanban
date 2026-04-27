@@ -58,7 +58,7 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
       {/* ASAP column */}
       <div
         ref={setAsapRef}
-        className={`flex gap-2 flex-wrap w-72 min-w-[288px] min-h-[60px] rounded-xl p-2 mr-3 border-2 border-dashed transition-colors ${
+        className={`flex gap-2 flex-wrap w-72 min-w-[288px] min-h-[60px] rounded-xl p-2 mr-3 border-4 border-dashed transition-colors ${
           isOverAsap
             ? 'border-sky-400 bg-sky-100/60 dark:bg-sky-900/20'
             : 'border-sky-200 dark:border-sky-800/40 bg-sky-50/40 dark:bg-sky-900/10'
@@ -75,7 +75,7 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
       {/* Regular people */}
       <div
         ref={setRegularRef}
-        className={`flex gap-3 flex-wrap flex-1 min-h-[60px] rounded-xl p-2 transition-colors ${isOverRegular ? 'bg-indigo-50 border-2 border-dashed border-indigo-300' : ''}`}
+        className={`flex gap-3 flex-wrap flex-1 min-h-[60px] rounded-xl p-2 transition-colors ${isOverRegular ? 'bg-indigo-50 border-4 border-dashed border-indigo-300' : ''}`}
       >
         {regularPeople.map((p) => (
           <DraggablePersonCard key={`${projectId}-${p.id}`} person={p} project={project} onClick={() => onClickPerson(p)} />
@@ -215,8 +215,8 @@ export function PeoplePage() {
 
   return (
     <div className="relative overflow-hidden flex flex-col h-full">
-      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border-2 border-indigo-400/30 dark:border-white/[0.12]" style={{ animation: 'circleLeft 16s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border-2 border-purple-400/35 dark:border-white/[0.12]" style={{ animation: 'circleLeftSlow 12s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border-4 border-indigo-400/30 dark:border-white/[0.12]" style={{ animation: 'circleLeft 16s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border-4 border-purple-400/35 dark:border-white/[0.12]" style={{ animation: 'circleLeftSlow 12s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-white/[0.06] blur-[80px]" style={{ animation: 'circleRight 20s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="relative z-10 page-header flex items-center justify-between px-6 py-4 border-b bg-white dark:bg-gray-900 dark:border-gray-700">
         <div className="flex items-center gap-2.5">
@@ -303,7 +303,7 @@ export function PeoplePage() {
         </div>
         <DragOverlay>
           {draggingPerson && (
-            <div className="bg-white rounded-lg border-2 border-indigo-400 shadow-xl p-3 w-56 opacity-90">
+            <div className="bg-white rounded-lg border-4 border-indigo-400 shadow-xl p-3 w-56 opacity-90">
               <div className="flex items-center gap-2">
                 <Avatar name={draggingPerson.name} size="sm" />
                 <div className="font-medium text-sm text-gray-800">{draggingPerson.name}</div>
