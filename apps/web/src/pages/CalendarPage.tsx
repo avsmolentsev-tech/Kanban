@@ -119,9 +119,19 @@ export function CalendarPage() {
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative overflow-hidden">
+      <style>{`
+        @keyframes calDrift1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-5px,7px); } }
+        @keyframes calDrift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(4px,-6px); } }
+        @keyframes calDrift3 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(6px,5px); } }
+        @keyframes calDrift4 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-4px,-5px); } }
+      `}</style>
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-indigo-400/[0.07]" style={{ animation: 'calDrift1 30s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-purple-400/[0.08]" style={{ animation: 'calDrift2 26s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-indigo-400/[0.04] blur-[80px]" style={{ animation: 'calDrift3 34s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-purple-400/[0.05]" style={{ animation: 'calDrift4 28s ease-in-out infinite' }} />
       {/* Header */}
-      <div className="flex items-center justify-between px-4 pt-3 pb-2 bg-white dark:bg-gray-900 border-b dark:border-gray-700 gap-2">
+      <div className="flex items-center justify-between px-4 pt-3 pb-2 bg-white dark:bg-gray-900 border-b dark:border-gray-700 gap-2 relative z-10">
         <div className="flex items-center gap-2 flex-shrink-0">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-cyan-500/25">
             <CalendarDays size={18} className="text-white" />
@@ -151,7 +161,7 @@ export function CalendarPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto relative z-10">
         {/* === DAY VIEW === */}
         {view === 'day' && (() => {
           const dateStr = fmt(currentDate);

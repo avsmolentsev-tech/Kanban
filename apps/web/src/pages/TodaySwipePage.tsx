@@ -62,7 +62,17 @@ export function TodaySwipePage() {
 
   if (!currentTask) {
     return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+      <div className="flex flex-col items-center justify-center h-full p-8 text-center relative overflow-hidden">
+        <style>{`
+          @keyframes tdDrift1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-5px,7px); } }
+          @keyframes tdDrift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(4px,-6px); } }
+          @keyframes tdDrift3 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(6px,5px); } }
+          @keyframes tdDrift4 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-4px,-5px); } }
+        `}</style>
+        <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-indigo-400/[0.07]" style={{ animation: 'tdDrift1 30s ease-in-out infinite' }} />
+        <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-purple-400/[0.08]" style={{ animation: 'tdDrift2 26s ease-in-out infinite' }} />
+        <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-indigo-400/[0.04] blur-[80px]" style={{ animation: 'tdDrift3 34s ease-in-out infinite' }} />
+        <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-purple-400/[0.05]" style={{ animation: 'tdDrift4 28s ease-in-out infinite' }} />
         <div className="text-6xl mb-4">🎉</div>
         <div className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">{t('Все задачи сделаны!', 'All tasks done!')}</div>
         <div className="text-sm text-gray-500 dark:text-gray-400">{t('На сегодня задач нет', 'No tasks for today')}</div>
@@ -81,16 +91,26 @@ export function TodaySwipePage() {
   const skipOpacity = Math.min(1, Math.max(0, -offset.x / 100));
 
   return (
-    <div className="flex flex-col h-full p-4">
+    <div className="flex flex-col h-full p-4 relative overflow-hidden">
+      <style>{`
+        @keyframes tdDrift1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-5px,7px); } }
+        @keyframes tdDrift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(4px,-6px); } }
+        @keyframes tdDrift3 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(6px,5px); } }
+        @keyframes tdDrift4 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-4px,-5px); } }
+      `}</style>
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-indigo-400/[0.07]" style={{ animation: 'tdDrift1 30s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-purple-400/[0.08]" style={{ animation: 'tdDrift2 26s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-indigo-400/[0.04] blur-[80px]" style={{ animation: 'tdDrift3 34s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-purple-400/[0.05]" style={{ animation: 'tdDrift4 28s ease-in-out infinite' }} />
       {/* Header */}
-      <div className="flex items-center gap-2.5 mb-3">
+      <div className="flex items-center gap-2.5 mb-3 relative z-10">
         <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
           <Zap size={20} className="text-white" />
         </div>
         <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Сегодня', 'Today')}</h1>
       </div>
       {/* Counter */}
-      <div className="text-center mb-4">
+      <div className="text-center mb-4 relative z-10">
         <div className="text-xs text-gray-400 dark:text-gray-500">{t('Задача', 'Task')} {index + 1} {t('из', 'of')} {todayTasks.length}</div>
         <div className="mt-2 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div
@@ -101,7 +121,7 @@ export function TodaySwipePage() {
       </div>
 
       {/* Card stack */}
-      <div className="flex-1 relative flex items-center justify-center">
+      <div className="flex-1 relative z-10 flex items-center justify-center">
         {/* Next card (preview behind) */}
         {todayTasks[index + 1] && (
           <div
@@ -227,7 +247,7 @@ export function TodaySwipePage() {
       </div>
 
       {/* Hint */}
-      <div className="text-center text-xs text-gray-400 dark:text-gray-500 mt-2">
+      <div className="text-center text-xs text-gray-400 dark:text-gray-500 mt-2 relative z-10">
         {t('Свайп вправо → готово, влево → следующая', 'Swipe right → done, left → next')}
       </div>
     </div>

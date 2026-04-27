@@ -146,16 +146,26 @@ export function ChatPage() {
   };
 
   return (
-    <div className="flex flex-col h-full pb-16 md:pb-0">
+    <div className="flex flex-col h-full pb-16 md:pb-0 relative overflow-hidden">
+      <style>{`
+        @keyframes chDrift1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-5px,7px); } }
+        @keyframes chDrift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(4px,-6px); } }
+        @keyframes chDrift3 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(6px,5px); } }
+        @keyframes chDrift4 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-4px,-5px); } }
+      `}</style>
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-indigo-400/[0.07]" style={{ animation: 'chDrift1 30s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-purple-400/[0.08]" style={{ animation: 'chDrift2 26s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-indigo-400/[0.04] blur-[80px]" style={{ animation: 'chDrift3 34s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-purple-400/[0.05]" style={{ animation: 'chDrift4 28s ease-in-out infinite' }} />
       {/* Header */}
-      <div className="flex items-center gap-2.5 px-4 pt-4 pb-2 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center gap-2.5 px-4 pt-4 pb-2 border-b border-gray-200 dark:border-gray-700 relative z-10">
         <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
           <MessageCircle size={20} className="text-white" />
         </div>
         <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Чат с ассистентом', 'AI Assistant')}</h1>
       </div>
       {/* Messages */}
-      <div className="flex-1 overflow-auto px-4 py-4 space-y-4">
+      <div className="flex-1 overflow-auto px-4 py-4 space-y-4 relative z-10">
         {messages.length === 0 && !loading && (
           <div className="flex flex-col items-center justify-center h-full gap-6">
             <div className="text-center">
@@ -199,7 +209,7 @@ export function ChatPage() {
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3">
+      <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 relative z-10">
         <div className="flex items-end gap-2 max-w-3xl mx-auto">
           {/* File attach */}
           <button onClick={() => fileRef.current?.click()}
