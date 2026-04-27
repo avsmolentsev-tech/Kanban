@@ -136,9 +136,9 @@ export function AboutPage() {
       {/* ========== FEATURES GRID ========== */}
       <section className="relative mx-auto max-w-6xl px-6 py-20 overflow-hidden">
         {/* decorative circles */}
-        <div className="pointer-events-none absolute -top-32 -right-32 h-[500px] w-[500px] rounded-full border border-indigo-500/[0.07]" style={{ animation: 'floatA 22s ease-in-out infinite' }} />
-        <div className="pointer-events-none absolute -top-16 -right-16 h-[300px] w-[300px] rounded-full border border-purple-500/[0.1]" style={{ animation: 'floatB 18s ease-in-out infinite' }} />
-        <div className="pointer-events-none absolute bottom-0 -left-40 h-[400px] w-[400px] rounded-full bg-indigo-600/[0.04] blur-[80px]" style={{ animation: 'floatC 26s ease-in-out infinite' }} />
+        <div className="pointer-events-none absolute -top-32 -right-32 h-[500px] w-[500px] rounded-full border border-indigo-500/[0.07]" style={{ animation: 'floatA 38s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="pointer-events-none absolute -top-16 -right-16 h-[300px] w-[300px] rounded-full border border-purple-500/[0.1]" style={{ animation: 'floatB 35s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="pointer-events-none absolute bottom-0 -left-40 h-[400px] w-[400px] rounded-full bg-indigo-600/[0.04] blur-[80px]" style={{ animation: 'floatC 42s cubic-bezier(0.45,0,0.55,1) infinite' }} />
 
         <h2 className="reveal mb-12 text-center text-3xl font-bold relative">Все инструменты в одном месте</h2>
 
@@ -158,9 +158,9 @@ export function AboutPage() {
       {/* ========== HOW IT WORKS ========== */}
       <section className="relative border-y border-white/[0.06] bg-white/[0.02] overflow-hidden">
         {/* decorative circles */}
-        <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] rounded-full border border-white/[0.04]" style={{ animation: 'floatC 30s ease-in-out infinite' }} />
-        <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[400px] w-[400px] rounded-full border border-indigo-500/[0.06]" style={{ animation: 'floatB 22s ease-in-out infinite' }} />
-        <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[200px] w-[200px] rounded-full bg-purple-500/[0.06] blur-[60px]" style={{ animation: 'floatA 16s ease-in-out infinite' }} />
+        <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] rounded-full border border-white/[0.04]" style={{ animation: 'floatC 45s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[400px] w-[400px] rounded-full border border-indigo-500/[0.06]" style={{ animation: 'floatB 38s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[200px] w-[200px] rounded-full bg-purple-500/[0.06] blur-[60px]" style={{ animation: 'floatA 35s cubic-bezier(0.45,0,0.55,1) infinite' }} />
 
         <div className="relative mx-auto max-w-4xl px-6 py-20">
           <h2 className="reveal mb-14 text-center text-3xl font-bold">Как это работает</h2>
@@ -179,8 +179,8 @@ export function AboutPage() {
 
       {/* ========== STATS ========== */}
       <section className="relative mx-auto max-w-4xl px-6 py-20 overflow-hidden">
-        <div className="pointer-events-none absolute -bottom-20 -right-20 h-[350px] w-[350px] rounded-full border border-purple-500/[0.08]" style={{ animation: 'floatA 20s ease-in-out infinite' }} />
-        <div className="pointer-events-none absolute -top-10 -left-32 h-[250px] w-[250px] rounded-full bg-indigo-500/[0.05] blur-[80px]" style={{ animation: 'floatB 24s ease-in-out infinite' }} />
+        <div className="pointer-events-none absolute -bottom-20 -right-20 h-[350px] w-[350px] rounded-full border border-purple-500/[0.08]" style={{ animation: 'floatA 38s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="pointer-events-none absolute -top-10 -left-32 h-[250px] w-[250px] rounded-full bg-indigo-500/[0.05] blur-[80px]" style={{ animation: 'floatB 42s cubic-bezier(0.45,0,0.55,1) infinite' }} />
         <div className="reveal grid grid-cols-2 gap-8 sm:grid-cols-4">
           <StatBlock icon={Infinity} label="Безлимит аудио" />
           <StatBlock icon={Target}   label="4 шаблона BHAG" />

@@ -126,10 +126,10 @@ export function CalendarPage() {
         @keyframes calDrift3 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(6px,5px); } }
         @keyframes calDrift4 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-4px,-5px); } }
       `}</style>
-      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-indigo-400/[0.07]" style={{ animation: 'calDrift1 30s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-purple-400/[0.08]" style={{ animation: 'calDrift2 26s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-indigo-400/[0.04] blur-[80px]" style={{ animation: 'calDrift3 34s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-purple-400/[0.05]" style={{ animation: 'calDrift4 28s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-white/[0.06]" style={{ animation: 'calDrift1 38s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-white/[0.06]" style={{ animation: 'calDrift2 35s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-white/[0.03] blur-[80px]" style={{ animation: 'calDrift3 42s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-white/[0.06]" style={{ animation: 'calDrift4 36s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-3 pb-2 bg-white dark:bg-gray-900 border-b dark:border-gray-700 gap-2 relative z-10">
         <div className="flex items-center gap-2 flex-shrink-0">

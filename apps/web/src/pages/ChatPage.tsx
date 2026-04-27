@@ -153,10 +153,10 @@ export function ChatPage() {
         @keyframes chDrift3 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(6px,5px); } }
         @keyframes chDrift4 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-4px,-5px); } }
       `}</style>
-      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-indigo-400/[0.07]" style={{ animation: 'chDrift1 30s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-purple-400/[0.08]" style={{ animation: 'chDrift2 26s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-indigo-400/[0.04] blur-[80px]" style={{ animation: 'chDrift3 34s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-purple-400/[0.05]" style={{ animation: 'chDrift4 28s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-white/[0.06]" style={{ animation: 'chDrift1 38s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-white/[0.06]" style={{ animation: 'chDrift2 35s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-white/[0.03] blur-[80px]" style={{ animation: 'chDrift3 42s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-white/[0.06]" style={{ animation: 'chDrift4 36s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       {/* Header */}
       <div className="flex items-center gap-2.5 px-4 pt-4 pb-2 border-b border-gray-200 dark:border-gray-700 relative z-10">
         <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
