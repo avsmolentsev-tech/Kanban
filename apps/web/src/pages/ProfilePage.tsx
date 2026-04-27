@@ -97,6 +97,7 @@ function WidgetKeySection() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [guideTab, setGuideTab] = useState<'ios' | 'android'>('ios');
 
   const generate = async () => {
     setLoading(true);
@@ -157,23 +158,58 @@ function WidgetKeySection() {
               <X size={16} />
             </button>
           </div>
-          <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
-            <div className="flex gap-3">
-              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold">1</span>
-              <p>{t('Установи приложение Scriptable из App Store', 'Install Scriptable app from App Store')}</p>
-            </div>
-            <div className="flex gap-3">
-              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold">2</span>
-              <p>{t('Нажми "Скопировать скрипт" выше, открой Scriptable, создай новый скрипт и вставь код', 'Tap "Copy script" above, open Scriptable, create new script and paste the code')}</p>
-            </div>
-            <div className="flex gap-3">
-              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold">3</span>
-              <p>{t('Запусти скрипт один раз, затем добавь виджет Scriptable на домашний экран (зажми экран → "+" → Scriptable)', 'Run the script once, then add Scriptable widget to home screen (long press → "+" → Scriptable)')}</p>
-            </div>
+          {/* Tab switcher */}
+          <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 mb-1">
+            <button onClick={() => setGuideTab('ios')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${guideTab === 'ios' ? 'bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>
+              iPhone
+            </button>
+            <button onClick={() => setGuideTab('android')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${guideTab === 'android' ? 'bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>
+              Android
+            </button>
           </div>
-          <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
+
+          {guideTab === 'ios' ? (
+            <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold">1</span>
+                <p>{t('Установи приложение Scriptable из App Store', 'Install Scriptable app from App Store')}</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold">2</span>
+                <p>{t('Нажми "Скопировать промт для виджета", открой Scriptable, создай новый скрипт и вставь код', 'Tap "Copy widget prompt", open Scriptable, create new script and paste the code')}</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold">3</span>
+                <p>{t('Запусти скрипт один раз, затем добавь виджет Scriptable на домашний экран (зажми экран \u2192 "+" \u2192 Scriptable)', 'Run the script once, then add Scriptable widget to home screen (long press \u2192 "+" \u2192 Scriptable)')}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-bold">1</span>
+                <p>{t('Установи "Web Widget" или "Webpage Widget" из Google Play', 'Install "Web Widget" or "Webpage Widget" from Google Play')}</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-bold">2</span>
+                <p>{t('Скопируй ссылку ниже и вставь как URL виджета', 'Copy the link below and paste as widget URL')}</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-bold">3</span>
+                <p>{t('Добавь виджет на домашний экран (зажми экран \u2192 "Виджеты" \u2192 Web Widget)', 'Add widget to home screen (long press \u2192 "Widgets" \u2192 Web Widget)')}</p>
+              </div>
+              {apiKey && (
+                <button onClick={() => copy('https://kanban.myaipro.ru/v1/widget/render?key=' + apiKey, 'android')}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-medium bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors">
+                  {copied === 'android' ? <><Check size={12} /> {t('Скопировано!', 'Copied!')}</> : <><Copy size={12} /> {t('Скопировать ссылку для Android', 'Copy Android widget URL')}</>}
+                </button>
+              )}
+            </div>
+          )}
+          <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
             <p className="text-xs text-amber-700 dark:text-amber-400">
-              {t('Фокус дня берётся из Дневника. Заполни поле "На чём сфокусируюсь" — оно появится на виджете.', 'Focus of the day comes from Journal. Fill in the focus field — it will appear on the widget.')}
+              {t('Фокус дня берётся из Дневника. Заполни поле "На чём сфокусируюсь" \u2014 оно появится на виджете.', 'Focus of the day comes from Journal. Fill in the focus field \u2014 it will appear on the widget.')}
             </p>
           </div>
           <button onClick={() => setShowGuide(false)}
