@@ -187,15 +187,15 @@ function MobileTimelineView({ tasks, projects, people, onTaskClick, onToggleDone
     <div className="flex flex-col h-full relative overflow-hidden">
       {/* Animated decorative circles */}
       <style>{`
-        @keyframes drift1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-12px,18px); } }
-        @keyframes drift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(10px,-14px); } }
-        @keyframes drift3 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(16px,12px); } }
-        @keyframes drift4 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-10px,-16px); } }
+        @keyframes drift1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-5px,7px); } }
+        @keyframes drift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(4px,-6px); } }
+        @keyframes drift3 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(6px,5px); } }
+        @keyframes drift4 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-4px,-5px); } }
       `}</style>
-      <div className="pointer-events-none absolute -top-20 -right-20 w-[300px] h-[300px] rounded-full border border-indigo-500/[0.07] dark:border-indigo-400/[0.07]" style={{ animation: 'drift1 20s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute -top-10 -right-10 w-[180px] h-[180px] rounded-full border border-purple-500/[0.1] dark:border-purple-400/[0.08]" style={{ animation: 'drift2 16s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute bottom-32 -left-16 w-[250px] h-[250px] rounded-full bg-indigo-500/[0.04] dark:bg-indigo-400/[0.03] blur-[60px]" style={{ animation: 'drift3 24s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute bottom-10 -left-8 w-[150px] h-[150px] rounded-full border border-indigo-500/[0.06] dark:border-indigo-400/[0.05]" style={{ animation: 'drift4 18s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-indigo-400/[0.07]" style={{ animation: 'drift1 30s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-purple-400/[0.08]" style={{ animation: 'drift2 26s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-indigo-400/[0.04] blur-[80px]" style={{ animation: 'drift3 34s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-purple-400/[0.05]" style={{ animation: 'drift4 28s ease-in-out infinite' }} />
 
       {/* Tab bar */}
       <div className="relative z-10 flex gap-1 px-3 py-2 overflow-x-auto bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex-shrink-0">

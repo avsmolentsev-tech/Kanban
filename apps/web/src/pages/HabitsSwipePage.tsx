@@ -142,15 +142,15 @@ export function HabitsSwipePage() {
     <div className="flex flex-col h-full pb-24 bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
       {/* Animated decorative circles */}
       <style>{`
-        @keyframes hDrift1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-14px,20px); } }
-        @keyframes hDrift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(12px,-16px); } }
-        @keyframes hDrift3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(8px,14px) scale(1.06); } }
-        @keyframes hDrift4 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-10px,-12px); } }
+        @keyframes hDrift1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-5px,7px); } }
+        @keyframes hDrift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(4px,-6px); } }
+        @keyframes hDrift3 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(6px,5px); } }
+        @keyframes hDrift4 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-4px,-5px); } }
       `}</style>
-      <div className="pointer-events-none absolute -top-16 -right-16 w-[280px] h-[280px] rounded-full border border-indigo-400/20 dark:border-indigo-400/[0.08]" style={{ animation: 'hDrift1 22s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute -top-6 -right-6 w-[160px] h-[160px] rounded-full border border-purple-400/25 dark:border-purple-400/[0.08]" style={{ animation: 'hDrift2 17s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute bottom-40 -left-20 w-[300px] h-[300px] rounded-full bg-indigo-400/[0.08] dark:bg-indigo-400/[0.04] blur-[60px]" style={{ animation: 'hDrift3 26s ease-in-out infinite' }} />
-      <div className="pointer-events-none absolute bottom-20 -left-10 w-[180px] h-[180px] rounded-full border border-purple-400/15 dark:border-purple-400/[0.06]" style={{ animation: 'hDrift4 20s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-indigo-400/[0.08]" style={{ animation: 'hDrift1 30s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-purple-400/[0.08]" style={{ animation: 'hDrift2 26s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-indigo-400/[0.04] blur-[80px]" style={{ animation: 'hDrift3 34s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-purple-400/[0.06]" style={{ animation: 'hDrift4 28s ease-in-out infinite' }} />
 
       {/* Header with progress ring */}
       <div className="relative z-10 px-4 pt-5 pb-4">
