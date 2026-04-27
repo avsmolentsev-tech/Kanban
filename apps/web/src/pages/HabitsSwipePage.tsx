@@ -139,9 +139,21 @@ export function HabitsSwipePage() {
   const offset = circumference - (pct / 100) * circumference;
 
   return (
-    <div className="flex flex-col h-full pb-24 bg-gray-50 dark:bg-gray-900">
+    <div className="flex flex-col h-full pb-24 bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
+      {/* Animated decorative circles */}
+      <style>{`
+        @keyframes hDrift1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-14px,20px); } }
+        @keyframes hDrift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(12px,-16px); } }
+        @keyframes hDrift3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(8px,14px) scale(1.06); } }
+        @keyframes hDrift4 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-10px,-12px); } }
+      `}</style>
+      <div className="pointer-events-none absolute -top-16 -right-16 w-[280px] h-[280px] rounded-full border border-indigo-400/20 dark:border-indigo-400/[0.08]" style={{ animation: 'hDrift1 22s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute -top-6 -right-6 w-[160px] h-[160px] rounded-full border border-purple-400/25 dark:border-purple-400/[0.08]" style={{ animation: 'hDrift2 17s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-40 -left-20 w-[300px] h-[300px] rounded-full bg-indigo-400/[0.08] dark:bg-indigo-400/[0.04] blur-[60px]" style={{ animation: 'hDrift3 26s ease-in-out infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-10 w-[180px] h-[180px] rounded-full border border-purple-400/15 dark:border-purple-400/[0.06]" style={{ animation: 'hDrift4 20s ease-in-out infinite' }} />
+
       {/* Header with progress ring */}
-      <div className="px-4 pt-5 pb-4">
+      <div className="relative z-10 px-4 pt-5 pb-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center shadow-lg shadow-orange-500/25">
@@ -186,7 +198,7 @@ export function HabitsSwipePage() {
       </div>
 
       {/* Habit list */}
-      <div className="flex-1 overflow-auto px-4 space-y-2">
+      <div className="relative z-10 flex-1 overflow-auto px-4 space-y-2">
         {total === 0 && (
           <div className="text-center py-16">
             <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-orange-500/10 to-red-500/10 flex items-center justify-center mx-auto mb-4">
