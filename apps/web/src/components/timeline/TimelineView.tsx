@@ -184,9 +184,15 @@ function MobileTimelineView({ tasks, projects, people, onTaskClick, onToggleDone
   for (const tab of MOBILE_TABS) tabCounts[tab.key] = allGrouped[tab.key].length;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative overflow-hidden">
+      {/* Decorative circles */}
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[300px] h-[300px] rounded-full border border-indigo-500/[0.07] dark:border-indigo-400/[0.07]" />
+      <div className="pointer-events-none absolute -top-10 -right-10 w-[180px] h-[180px] rounded-full border border-purple-500/[0.1] dark:border-purple-400/[0.08]" />
+      <div className="pointer-events-none absolute bottom-32 -left-16 w-[250px] h-[250px] rounded-full bg-indigo-500/[0.04] dark:bg-indigo-400/[0.03] blur-[60px]" />
+      <div className="pointer-events-none absolute bottom-10 -left-8 w-[150px] h-[150px] rounded-full border border-indigo-500/[0.06] dark:border-indigo-400/[0.05]" />
+
       {/* Tab bar */}
-      <div className="flex gap-1 px-3 py-2 overflow-x-auto bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+      <div className="relative z-10 flex gap-1 px-3 py-2 overflow-x-auto bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
         {MOBILE_TABS.map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
@@ -207,7 +213,7 @@ function MobileTimelineView({ tasks, projects, people, onTaskClick, onToggleDone
       </div>
 
       {/* Task list grouped by project */}
-      <div className="flex-1 overflow-auto px-3 py-2 space-y-4 pb-24">
+      <div className="relative z-10 flex-1 overflow-auto px-3 py-2 space-y-4 pb-24">
         {projectGroups.length === 0 && (
           <div className="text-gray-400 dark:text-gray-500 text-sm text-center py-12">
             {activeTab === 'done' ? 'Нет завершённых задач' : 'Нет задач'}
