@@ -46,7 +46,7 @@ export function MorePage() {
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-white/[0.06]" style={{ animation: 'circleLeft 14s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-white/[0.06]" style={{ animation: 'circleLeftSlow 12s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-white/[0.03] blur-[80px]" style={{ animation: 'circleRight 16s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="relative z-10 flex items-center justify-between mb-5">
+      <div className="relative z-30 flex items-center justify-between mb-5">
         <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Разделы', 'Sections')}</h1>
         <SettingsMenu />
       </div>
