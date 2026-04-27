@@ -151,25 +151,25 @@ html.dark select option {
   transform: translateZ(0);
 }
 
-/* Global circle drift animations — slow, harmonious, directional */
+/* Global circle drift animations — harmonious, directional */
 @keyframes circleLeft {
   0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(-25px) translateY(12px); }
+  50%  { transform: translateX(-35px) translateY(18px); }
   100% { transform: translateX(0) translateY(0); }
 }
 @keyframes circleRight {
   0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(22px) translateY(-10px); }
+  50%  { transform: translateX(30px) translateY(-15px); }
   100% { transform: translateX(0) translateY(0); }
 }
 @keyframes circleLeftSlow {
   0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(-18px) translateY(-8px); }
+  50%  { transform: translateX(-28px) translateY(-12px); }
   100% { transform: translateX(0) translateY(0); }
 }
 @keyframes circleRightSlow {
   0%   { transform: translateX(0) translateY(0); }
-  50%  { transform: translateX(20px) translateY(14px); }
+  50%  { transform: translateX(25px) translateY(20px); }
   100% { transform: translateX(0) translateY(0); }
 }
 

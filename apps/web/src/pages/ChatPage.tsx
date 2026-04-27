@@ -147,10 +147,10 @@ export function ChatPage() {
 
   return (
     <div className="flex flex-col h-full pb-16 md:pb-0 relative overflow-hidden">
-      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-white/[0.06]" style={{ animation: 'circleLeft 40s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-white/[0.06]" style={{ animation: 'circleLeftSlow 36s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-white/[0.03] blur-[80px]" style={{ animation: 'circleRight 42s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-white/[0.06]" style={{ animation: 'circleRightSlow 38s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-white/[0.06]" style={{ animation: 'circleLeft 14s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-white/[0.06]" style={{ animation: 'circleLeftSlow 12s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-white/[0.03] blur-[80px]" style={{ animation: 'circleRight 16s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full border border-purple-400/15 dark:border-white/[0.06]" style={{ animation: 'circleRightSlow 18s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       {/* Header */}
       <div className="flex items-center gap-2.5 px-4 pt-4 pb-2 border-b border-gray-200 dark:border-gray-700 relative z-10">
         <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
