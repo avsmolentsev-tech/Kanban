@@ -79,8 +79,11 @@ export function JournalPage() {
   const entryDates = new Set(entries.map(e => e.date));
 
   return (
-    <div className="flex flex-col h-full pb-20">
-      <div className="page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
+    <div className="relative overflow-hidden flex flex-col h-full pb-20">
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-white/[0.06]" style={{ animation: 'circleLeft 40s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-white/[0.06]" style={{ animation: 'circleLeftSlow 36s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-white/[0.03] blur-[80px]" style={{ animation: 'circleRight 42s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="relative z-10 page-header flex items-center justify-between px-4 pt-4 pb-2 border-b dark:border-gray-700">
         <div className="flex items-center gap-2.5">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-pink-500 to-pink-600 flex items-center justify-center shadow-lg shadow-pink-500/25">
             <BookOpen size={20} className="text-white" />
@@ -91,7 +94,7 @@ export function JournalPage() {
       </div>
 
       {/* Date selector — horizontal scroll */}
-      <div className="flex gap-2 px-4 py-3 overflow-x-auto">
+      <div className="relative z-10 flex gap-2 px-4 py-3 overflow-x-auto">
         {recentDates.map(date => {
           const d = new Date(date + 'T12:00:00');
           const dayName = d.toLocaleDateString('ru-RU', { weekday: 'short' });
@@ -114,7 +117,7 @@ export function JournalPage() {
       </div>
 
       {/* Journal form */}
-      <div className="flex-1 overflow-auto px-4 space-y-4">
+      <div className="relative z-10 flex-1 overflow-auto px-4 space-y-4">
         {/* Mood */}
         <div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">{t('Настроение', 'Mood')}</div>

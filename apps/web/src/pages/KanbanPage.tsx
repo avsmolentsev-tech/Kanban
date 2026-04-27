@@ -33,8 +33,11 @@ export function KanbanPage() {
   const filteredProjects = selectedProjectIds === null ? projects : projects.filter((p) => selectedProjectIds.has(p.id));
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b bg-white dark:bg-gray-900 dark:border-gray-700">
+    <div className="relative overflow-hidden flex flex-col h-full">
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full border border-indigo-400/20 dark:border-white/[0.06]" style={{ animation: 'circleLeft 40s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full border border-purple-400/25 dark:border-white/[0.06]" style={{ animation: 'circleLeftSlow 36s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08] dark:bg-white/[0.03] blur-[80px]" style={{ animation: 'circleRight 42s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="relative z-10 flex items-center justify-between px-4 pt-4 pb-2 border-b bg-white dark:bg-gray-900 dark:border-gray-700">
         <div className="flex items-center gap-2.5">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
             <Columns3 size={20} className="text-white" />
@@ -46,7 +49,7 @@ export function KanbanPage() {
           <ProjectFilter projects={projects} />
         </div>
       </div>
-      <div className="flex-1 overflow-hidden relative">
+      <div className="relative z-10 flex-1 overflow-hidden">
         <KanbanBoard
           tasks={filteredTasks}
           projects={filteredProjects}
