@@ -244,10 +244,13 @@ export class TelegramService {
     const userParams = userId != null ? [userId] : [];
     const claude = new ClaudeService();
     const projects = db.prepare(`SELECT id, name FROM projects WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; name: string }>;
-    const tasks = db.prepare(`SELECT id, title, status, project_id FROM tasks WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; title: string; status: string; project_id: number | null }>;
+    const tasks = db.prepare(`SELECT id, title, status, project_id, due_date FROM tasks WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; title: string; status: string; project_id: number | null; due_date: string | null }>;
     const people = db.prepare(`SELECT id, name FROM people WHERE 1=1${userFilter}`).all(...userParams) as Array<{ id: number; name: string }>;
     let goals: Array<{ id: number; title: string; type: string; parent_id: number | null; current_value: number; target_value: number; unit: string; status: string }> = [];
     try { goals = db.prepare(`SELECT id, title, type, parent_id, current_value, target_value, unit, status FROM goals WHERE status = 'active'${userFilter} ORDER BY type, parent_id`).all(...userParams) as typeof goals; } catch {}
+
+    const today = moscowDateString();
+    const overdueTasks = tasks.filter(t => t.due_date && t.due_date < today && t.status !== 'done' && t.status !== 'someday');
 
     // Auto-detect if question is about meetings → include full content
     const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
@@ -285,9 +288,10 @@ export class TelegramService {
 Ты подключён к таск-трекеру и Obsidian vault пользователя, но главное — ты можешь разговаривать на любые темы, советовать, обсуждать идеи, помогать думать. Ты эксперт во всём — бизнес, проекты, продуктивность, саморазвитие, технологии, жизнь.
 
 ДАННЫЕ СИСТЕМЫ ПОЛЬЗОВАТЕЛЯ:
+Сегодня: ${today}
 Проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
-Задачи: ${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id })))}
-Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, people: m.people, preview: (m.preview || '').slice(0, 200) })))}${recentContext}
+Задачи: ${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id, due_date: t.due_date })))}
+${overdueTasks.length > 0 ? `\n⚠️ ПРОСРОЧЕННЫЕ ЗАДАЧИ (${overdueTasks.length}): ${JSON.stringify(overdueTasks.map(t => ({ id: t.id, title: t.title, due_date: t.due_date, project_id: t.project_id })))}\nОбязательно напоминай пользователю о просроченных задачах если он спрашивает о статусе, задачах или прогрессе!\n` : ''}Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, people: m.people, preview: (m.preview || '').slice(0, 200) })))}${recentContext}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 Цели и ключевые результаты (OKR):
 ${goals.map(g => `  ${g.type === 'goal' ? '🎯' : '  📊'} #${g.id} ${g.title} (${g.current_value}/${g.target_value} ${g.unit})${g.parent_id ? ` [KR цели #${g.parent_id}]` : ''}`).join('\n')}
