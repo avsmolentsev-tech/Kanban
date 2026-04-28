@@ -141,10 +141,10 @@ export function HabitsSwipePage() {
   return (
     <div className="flex flex-col h-full pb-24 bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
       {/* Animated decorative circles */}
-      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full bg-indigo-400/15 dark:bg-white/[0.07]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full bg-purple-400/12 dark:bg-white/[0.05]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-white/[0.06] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full bg-purple-400/10 dark:bg-white/[0.05]" style={{ animation: 'circleRightSlow 28s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full bg-purple-400/10 dark:bg-purple-400/[0.08]" style={{ animation: 'circleRightSlow 28s cubic-bezier(0.45,0,0.55,1) infinite' }} />
 
       {/* Header with progress ring */}
       <div className="relative z-10 px-4 pt-5 pb-4">
