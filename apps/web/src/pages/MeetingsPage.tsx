@@ -10,6 +10,15 @@ import { useLangStore } from '../store/lang.store';
 import { Users } from 'lucide-react';
 
 type TimePeriod = 'today' | 'week' | 'month' | 'year';
+type AllMeetingPeriod = TimePeriod | 'none' | 'all';
+
+const MOBILE_MEETING_TABS: Array<{ key: AllMeetingPeriod; short_ru: string; short_en: string }> = [
+  { key: 'today', short_ru: 'Сег', short_en: 'Today' },
+  { key: 'week', short_ru: 'Нед', short_en: 'Week' },
+  { key: 'month', short_ru: 'Мес', short_en: 'Month' },
+  { key: 'year', short_ru: 'Год', short_en: 'Year' },
+  { key: 'all', short_ru: 'Все', short_en: 'All' },
+];
 
 // PERIOD_LABELS is now built inside MeetingsPage using t() for bilingual support
 
@@ -90,6 +99,113 @@ function MeetingColumn({ label, meetings, projectMap, onClickMeeting }: {
   );
 }
 
+function MobileMeetingsView({ meetings, projects, projectMap, onClickMeeting, onAddClick, adding }: {
+  meetings: Meeting[]; projects: Project[]; projectMap: Map<number, Project>;
+  onClickMeeting: (m: Meeting) => void; onAddClick: () => void; adding: boolean;
+}) {
+  const { t } = useLangStore();
+  const [activeTab, setActiveTab] = useState<AllMeetingPeriod>('today');
+
+  // Group ALL meetings by period
+  const allGrouped: Record<AllMeetingPeriod, Meeting[]> = { today: [], week: [], month: [], year: [], none: [], all: [] };
+  for (const m of meetings) {
+    const period = classifyMeeting(m.date);
+    allGrouped[period].push(m);
+    allGrouped.all.push(m);
+  }
+
+  // Meetings for active tab, grouped by project
+  const tabMeetings = allGrouped[activeTab];
+  const meetingProjectIds = (m: Meeting): number[] => {
+    const ids = (m as unknown as Record<string, unknown>)['project_ids'] as number[] | undefined;
+    if (ids && ids.length > 0) return ids;
+    return m.project_id != null ? [m.project_id] : [];
+  };
+
+  const byProject = new Map<number | null, Meeting[]>();
+  for (const m of tabMeetings) {
+    const ids = meetingProjectIds(m);
+    if (ids.length === 0) {
+      if (!byProject.has(null)) byProject.set(null, []);
+      byProject.get(null)!.push(m);
+    } else {
+      for (const pid of ids) {
+        if (!byProject.has(pid)) byProject.set(pid, []);
+        byProject.get(pid)!.push(m);
+      }
+    }
+  }
+
+  const activeProjects = projects.filter(p => !p.archived);
+  const projectGroups: Array<{ project: Project | null; meetings: Meeting[] }> = [];
+  for (const p of activeProjects) {
+    const pm = byProject.get(p.id);
+    if (pm && pm.length > 0) projectGroups.push({ project: p, meetings: pm });
+  }
+  const unassigned = byProject.get(null);
+  if (unassigned && unassigned.length > 0) projectGroups.push({ project: null, meetings: unassigned });
+
+  // Count per tab for badges
+  const tabCounts: Record<string, number> = {};
+  for (const tab of MOBILE_MEETING_TABS) tabCounts[tab.key] = allGrouped[tab.key].length;
+
+  return (
+    <div className="flex flex-col flex-1 overflow-hidden">
+      {/* Tab bar + add button */}
+      <div className="relative z-10 flex items-center gap-1 px-3 py-2 overflow-x-auto bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+        {MOBILE_MEETING_TABS.map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+              activeTab === tab.key
+                ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}>
+            {t(tab.short_ru, tab.short_en)}
+            {(tabCounts[tab.key] ?? 0) > 0 && (
+              <span className={`min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold ${
+                activeTab === tab.key
+                  ? 'bg-indigo-600 text-white'
+                  : tab.key === 'today' && (tabCounts[tab.key] ?? 0) > 0 ? 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+              }`}>{tabCounts[tab.key]}</span>
+            )}
+          </button>
+        ))}
+        {!adding && (
+          <button onClick={onAddClick} className="ml-auto flex-shrink-0 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700">
+            {t('+ Встреча', '+ Meeting')}
+          </button>
+        )}
+      </div>
+
+      {/* Meeting list grouped by project */}
+      <div className="relative z-10 flex-1 overflow-auto px-3 py-2 space-y-4 pb-24">
+        {projectGroups.length === 0 && (
+          <div className="text-gray-400 dark:text-gray-500 text-sm text-center py-12">
+            {t('Нет встреч', 'No meetings')}
+          </div>
+        )}
+        {projectGroups.map(({ project, meetings: groupMeetings }) => (
+          <div key={project?.id ?? 'none'}>
+            {/* Project header */}
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{project?.name ?? t('Без проекта', 'No project')}</span>
+              <span className="text-[10px] text-gray-400 dark:text-gray-500">{groupMeetings.length}</span>
+            </div>
+            {/* Meeting cards */}
+            <div className="space-y-2">
+              {groupMeetings.map(m => (
+                <MeetingCard key={m.id} meeting={m} project={m.project_id ? projectMap.get(m.project_id) : undefined}
+                  onClick={() => onClickMeeting(m)} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function MeetingsPage() {
   const { t } = useLangStore();
 
@@ -100,6 +216,13 @@ export function MeetingsPage() {
     year: t('В этом году', 'This year'),
     none: t('Без даты', 'No date'),
   };
+
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -250,7 +373,7 @@ export function MeetingsPage() {
         </div>
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
-          {!adding && (
+          {!adding && !isMobile && (
             <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
               {t('+ Встреча', '+ Meeting')}
             </button>
@@ -345,47 +468,52 @@ export function MeetingsPage() {
         </div>
       )}
 
-      <div className="relative z-10 flex-1 overflow-auto">
-        {/* Sticky column headers */}
-        <div className="sticky top-0 z-30 flex bg-gray-50/90 dark:bg-gray-900/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 py-2">
-          <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 pl-4" style={{ background: 'inherit' }} />
-          {periods.map((p) => (
-            <div key={p} className="w-56 min-w-[224px] mx-1.5 text-sm font-semibold text-gray-500 text-center">
-              {PERIOD_LABELS[p]}
-            </div>
-          ))}
-        </div>
+      {isMobile ? (
+        <MobileMeetingsView meetings={filtered} projects={projects} projectMap={projectMap}
+          onClickMeeting={setSelected} onAddClick={() => setAdding(true)} adding={adding} />
+      ) : (
+        <div className="relative z-10 flex-1 overflow-auto">
+          {/* Sticky column headers */}
+          <div className="sticky top-0 z-30 flex bg-gray-50/90 dark:bg-gray-900/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 py-2">
+            <div className="sticky left-0 z-40 w-40 min-w-[160px] flex-shrink-0 pl-4" style={{ background: 'inherit' }} />
+            {periods.map((p) => (
+              <div key={p} className="w-56 min-w-[224px] mx-1.5 text-sm font-semibold text-gray-500 text-center">
+                {PERIOD_LABELS[p]}
+              </div>
+            ))}
+          </div>
 
-        <div className="p-4 pt-2">
-        {/* Project rows */}
-        {rows.map(({ project, meetings: rowMeetings }) => {
-          const grouped: Record<TimePeriod | 'none', Meeting[]> = { today: [], week: [], month: [], year: [], none: [] };
-          for (const m of rowMeetings) grouped[classifyMeeting(m.date)].push(m);
+          <div className="p-4 pt-2">
+          {/* Project rows */}
+          {rows.map(({ project, meetings: rowMeetings }) => {
+            const grouped: Record<TimePeriod | 'none', Meeting[]> = { today: [], week: [], month: [], year: [], none: [] };
+            for (const m of rowMeetings) grouped[classifyMeeting(m.date)].push(m);
 
-          return (
-            <div key={project?.id ?? 'none'} className="flex mb-4">
-              <div className="sticky left-0 top-12 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 self-start" style={{ background: 'inherit' }}>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-                  <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? t('Без проекта', 'No project')}</span>
+            return (
+              <div key={project?.id ?? 'none'} className="flex mb-4">
+                <div className="sticky left-0 top-12 z-20 w-40 min-w-[160px] flex-shrink-0 pr-3 pt-3 self-start" style={{ background: 'inherit' }}>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                    <span className="text-sm font-semibold text-gray-700 truncate">{project?.name ?? t('Без проекта', 'No project')}</span>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1 ml-5">{rowMeetings.length} {t('встреч', 'meetings')}</div>
                 </div>
-                <div className="text-xs text-gray-400 mt-1 ml-5">{rowMeetings.length} {t('встреч', 'meetings')}</div>
+                <div className="flex gap-3">
+                  {periods.map((period) => (
+                    <MeetingColumn key={`${project?.id ?? 'none'}-${period}`} label="" meetings={grouped[period]}
+                      projectMap={projectMap} onClickMeeting={setSelected} />
+                  ))}
+                </div>
               </div>
-              <div className="flex gap-3">
-                {periods.map((period) => (
-                  <MeetingColumn key={`${project?.id ?? 'none'}-${period}`} label="" meetings={grouped[period]}
-                    projectMap={projectMap} onClickMeeting={setSelected} />
-                ))}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
 
-        {rows.length === 0 && !adding && (
-          <div className="text-gray-400 text-sm text-center py-8">{t('Нет встреч', 'No meetings')}</div>
-        )}
+          {rows.length === 0 && !adding && (
+            <div className="text-gray-400 text-sm text-center py-8">{t('Нет встреч', 'No meetings')}</div>
+          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Hidden file input for audio upload */}
       <input ref={fileRef} type="file" accept="audio/*,.ogg,.mp3,.wav,.m4a,.webm" className="hidden"
