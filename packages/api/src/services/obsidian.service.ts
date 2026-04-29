@@ -57,6 +57,17 @@ interface WriteIdeaParams {
   date: string;
 }
 
+interface WriteDocumentParams {
+  title: string;
+  body: string;
+  category: string;
+  status: string;
+  project?: string;
+  parentTitle?: string;
+  people?: string[];
+  tags?: string[];
+}
+
 export class ObsidianService {
   constructor(private readonly vaultPath: string, private readonly userPrefix: string = '') {}
 
@@ -215,6 +226,47 @@ export class ObsidianService {
     const companyLine = params.company ? `**Компания:** ${this.wikiLink(params.company)}\n` : '';
     fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.title}\n\n${companyLine}${params.body}\n`, 'utf-8');
     return this.userRelative('Ideas', filename);
+  }
+
+  async writeDocument(params: WriteDocumentParams): Promise<string> {
+    const filename = `${this.toSlug(params.title)}.md`;
+    let dir: string;
+    let relativeParts: string[];
+
+    if (params.project) {
+      if (params.parentTitle) {
+        dir = this.userPath('Projects', params.project, params.parentTitle);
+        relativeParts = ['Projects', params.project, params.parentTitle, filename];
+      } else {
+        dir = this.userPath('Projects', params.project);
+        relativeParts = ['Projects', params.project, filename];
+      }
+    } else {
+      dir = this.userPath('Materials');
+      relativeParts = ['Materials', filename];
+    }
+    this.ensureDir(dir);
+
+    const people = (params.people ?? []).map((p) => this.wikiLink(p));
+    const tags = params.tags ?? [];
+    if (params.project) tags.push(`project/${params.project}`);
+
+    const frontmatter = [
+      '---',
+      'type: document',
+      `title: "${params.title}"`,
+      `category: ${params.category}`,
+      `status: ${params.status}`,
+      `project: ${this.wikiOrNull(params.project)}`,
+      `people: [${people.join(', ')}]`,
+      `tags: [${tags.join(', ')}]`,
+      `created_at: ${this.now()}`,
+      `modified_at: ${this.now()}`,
+      '---',
+    ].join('\n');
+
+    fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n${params.body}\n`, 'utf-8');
+    return this.userRelative(...relativeParts);
   }
 
   async writeInboxItem(originalName: string, content: string): Promise<string> {
