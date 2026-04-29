@@ -8,6 +8,7 @@ import { MeetingsPage } from './pages/MeetingsPage';
 import { PeoplePage } from './pages/PeoplePage';
 import { IdeasPage } from './pages/IdeasPage';
 import { DocumentsPage } from './pages/DocumentsPage';
+import { NotionDocumentsPage } from './pages/NotionDocumentsPage';
 import { DailyBriefPage } from './pages/DailyBriefPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { HabitsPage } from './pages/HabitsPage';
@@ -277,7 +278,7 @@ export default function App() {
               <Route path="/habits" element={<AnimatedPage>{useMobileLayout ? <HabitsSwipePage /> : <HabitsPage />}</AnimatedPage>} />
               <Route path="/goals" element={<AnimatedPage><GoalsPage /></AnimatedPage>} />
               <Route path="/journal" element={<AnimatedPage><JournalPage /></AnimatedPage>} />
-              <Route path="/documents" element={<AnimatedPage><DocumentsPage /></AnimatedPage>} />
+              <Route path="/documents" element={<AnimatedPage><NotionDocumentsPage /></AnimatedPage>} />
               <Route path="/chat" element={<AnimatedPage><ChatPage /></AnimatedPage>} />
               <Route path="/dashboard" element={<AnimatedPage><DashboardPage /></AnimatedPage>} />
               <Route path="/stats" element={<AnimatedPage><StatsPage /></AnimatedPage>} />
