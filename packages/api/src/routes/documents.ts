@@ -7,7 +7,7 @@ import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
 import { config } from '../config';
-import slugify from 'slugify';
+
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
 import { syncDocToVault } from '../services/obsidian-sync.service';
