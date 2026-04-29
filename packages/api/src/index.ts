@@ -8,6 +8,7 @@ import { searchService } from './services/search.service';
 import { telegramService } from './services/telegram.service';
 import { startNotificationScheduler } from './services/notification.service';
 import { authMiddleware } from './middleware/auth';
+import { startVaultWatcher } from './services/obsidian-sync.service';
 
 // Catch-all crash protection — log and keep running
 process.on('uncaughtException', (err) => {
@@ -42,6 +43,8 @@ async function start(): Promise<void> {
   startNotificationScheduler();
   app.listen(config.port, () => {
     console.log(`[Clarity Space API] running on port ${config.port}`);
+    // Start Obsidian vault watcher for bidirectional sync
+    startVaultWatcher(null);
   });
 }
 
