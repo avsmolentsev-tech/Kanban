@@ -10,6 +10,7 @@ import { config } from '../config';
 import slugify from 'slugify';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
+import { syncDocToVault } from '../services/obsidian-sync.service';
 
 const attachDir = path.join(config.vaultPath, 'Attachments');
 if (!fs.existsSync(attachDir)) fs.mkdirSync(attachDir, { recursive: true });
@@ -109,35 +110,15 @@ documentsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const updatedDoc = getDb().prepare('SELECT * FROM documents WHERE id = ?').get(docId) as Record<string, unknown>;
   if (updatedDoc) searchService.indexRecord('document', updatedDoc['id'] as number, updatedDoc['title'] as string, (updatedDoc['body'] as string) ?? '');
 
-  // Sync to Obsidian when status changes to in_obsidian
-  if (parsed.data.status === 'in_obsidian' && updatedDoc && !updatedDoc['vault_path']) {
-    try {
-      const title = updatedDoc['title'] as string;
-      const body = (updatedDoc['body'] as string) ?? '';
-      const category = (updatedDoc['category'] as string) ?? 'note';
-      const projectId = updatedDoc['project_id'] as number | null;
-      const projectName = projectId ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as { name: string } | undefined)?.name : undefined;
-
-      const slug = slugify(title, { lower: true, strict: true, locale: 'ru' });
-      const date = new Date().toISOString().split('T')[0];
-      const filename = `${date}-${slug}.md`;
-      const dir = path.join(config.vaultPath, 'Materials');
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-      const frontmatter = [
-        '---', 'type: document', `category: ${category}`,
-        `project: ${projectName ? `[[${projectName}]]` : 'null'}`,
-        `tags: [document, ${category}]`,
-        `created_at: ${updatedDoc['created_at']}`, '---',
-      ].join('\n');
-      fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${title}\n\n${body}\n`, 'utf-8');
-
-      const vaultPath = `Materials/${filename}`;
-      getDb().prepare('UPDATE documents SET vault_path = ? WHERE id = ?').run(vaultPath, docId);
-      (updatedDoc as Record<string, unknown>)['vault_path'] = vaultPath;
-      console.log(`[documents] synced #${docId} to ${vaultPath}`);
-    } catch (err) {
-      console.warn('[documents] vault sync failed:', err);
+  // Sync to Obsidian vault
+  if (updatedDoc) {
+    const docStatus = updatedDoc['status'] as string;
+    if (docStatus === 'in_obsidian' || docStatus === 'active') {
+      try {
+        syncDocToVault(docId, userId);
+      } catch (err) {
+        console.warn('[documents] vault sync failed:', err);
+      }
     }
   }
 
