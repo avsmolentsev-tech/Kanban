@@ -23,6 +23,7 @@ const CreateSchema = z.object({
   title: z.string().min(1),
   body: z.string().optional().default(''),
   project_id: z.number().int().nullable().optional(),
+  parent_id: z.number().int().nullable().optional(),
   category: z.enum(['note', 'reference', 'template', 'archive']).optional().default('note'),
   vault_path: z.string().nullable().optional(),
   status: z.enum(DOC_STATUSES).optional().default('draft'),
@@ -32,6 +33,7 @@ const UpdateSchema = z.object({
   title: z.string().min(1).optional(),
   body: z.string().optional(),
   project_id: z.number().int().nullable().optional(),
+  parent_id: z.number().int().nullable().optional(),
   category: z.enum(['note', 'reference', 'template', 'archive']).optional(),
   vault_path: z.string().nullable().optional(),
   status: z.enum(DOC_STATUSES).optional(),
@@ -44,17 +46,38 @@ documentsRouter.get('/', (req: AuthRequest, res: Response) => {
   if (req.query['project']) { query += ' AND project_id = ?'; params.push(Number(req.query['project'])); }
   if (req.query['category']) { query += ' AND category = ?'; params.push(req.query['category']); }
   query += ' ORDER BY updated_at DESC';
-  res.json(ok(getDb().prepare(query).all(...params)));
+  const docs = getDb().prepare(query).all(...params) as Array<Record<string, unknown>>;
+
+  if (req.query['tree'] === 'true') {
+    const map = new Map<number, Record<string, unknown> & { children: unknown[] }>();
+    const roots: Array<Record<string, unknown> & { children: unknown[] }> = [];
+    for (const d of docs) {
+      const node = { ...d, children: [] as unknown[] };
+      map.set(d['id'] as number, node);
+    }
+    for (const node of map.values()) {
+      const parentId = node['parent_id'] as number | null;
+      if (parentId && map.has(parentId)) {
+        map.get(parentId)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+    res.json(ok(roots));
+    return;
+  }
+
+  res.json(ok(docs));
 });
 
 documentsRouter.post('/', (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const { title, body, project_id, category, vault_path } = parsed.data;
+  const { title, body, project_id, parent_id, category, vault_path } = parsed.data;
   const userId = getUserId(req);
   const result = getDb()
-    .prepare('INSERT INTO documents (title, body, project_id, category, vault_path, user_id) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(title, body, project_id ?? null, category, vault_path ?? null, userId);
+    .prepare('INSERT INTO documents (title, body, project_id, parent_id, category, vault_path, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(title, body, project_id ?? null, parent_id ?? null, category, vault_path ?? null, userId);
   searchService.indexRecord('document', Number(result.lastInsertRowid), title, body ?? '');
   res.status(201).json(ok(getDb().prepare('SELECT * FROM documents WHERE id = ?').get(result.lastInsertRowid)));
 });

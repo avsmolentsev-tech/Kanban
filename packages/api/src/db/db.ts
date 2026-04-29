@@ -110,6 +110,9 @@ export function initDb(): void {
   // Documents: status column
   try { _db.exec("ALTER TABLE documents ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'"); } catch {}
 
+  // Documents: parent_id for nested documents (Notion-like)
+  try { _db.exec("ALTER TABLE documents ADD COLUMN parent_id INTEGER REFERENCES documents(id)"); } catch {}
+
   // Tasks: parent_id for subtasks
   try { _db.exec("ALTER TABLE tasks ADD COLUMN parent_id INTEGER REFERENCES tasks(id)"); } catch {}
 
@@ -414,6 +417,9 @@ export function initTestDb(): void {
 
   // Documents: status column
   try { _db.exec("ALTER TABLE documents ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'"); } catch {}
+
+  // Documents: parent_id for nested documents (Notion-like)
+  try { _db.exec("ALTER TABLE documents ADD COLUMN parent_id INTEGER REFERENCES documents(id)"); } catch {}
 
   // Tasks: parent_id for subtasks
   try { _db.exec("ALTER TABLE tasks ADD COLUMN parent_id INTEGER REFERENCES tasks(id)"); } catch {}
