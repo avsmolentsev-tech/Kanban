@@ -210,3 +210,42 @@ input[type="range"].zoom-slider::-moz-range-thumb {
   cursor: pointer;
   border: none;
 }
+
+/* Tiptap editor styles */
+.tiptap {
+  outline: none;
+}
+
+.tiptap h1 { font-size: 1.75rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #f1f5f9; }
+.tiptap h2 { font-size: 1.35rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #e2e8f0; }
+.tiptap h3 { font-size: 1.1rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; color: #cbd5e1; }
+.tiptap p { margin-bottom: 0.5rem; color: #cbd5e1; line-height: 1.7; }
+.tiptap ul, .tiptap ol { padding-left: 1.5rem; margin-bottom: 0.5rem; color: #cbd5e1; }
+.tiptap li { margin-bottom: 0.25rem; }
+.tiptap blockquote { border-left: 3px solid #6366f1; padding-left: 1rem; margin: 0.75rem 0; color: #94a3b8; font-style: italic; }
+.tiptap pre { background: #1e293b; border-radius: 0.5rem; padding: 1rem; margin: 0.75rem 0; overflow-x: auto; }
+.tiptap code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; }
+.tiptap hr { border: none; border-top: 1px solid #334155; margin: 1.5rem 0; }
+.tiptap a { color: #818cf8; text-decoration: underline; }
+.tiptap a:hover { color: #a5b4fc; }
+
+/* Task list (checkboxes) */
+.tiptap ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5rem; }
+.tiptap ul[data-type="taskList"] li label { margin-top: 0.15rem; }
+.tiptap ul[data-type="taskList"] li label input[type="checkbox"] {
+  appearance: none; width: 1rem; height: 1rem; border: 2px solid #6366f1; border-radius: 0.25rem;
+  cursor: pointer; background: transparent; position: relative;
+}
+.tiptap ul[data-type="taskList"] li label input[type="checkbox"]:checked {
+  background: #6366f1;
+}
+.tiptap ul[data-type="taskList"] li label input[type="checkbox"]:checked::after {
+  content: '✓'; position: absolute; top: -2px; left: 1px; color: white; font-size: 0.7rem;
+}
+.tiptap ul[data-type="taskList"] li[data-checked="true"] > div > p { text-decoration: line-through; color: #64748b; }
+
+/* Placeholder */
+.tiptap p.is-editor-empty:first-child::before {
+  color: #475569; content: attr(data-placeholder); float: left; height: 0; pointer-events: none;
+}
