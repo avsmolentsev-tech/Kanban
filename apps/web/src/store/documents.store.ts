@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { documentsApi } from '../api/documents.api';
 import type { DocumentNode, CreateDocumentDto, UpdateDocumentDto } from '../api/documents.api';
-import { apiGet } from '../api/client';
+import { apiGet, apiPost, apiPatch } from '../api/client';
 
 interface Meeting {
   id: number;
@@ -55,6 +55,17 @@ interface DocumentsState {
   deleteDocument: (id: number) => Promise<void>;
   setSaving: (saving: boolean) => void;
   setLastSaved: (ts: string) => void;
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  editingMeeting: boolean;
+  editingIdea: boolean;
+  setEditingMeeting: (editing: boolean) => void;
+  setEditingIdea: (editing: boolean) => void;
+  createMeeting: (projectId: number | null) => Promise<void>;
+  createIdea: (projectId: number | null) => Promise<void>;
+  deleteIdea: (id: number, projectId: number | null) => Promise<void>;
+  updateMeeting: (id: number, data: Record<string, unknown>) => Promise<void>;
+  updateIdea: (id: number, data: Record<string, unknown>) => Promise<void>;
 }
 
 export const useDocumentsStore = create<DocumentsState>((set, get) => ({
@@ -149,6 +160,48 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => ({
 
   setSaving: (saving) => set({ saving }),
   setLastSaved: (ts) => set({ lastSaved: ts }),
+
+  searchQuery: '',
+  editingMeeting: false,
+  editingIdea: false,
+  setSearchQuery: (query) => set({ searchQuery: query }),
+  setEditingMeeting: (editing) => set({ editingMeeting: editing }),
+  setEditingIdea: (editing) => set({ editingIdea: editing }),
+
+  createMeeting: async (projectId) => {
+    const date = new Date().toISOString().split('T')[0];
+    const meeting = await apiPost<Meeting>('/meetings', { title: 'Новая встреча', date, project_id: projectId });
+    await get().loadProjectData(projectId);
+    set({ activeItem: { type: 'meeting', id: meeting.id }, activeDocument: null, activeMeeting: meeting, activeIdea: null, editingMeeting: true });
+  },
+
+  createIdea: async (projectId) => {
+    const idea = await apiPost<Idea>('/ideas', { title: 'Новая идея', project_id: projectId });
+    await get().loadProjectData(projectId);
+    set({ activeItem: { type: 'idea', id: idea.id }, activeDocument: null, activeMeeting: null, activeIdea: idea, editingIdea: true });
+  },
+
+  deleteIdea: async (id, projectId) => {
+    await apiPatch(`/ideas/${id}`, { archived: true });
+    if (get().activeItem?.type === 'idea' && get().activeItem?.id === id) get().clearActive();
+    await get().loadProjectData(projectId);
+  },
+
+  updateMeeting: async (id, data) => {
+    set({ saving: true });
+    const updated = await apiPatch<Meeting>(`/meetings/${id}`, data);
+    set({ saving: false, lastSaved: new Date().toISOString(), activeMeeting: updated });
+    const projId = get().activeMeeting?.project_id ?? null;
+    await get().loadProjectData(projId);
+  },
+
+  updateIdea: async (id, data) => {
+    set({ saving: true });
+    const updated = await apiPatch<Idea>(`/ideas/${id}`, data);
+    set({ saving: false, lastSaved: new Date().toISOString(), activeIdea: updated });
+    const projId = get().activeIdea?.project_id ?? null;
+    await get().loadProjectData(projId);
+  },
 }));
 
 export type { Meeting as SidebarMeeting, Idea as SidebarIdea };
