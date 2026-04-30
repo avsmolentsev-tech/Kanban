@@ -64,7 +64,10 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
   }, []);
 
   const handleImageInsert = useCallback(() => {
-    fileInputRef.current?.click();
+    // Delay to let slash menu close first, then open file picker
+    setTimeout(() => {
+      fileInputRef.current?.click();
+    }, 100);
   }, []);
 
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
@@ -211,8 +214,13 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    console.log('[TiptapEditor] uploading image:', file.name, file.size);
     const url = await uploadImage(file);
-    if (url) editorRef.current?.chain().focus().setImage({ src: url }).run();
+    console.log('[TiptapEditor] upload result:', url);
+    if (url && editorRef.current) {
+      console.log('[TiptapEditor] inserting image into editor');
+      editorRef.current.chain().focus().setImage({ src: url }).run();
+    }
     e.target.value = '';
   }, [uploadImage]);
 
