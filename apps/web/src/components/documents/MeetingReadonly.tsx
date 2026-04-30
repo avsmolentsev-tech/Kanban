@@ -27,20 +27,17 @@ function splitSummaryAndTranscript(raw: string): { summary: string; transcript: 
   const separator = '\n\n---\n\n';
   const sepIdx = raw.indexOf(separator);
   if (sepIdx === -1) {
-    // No separator — check if it starts with ## (pure summary) or is just transcript
-    if (raw.startsWith('## ')) {
-      return { summary: raw, transcript: '' };
-    }
-    return { summary: '', transcript: raw };
+    // No separator — show everything as summary (visible)
+    return { summary: raw, transcript: '' };
   }
   const before = raw.slice(0, sepIdx).trim();
   const after = raw.slice(sepIdx + separator.length).trim();
-  // If before starts with ## it's summary + transcript
+  // If before starts with ## it's AI summary + transcript
   if (before.startsWith('## ')) {
     return { summary: before, transcript: after };
   }
-  // Otherwise it's all transcript (joined parts)
-  return { summary: '', transcript: raw };
+  // Otherwise show before as summary, after as transcript
+  return { summary: before, transcript: after };
 }
 
 function DownloadButton({
