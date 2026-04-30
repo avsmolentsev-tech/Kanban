@@ -1,23 +1,36 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { DndContext, rectIntersection, type DragEndEvent, MouseSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragOverlay, rectIntersection, type DragEndEvent, type DragStartEvent, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { useProjectsStore } from '../../store';
 import { useDocumentsStore } from '../../store/documents.store';
 import { ProjectTreeItem } from './ProjectTreeItem';
 import { SidebarSearch } from './SidebarSearch';
 import { useLangStore } from '../../store/lang.store';
 import { apiPatch } from '../../api/client';
+import { FileText, Lightbulb } from 'lucide-react';
 
 export function DocumentsSidebar() {
   const { t } = useLangStore();
   const { projects, fetchProjects } = useProjectsStore();
   const { createDocument, setActiveDocument, expandedProjects, updateDocument } = useDocumentsStore();
   const activeProjects = projects.filter((p) => !p.archived);
+  const [dragLabel, setDragLabel] = useState<{ text: string; type: 'doc' | 'idea' } | null>(null);
 
-  const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 5 } });
-  const sensors = useSensors(mouseSensor);
+  const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 8 } });
+  const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } });
+  const sensors = useSensors(mouseSensor, touchSensor);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const id = String(event.active.id);
+    // Find the label from the DOM element
+    const el = document.querySelector(`[data-drag-label="${id}"]`);
+    const text = el?.textContent ?? '';
+    if (id.startsWith('doc-drag-')) setDragLabel({ text, type: 'doc' });
+    else if (id.startsWith('idea-drag-')) setDragLabel({ text, type: 'idea' });
+  };
 
   const handleDragEnd = async (event: DragEndEvent) => {
+    setDragLabel(null);
     const { active, over } = event;
     if (!over) return;
     const activeId = String(active.id);
@@ -70,13 +83,21 @@ export function DocumentsSidebar() {
 
       <SidebarSearch />
 
-      <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragEnd={handleDragEnd}>
+      <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex-1 overflow-y-auto px-1 py-2">
           {activeProjects.map((p) => (
             <ProjectTreeItem key={p.id} project={p} />
           ))}
           <ProjectTreeItem project={null} />
         </div>
+        <DragOverlay dropAnimation={null}>
+          {dragLabel && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-gray-800 text-gray-200 text-sm shadow-lg border border-gray-600/50 opacity-90">
+              {dragLabel.type === 'doc' ? <FileText size={14} /> : <Lightbulb size={14} />}
+              <span className="truncate max-w-[180px]">{dragLabel.text}</span>
+            </div>
+          )}
+        </DragOverlay>
       </DndContext>
 
       <div className="p-2 border-t border-gray-200 dark:border-gray-700/50">

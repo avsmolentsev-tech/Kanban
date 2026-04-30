@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { FileText, ChevronRight, Trash2 } from 'lucide-react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import type { DocumentNode } from '../../api/documents.api';
@@ -12,6 +12,18 @@ interface Props {
 export function DocumentTreeItem({ doc, depth }: Props) {
   const [expanded, setExpanded] = useState(false);
   const { activeItem, setActiveDocument, deleteDocument } = useDocumentsStore();
+
+  // Auto-expand if active document is a child of this document
+  useEffect(() => {
+    if (!doc.children?.length) return;
+    const isChildActive = (children: unknown[]): boolean =>
+      children.some((c) => {
+        const child = c as DocumentNode;
+        return (activeItem?.type === 'document' && activeItem.id === child.id) ||
+          (child.children?.length && isChildActive(child.children));
+      });
+    if (isChildActive(doc.children)) setExpanded(true);
+  }, [activeItem, doc.children]);
   const isActive = activeItem?.type === 'document' && activeItem.id === doc.id;
   const hasChildren = doc.children && doc.children.length > 0;
 
@@ -29,6 +41,7 @@ export function DocumentTreeItem({ doc, depth }: Props) {
         ref={combinedRef}
         {...attributes}
         {...listeners}
+        data-drag-label={`doc-drag-${doc.id}`}
         onClick={() => setActiveDocument(doc)}
         className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer group ${
           isActive

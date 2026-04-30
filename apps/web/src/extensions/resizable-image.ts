@@ -23,6 +23,7 @@ export const ResizableImage = Image.extend({
       const container = document.createElement('div');
       container.classList.add('image-resize-container');
       container.contentEditable = 'false';
+      container.tabIndex = 0;
 
       const img = document.createElement('img');
       img.src = node.attrs.src;
@@ -30,6 +31,49 @@ export const ResizableImage = Image.extend({
       if (node.attrs.width) img.style.width = `${node.attrs.width}px`;
       else img.style.maxWidth = '100%';
 
+      // Delete button
+      const deleteBtn = document.createElement('button');
+      deleteBtn.classList.add('image-delete-btn');
+      deleteBtn.innerHTML = '&times;';
+      deleteBtn.title = 'Удалить';
+
+      const deleteImage = () => {
+        if (typeof getPos === 'function') {
+          const pos = getPos();
+          if (pos != null) {
+            editor.chain().focus().command(({ tr }) => {
+              tr.delete(pos, pos + 1);
+              return true;
+            }).run();
+          }
+        }
+      };
+
+      deleteBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        deleteImage();
+      });
+
+      // Keyboard delete
+      container.addEventListener('keydown', (e) => {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          deleteImage();
+        }
+      });
+
+      // Click to select (show handles)
+      container.addEventListener('click', () => {
+        container.classList.add('selected');
+        container.focus();
+      });
+
+      container.addEventListener('blur', () => {
+        container.classList.remove('selected');
+      });
+
+      // Resize handle
       const handle = document.createElement('div');
       handle.classList.add('image-resize-handle');
 
@@ -65,6 +109,7 @@ export const ResizableImage = Image.extend({
 
       container.appendChild(img);
       container.appendChild(handle);
+      container.appendChild(deleteBtn);
 
       return {
         dom: container,
@@ -73,6 +118,9 @@ export const ResizableImage = Image.extend({
           img.src = updatedNode.attrs.src;
           if (updatedNode.attrs.width) img.style.width = `${updatedNode.attrs.width}px`;
           return true;
+        },
+        destroy: () => {
+          container.remove();
         },
       };
     };

@@ -14,6 +14,7 @@ import { ResizableImage } from '../../extensions/resizable-image';
 import { useDocumentsStore } from '../../store/documents.store';
 import { useLangStore } from '../../store/lang.store';
 import { apiClient } from '../../api/client';
+import { documentsApi } from '../../api/documents.api';
 
 interface Props {
   documentId: number;
@@ -64,11 +65,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
   }, []);
 
   const handleImageInsert = useCallback(() => {
-    console.log('[TiptapEditor] handleImageInsert called');
-    console.log('[TiptapEditor] fileInputRef:', fileInputRef.current ? 'exists' : 'null');
-    // Delay to let slash menu close first, then open file picker
     setTimeout(() => {
-      console.log('[TiptapEditor] clicking file input');
       fileInputRef.current?.click();
     }, 100);
   }, []);
@@ -76,10 +73,8 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
 
   const handleChildDocument = useCallback(async () => {
-    console.log('[TiptapEditor] handleChildDocument called');
     const activeDoc = useDocumentsStore.getState().activeDocument;
-    console.log('[TiptapEditor] activeDoc:', activeDoc?.id, activeDoc?.title);
-    if (!activeDoc) { console.log('[TiptapEditor] no activeDoc, aborting'); return; }
+    if (!activeDoc) return;
     const child = await createDocument({
       title: t('Новый документ', 'New document'),
       project_id: activeDoc.project_id,
@@ -169,6 +164,21 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
         attributes: {
           class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] px-8 py-4',
         },
+        handleClick: (_view, _pos, event) => {
+          const target = event.target as HTMLElement;
+          const link = target.closest('a[data-doc-id]') as HTMLAnchorElement | null;
+          if (link) {
+            event.preventDefault();
+            const docId = Number(link.getAttribute('data-doc-id'));
+            if (docId) {
+              documentsApi.get(docId).then((doc) => {
+                useDocumentsStore.getState().setActiveDocument(doc);
+              }).catch(() => {});
+            }
+            return true;
+          }
+          return false;
+        },
         handleDrop: (_view, event) => {
           const files = event.dataTransfer?.files;
           if (files && files.length > 0) {
@@ -219,11 +229,8 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    console.log('[TiptapEditor] uploading image:', file.name, file.size);
     const url = await uploadImage(file);
-    console.log('[TiptapEditor] upload result:', url);
     if (url && editorRef.current) {
-      console.log('[TiptapEditor] inserting image into editor');
       editorRef.current.chain().focus().setImage({ src: url }).run();
     }
     e.target.value = '';

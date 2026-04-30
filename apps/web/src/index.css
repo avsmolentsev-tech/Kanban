@@ -271,14 +271,33 @@ html.dark .tiptap a:hover { color: #a5b4fc; }
 
 /* Image resize */
 .image-resize-container {
-  position: relative; display: inline-block; max-width: 100%; margin: 0.5rem 0; cursor: default;
+  position: relative; display: inline-block; max-width: 100%; margin: 0.5rem 0; cursor: default; outline: none;
 }
-.image-resize-container img { display: block; border-radius: 0.375rem; }
+.image-resize-container img { display: block; border-radius: 0.375rem; transition: box-shadow 0.15s; }
+.image-resize-container:hover img,
+.image-resize-container.selected img { box-shadow: 0 0 0 2px #6366f1; }
 .image-resize-handle {
   position: absolute; right: -4px; bottom: -4px; width: 12px; height: 12px;
   background: #6366f1; border-radius: 2px; cursor: nwse-resize; opacity: 0; transition: opacity 0.15s;
 }
-.image-resize-container:hover .image-resize-handle { opacity: 1; }
+.image-resize-container:hover .image-resize-handle,
+.image-resize-container.selected .image-resize-handle { opacity: 1; }
+.image-delete-btn {
+  position: absolute; top: 4px; right: 4px; width: 24px; height: 24px;
+  background: rgba(239,68,68,0.85); color: #fff; border: none; border-radius: 50%;
+  font-size: 16px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity 0.15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.image-resize-container:hover .image-delete-btn,
+.image-resize-container.selected .image-delete-btn { opacity: 1; }
+
+/* Child document links */
+.tiptap a.child-doc-link {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px;
+  background: rgba(99,102,241,0.1); border-radius: 4px; text-decoration: none;
+  color: #818cf8; cursor: pointer; transition: background 0.15s;
+}
+.tiptap a.child-doc-link:hover { background: rgba(99,102,241,0.2); }
 
 /* Slash menu tippy */
 .tippy-box[data-theme='slash-menu'] { background: transparent; border: none; box-shadow: none; }

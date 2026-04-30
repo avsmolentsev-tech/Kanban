@@ -18,6 +18,7 @@ function DraggableIdeaItem({ idea, isActive, onClick, onDelete }: {
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      data-drag-label={`idea-drag-${idea.id}`}
       onClick={onClick}
       className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer group ${
         isActive
