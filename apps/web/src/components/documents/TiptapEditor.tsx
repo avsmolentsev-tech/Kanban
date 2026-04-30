@@ -64,8 +64,11 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
   }, []);
 
   const handleImageInsert = useCallback(() => {
+    console.log('[TiptapEditor] handleImageInsert called');
+    console.log('[TiptapEditor] fileInputRef:', fileInputRef.current ? 'exists' : 'null');
     // Delay to let slash menu close first, then open file picker
     setTimeout(() => {
+      console.log('[TiptapEditor] clicking file input');
       fileInputRef.current?.click();
     }, 100);
   }, []);
@@ -73,8 +76,10 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
 
   const handleChildDocument = useCallback(async () => {
+    console.log('[TiptapEditor] handleChildDocument called');
     const activeDoc = useDocumentsStore.getState().activeDocument;
-    if (!activeDoc) return;
+    console.log('[TiptapEditor] activeDoc:', activeDoc?.id, activeDoc?.title);
+    if (!activeDoc) { console.log('[TiptapEditor] no activeDoc, aborting'); return; }
     const child = await createDocument({
       title: t('Новый документ', 'New document'),
       project_id: activeDoc.project_id,
