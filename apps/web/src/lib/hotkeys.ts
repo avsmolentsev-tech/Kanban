@@ -6,9 +6,11 @@ export function useHotkeys() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Don't trigger when typing in inputs
-      const tag = (e.target as HTMLElement).tagName;
+      // Don't trigger when typing in inputs or contenteditable (Tiptap editor)
+      const el = e.target as HTMLElement;
+      const tag = el.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (el.isContentEditable || el.closest('[contenteditable]')) return;
 
       switch (e.key) {
         case 'n': // New task — focus on add
