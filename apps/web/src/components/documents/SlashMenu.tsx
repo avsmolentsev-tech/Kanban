@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { FileText, Image, Link2, Minus, CheckSquare, Code2, Quote } from 'lucide-react';
+import { FileText, Image, Link2, Minus, CheckSquare, Code2, Quote, Table2 } from 'lucide-react';
 
 export interface SlashMenuItem {
   title: string;
@@ -79,9 +79,11 @@ export function getSlashMenuItems(query: string, handlers: {
   onTaskList: () => void;
   onCodeBlock: () => void;
   onBlockquote: () => void;
+  onTable: () => void;
 }): SlashMenuItem[] {
   const all: SlashMenuItem[] = [
     { title: 'Дочерний документ', icon: <FileText size={16} />, command: handlers.onChildDocument },
+    { title: 'Таблица', icon: <Table2 size={16} />, command: handlers.onTable },
     { title: 'Изображение', icon: <Image size={16} />, command: handlers.onImage },
     { title: 'Ссылка', icon: <Link2 size={16} />, command: handlers.onLink },
     { title: 'Разделитель', icon: <Minus size={16} />, command: handlers.onDivider },

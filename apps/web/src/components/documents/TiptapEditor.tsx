@@ -11,6 +11,10 @@ import { EditorToolbar } from './EditorToolbar';
 import { SlashMenu, getSlashMenuItems, type SlashMenuRef } from './SlashMenu';
 import { SlashCommands } from '../../extensions/slash-commands';
 import { ResizableImage } from '../../extensions/resizable-image';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
 import { useDocumentsStore } from '../../store/documents.store';
 import { useLangStore } from '../../store/lang.store';
 import { apiClient } from '../../api/client';
@@ -116,6 +120,10 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
           placeholder: t('Начните писать или нажмите / для команд...', 'Start writing or press / for commands...'),
         }),
         ResizableImage,
+        Table.configure({ resizable: true }),
+        TableRow,
+        TableCell,
+        TableHeader,
         SlashCommands.configure({
           suggestion: {
             char: '/',
@@ -132,6 +140,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
                 onTaskList: () => editorRef.current?.chain().focus().toggleTaskList().run(),
                 onCodeBlock: () => editorRef.current?.chain().focus().toggleCodeBlock().run(),
                 onBlockquote: () => editorRef.current?.chain().focus().toggleBlockquote().run(),
+                onTable: () => editorRef.current?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
               });
             },
             render: () => {

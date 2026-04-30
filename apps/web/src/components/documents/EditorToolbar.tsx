@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/react';
 import {
   Bold, Italic, Strikethrough, Heading1, Heading2, Heading3,
-  List, ListOrdered, CheckSquare, Quote, Code2, Minus, Link2, Undo2, Redo2,
+  List, ListOrdered, CheckSquare, Quote, Code2, Minus, Link2, Undo2, Redo2, Table2,
 } from 'lucide-react';
 
 interface Props {
@@ -92,6 +92,9 @@ export function EditorToolbar({ editor }: Props) {
       <Sep />
       <Btn active={editor.isActive('link')} onClick={addLink} title="Link (Ctrl+K)">
         <Link2 size={16} />
+      </Btn>
+      <Btn onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Table">
+        <Table2 size={16} />
       </Btn>
       <Sep />
       <Btn onClick={() => editor.chain().focus().undo().run()} title="Undo (Ctrl+Z)">
