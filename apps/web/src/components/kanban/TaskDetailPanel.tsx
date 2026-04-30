@@ -210,11 +210,13 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
       {task && (
         <div className="space-y-4">
           {/* Title */}
-          <input
-            className="w-full text-lg font-semibold bg-transparent text-gray-800 dark:text-gray-100 border-b border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
+          <textarea
+            className="w-full text-lg font-semibold bg-transparent text-gray-800 dark:text-gray-100 border-b border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-indigo-400 focus:outline-none px-1 py-0.5 resize-none overflow-hidden"
+            rows={Math.min(4, Math.ceil((form.title.length || 1) / 35))}
             value={form.title}
             onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
             onBlur={() => handleBlur('title')}
+            onInput={(e) => { const el = e.target as HTMLTextAreaElement; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }}
             disabled={saving}
           />
 
