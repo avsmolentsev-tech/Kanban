@@ -437,6 +437,29 @@ meetingsRouter.post('/:id/summarize', async (req: AuthRequest, res: Response) =>
   }
 });
 
+// Download meeting file (summary or full) as md/pdf/docx
+meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params['id']);
+  const userId = getUserId(req);
+  if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
+  const exists = getDb().prepare('SELECT id FROM meetings WHERE id = ? AND user_id = ?').get(id, userId);
+  if (!exists) { res.status(404).json(fail('Meeting not found')); return; }
+  const type = (req.query['type'] as string) === 'full' ? 'full' : 'summary';
+  const format = (['md', 'pdf', 'docx'].includes(req.query['format'] as string) ? req.query['format'] : 'md') as 'md' | 'pdf' | 'docx';
+  try {
+    const { path: filePath, filename } = await buildMeetingFile(id, type, format);
+    res.download(filePath, filename, () => {
+      try { fs.unlinkSync(filePath); } catch {}
+      if (filePath.endsWith('.pdf') || filePath.endsWith('.docx')) {
+        const mdPath = filePath.replace(/\.(pdf|docx)$/, '.md');
+        try { fs.unlinkSync(mdPath); } catch {}
+      }
+    });
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Download failed'));
+  }
+});
+
 meetingsRouter.post('/:id/send-to-telegram', async (req: AuthRequest, res: Response) => {
   const parsed = SendToTelegramSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
