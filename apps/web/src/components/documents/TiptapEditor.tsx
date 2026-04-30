@@ -67,7 +67,9 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
     fileInputRef.current?.click();
   }, []);
 
-  const handleChildDocument = useCallback(async (editorInstance: any) => {
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+
+  const handleChildDocument = useCallback(async () => {
     const activeDoc = useDocumentsStore.getState().activeDocument;
     if (!activeDoc) return;
     const child = await createDocument({
@@ -75,9 +77,12 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
       project_id: activeDoc.project_id,
       parent_id: activeDoc.id,
     });
-    editorInstance?.chain().focus().insertContent(
-      `<p><a href="#doc-${child.id}" class="child-doc-link" data-doc-id="${child.id}">📄 ${child.title}</a></p>`
-    ).run();
+    const ed = editorRef.current;
+    if (ed) {
+      ed.chain().focus().insertContent(
+        `<p><a href="#doc-${child.id}" class="child-doc-link" data-doc-id="${child.id}">📄 ${child.title}</a></p>`
+      ).run();
+    }
     setActiveDocument(child);
   }, [createDocument, setActiveDocument, t]);
 
@@ -101,16 +106,16 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
             startOfLine: false,
             items: ({ query }: { query: string }) => {
               return getSlashMenuItems(query, {
-                onChildDocument: () => handleChildDocument(editor),
+                onChildDocument: () => handleChildDocument(),
                 onImage: () => handleImageInsert(),
                 onLink: () => {
                   const url = window.prompt('URL:');
-                  if (url) editor?.chain().focus().setLink({ href: url }).run();
+                  if (url) editorRef.current?.chain().focus().setLink({ href: url }).run();
                 },
-                onDivider: () => editor?.chain().focus().setHorizontalRule().run(),
-                onTaskList: () => editor?.chain().focus().toggleTaskList().run(),
-                onCodeBlock: () => editor?.chain().focus().toggleCodeBlock().run(),
-                onBlockquote: () => editor?.chain().focus().toggleBlockquote().run(),
+                onDivider: () => editorRef.current?.chain().focus().setHorizontalRule().run(),
+                onTaskList: () => editorRef.current?.chain().focus().toggleTaskList().run(),
+                onCodeBlock: () => editorRef.current?.chain().focus().toggleCodeBlock().run(),
+                onBlockquote: () => editorRef.current?.chain().focus().toggleBlockquote().run(),
               });
             },
             render: () => {
@@ -163,7 +168,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
             if (file.type.startsWith('image/')) {
               event.preventDefault();
               uploadImage(file).then((url) => {
-                if (url) editor?.chain().focus().setImage({ src: url }).run();
+                if (url) editorRef.current?.chain().focus().setImage({ src: url }).run();
               });
               return true;
             }
@@ -177,7 +182,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
             if (file.type.startsWith('image/')) {
               event.preventDefault();
               uploadImage(file).then((url) => {
-                if (url) editor?.chain().focus().setImage({ src: url }).run();
+                if (url) editorRef.current?.chain().focus().setImage({ src: url }).run();
               });
               return true;
             }
@@ -192,6 +197,11 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
     [documentId],
   );
 
+  // Keep ref in sync for slash menu handlers
+  useEffect(() => {
+    (editorRef as any).current = editor;
+  }, [editor]);
+
   useEffect(() => {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -202,9 +212,9 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
     const file = e.target.files?.[0];
     if (!file) return;
     const url = await uploadImage(file);
-    if (url) editor?.chain().focus().setImage({ src: url }).run();
+    if (url) editorRef.current?.chain().focus().setImage({ src: url }).run();
     e.target.value = '';
-  }, [editor, uploadImage]);
+  }, [uploadImage]);
 
   // Floating "+" button state
   const [plusBtnPos, setPlusBtnPos] = useState<{ top: number; visible: boolean }>({ top: 0, visible: false });
