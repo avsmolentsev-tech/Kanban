@@ -221,7 +221,7 @@ export function GanttPage() {
         projects={projects}
         people={people}
         onClose={() => setSelected(null)}
-        onUpdated={() => { refresh(); setSelected(null); }}
+        onUpdated={refresh}
       />
     </div>
   );
