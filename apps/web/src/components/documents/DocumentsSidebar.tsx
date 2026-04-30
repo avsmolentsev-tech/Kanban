@@ -62,6 +62,17 @@ export function DocumentsSidebar() {
     fetchProjects();
   }, [fetchProjects]);
 
+  // Refresh expanded projects when window regains focus (picks up changes from AI assistant, Telegram, etc.)
+  useEffect(() => {
+    const onFocus = () => {
+      for (const pid of useDocumentsStore.getState().expandedProjects) {
+        useDocumentsStore.getState().loadProjectData(pid);
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
   const handleNewDoc = async () => {
     const expandedArr = Array.from(expandedProjects);
     const projectId = expandedArr.length > 0 ? expandedArr[0] : null;
