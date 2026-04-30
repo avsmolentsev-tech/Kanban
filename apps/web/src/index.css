@@ -272,3 +272,7 @@ html.dark .tiptap a:hover { color: #a5b4fc; }
   background: #6366f1; border-radius: 2px; cursor: nwse-resize; opacity: 0; transition: opacity 0.15s;
 }
 .image-resize-container:hover .image-resize-handle { opacity: 1; }
+
+/* Slash menu tippy */
+.tippy-box[data-theme='slash-menu'] { background: transparent; border: none; box-shadow: none; }
+.tippy-box[data-theme='slash-menu'] .tippy-content { padding: 0; }
