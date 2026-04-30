@@ -4,8 +4,7 @@ import { TiptapEditor } from '../components/documents/TiptapEditor';
 import { Breadcrumbs } from '../components/documents/Breadcrumbs';
 import { MeetingReadonly } from '../components/documents/MeetingReadonly';
 import { MeetingEditable } from '../components/documents/MeetingEditable';
-import { IdeaReadonly } from '../components/documents/IdeaReadonly';
-import { IdeaEditable } from '../components/documents/IdeaEditable';
+import { IdeaTiptapEditor } from '../components/documents/IdeaTiptapEditor';
 import { useDocumentsStore } from '../store/documents.store';
 import { useProjectsStore } from '../store';
 import { useLangStore } from '../store/lang.store';
@@ -76,9 +75,7 @@ export function NotionDocumentsPage() {
             )}
 
             {activeItem.type === 'idea' && activeIdea && (
-              <div className="flex-1 overflow-y-auto">
-                {editingIdea ? <IdeaEditable idea={activeIdea} /> : <IdeaReadonly idea={activeIdea} />}
-              </div>
+              <IdeaTiptapEditor key={activeIdea.id} idea={activeIdea} />
             )}
           </>
         ) : (
