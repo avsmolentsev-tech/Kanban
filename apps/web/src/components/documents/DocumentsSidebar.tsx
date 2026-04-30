@@ -29,6 +29,12 @@ export function DocumentsSidebar() {
     else if (id.startsWith('idea-drag-')) setDragLabel({ text, type: 'idea' });
   };
 
+  const reloadAllExpanded = async () => {
+    for (const pid of useDocumentsStore.getState().expandedProjects) {
+      await useDocumentsStore.getState().loadProjectData(pid);
+    }
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     setDragLabel(null);
     const { active, over } = event;
@@ -41,6 +47,8 @@ export function DocumentsSidebar() {
       const docId = Number(activeId.replace('doc-drag-', ''));
       const targetProjectId = overId === 'project-drop-none' ? null : Number(overId.replace('project-drop-', ''));
       await updateDocument(docId, { project_id: targetProjectId, parent_id: null });
+      // Reload ALL expanded projects so source project removes the doc too
+      await reloadAllExpanded();
     }
     // Document → Document drop (nesting)
     if (activeId.startsWith('doc-drag-') && overId.startsWith('doc-drop-')) {
@@ -48,6 +56,7 @@ export function DocumentsSidebar() {
       const parentDocId = Number(overId.replace('doc-drop-', ''));
       if (docId !== parentDocId) {
         await updateDocument(docId, { parent_id: parentDocId });
+        await reloadAllExpanded();
       }
     }
     // Idea → Project drop
@@ -55,10 +64,7 @@ export function DocumentsSidebar() {
       const ideaId = Number(activeId.replace('idea-drag-', ''));
       const targetProjectId = overId === 'project-drop-none' ? null : Number(overId.replace('project-drop-', ''));
       await apiPatch(`/ideas/${ideaId}`, { project_id: targetProjectId });
-      // Reload expanded projects
-      for (const pid of expandedProjects) {
-        await useDocumentsStore.getState().loadProjectData(pid);
-      }
+      await reloadAllExpanded();
     }
   };
 
