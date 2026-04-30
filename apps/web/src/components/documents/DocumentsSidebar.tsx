@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react';
 import { useProjectsStore } from '../../store';
 import { useDocumentsStore } from '../../store/documents.store';
 import { ProjectTreeItem } from './ProjectTreeItem';
+import { SidebarSearch } from './SidebarSearch';
 import { useLangStore } from '../../store/lang.store';
 
 export function DocumentsSidebar() {
@@ -29,6 +30,8 @@ export function DocumentsSidebar() {
           {t('Проекты', 'Projects')}
         </span>
       </div>
+
+      <SidebarSearch />
 
       <div className="flex-1 overflow-y-auto px-1 py-2">
         {activeProjects.map((p) => (

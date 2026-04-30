@@ -1,4 +1,4 @@
-import { ChevronRight, Calendar, Lightbulb, Trash2 } from 'lucide-react';
+import { ChevronRight, Calendar, Lightbulb, Plus, Trash2 } from 'lucide-react';
 import type { Project } from '@pis/shared';
 import { useDocumentsStore } from '../../store/documents.store';
 import { DocumentTreeItem } from './DocumentTreeItem';
@@ -13,14 +13,28 @@ export function ProjectTreeItem({ project }: Props) {
   const { t } = useLangStore();
   const {
     expandedProjects, toggleProject, projectData,
-    activeItem, setActiveMeeting, setActiveIdea, deleteIdea,
+    activeItem, setActiveMeeting, setActiveIdea, deleteIdea, searchQuery,
+    createDocument, setActiveDocument, createMeeting, createIdea,
   } = useDocumentsStore();
   const projectId = project?.id ?? null;
   const isExpanded = expandedProjects.has(projectId);
   const data = projectData.get(projectId);
 
+  const query = searchQuery.toLowerCase().trim();
+  const filteredData = data && query ? {
+    documents: data.documents.filter(d => d.title.toLowerCase().includes(query)),
+    meetings: data.meetings.filter(m => m.title.toLowerCase().includes(query)),
+    ideas: data.ideas.filter(i => i.title.toLowerCase().includes(query)),
+  } : data;
+
+  const hasMatches = filteredData && (filteredData.documents.length > 0 || filteredData.meetings.length > 0 || filteredData.ideas.length > 0);
+  const shouldShow = !query || hasMatches;
+  const effectiveExpanded = query ? !!hasMatches : isExpanded;
+
   const [meetingsCollapsed, setMeetingsCollapsed] = useState(false);
   const [ideasCollapsed, setIdeasCollapsed] = useState(false);
+
+  if (!shouldShow) return null;
 
   return (
     <div className="mb-1">
@@ -41,87 +55,102 @@ export function ProjectTreeItem({ project }: Props) {
         </span>
       </button>
 
-      {isExpanded && data && (
+      {effectiveExpanded && filteredData && (
         <div className="ml-2 mt-0.5">
-          {data.documents.length > 0 && (
-            <div className="mb-1">
-              <div className="text-[10px] uppercase tracking-wider text-gray-600 px-2 py-1 font-medium">
-                {t('Документы', 'Documents')}
-              </div>
-              {data.documents.map((doc) => (
-                <DocumentTreeItem key={doc.id} doc={doc} depth={0} />
-              ))}
+          <div className="mb-1">
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-gray-600 px-2 py-1 font-medium group/docs">
+              <span>{t('Документы', 'Documents')}</span>
+              <button
+                onClick={async (e) => { e.stopPropagation(); const doc = await createDocument({ title: t('Новый документ', 'New document'), project_id: projectId }); setActiveDocument(doc); }}
+                className="opacity-0 group-hover/docs:opacity-100 text-gray-400 hover:text-indigo-500 transition-all cursor-pointer"
+                title={t('Новый документ', 'New document')}
+              >
+                <Plus size={14} />
+              </button>
             </div>
-          )}
+            {filteredData.documents.map((doc) => (
+              <DocumentTreeItem key={doc.id} doc={doc} depth={0} />
+            ))}
+          </div>
 
-          {data.meetings.length > 0 && (
-            <div className="mb-1">
+          <div className="mb-1">
+            <div className="flex items-center justify-between px-2 py-1 group/meetings">
               <button
                 onClick={() => setMeetingsCollapsed(!meetingsCollapsed)}
-                className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-600 px-2 py-1 font-medium cursor-pointer hover:text-gray-400"
+                className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-600 font-medium cursor-pointer hover:text-gray-400"
               >
                 <ChevronRight size={10} className={`transition-transform ${!meetingsCollapsed ? 'rotate-90' : ''}`} />
-                {t('Встречи', 'Meetings')} ({data.meetings.length})
+                {t('Встречи', 'Meetings')} ({filteredData.meetings.length})
               </button>
-              {!meetingsCollapsed && data.meetings.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setActiveMeeting(m)}
-                  className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer ${
-                    activeItem?.type === 'meeting' && activeItem.id === m.id
-                      ? 'bg-indigo-600/20 text-indigo-300'
-                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-200'
-                  }`}
-                  style={{ paddingLeft: '24px' }}
-                >
-                  <Calendar size={13} className="flex-shrink-0 opacity-60" />
-                  <span className="truncate flex-1">{m.title}</span>
-                  <span className="text-[10px] text-gray-600 flex-shrink-0">
-                    {m.date.split('T')[0]?.slice(5)}
-                  </span>
-                </button>
-              ))}
+              <button
+                onClick={async (e) => { e.stopPropagation(); await createMeeting(projectId); }}
+                className="opacity-0 group-hover/meetings:opacity-100 text-gray-400 hover:text-indigo-500 transition-all cursor-pointer"
+                title={t('Новая встреча', 'New meeting')}
+              >
+                <Plus size={14} />
+              </button>
             </div>
-          )}
+            {!meetingsCollapsed && filteredData.meetings.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setActiveMeeting(m)}
+                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer ${
+                  activeItem?.type === 'meeting' && activeItem.id === m.id
+                    ? 'bg-indigo-600/20 text-indigo-300'
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-200'
+                }`}
+                style={{ paddingLeft: '24px' }}
+              >
+                <Calendar size={13} className="flex-shrink-0 opacity-60" />
+                <span className="truncate flex-1">{m.title}</span>
+                <span className="text-[10px] text-gray-600 flex-shrink-0">
+                  {m.date.split('T')[0]?.slice(5)}
+                </span>
+              </button>
+            ))}
+          </div>
 
-          {data.ideas.length > 0 && (
-            <div className="mb-1">
+          <div className="mb-1">
+            <div className="flex items-center justify-between px-2 py-1 group/ideas">
               <button
                 onClick={() => setIdeasCollapsed(!ideasCollapsed)}
-                className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-600 px-2 py-1 font-medium cursor-pointer hover:text-gray-400"
+                className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-600 font-medium cursor-pointer hover:text-gray-400"
               >
                 <ChevronRight size={10} className={`transition-transform ${!ideasCollapsed ? 'rotate-90' : ''}`} />
-                {t('Идеи', 'Ideas')} ({data.ideas.length})
+                {t('Идеи', 'Ideas')} ({filteredData.ideas.length})
               </button>
-              {!ideasCollapsed && data.ideas.map((idea) => (
-                <button
-                  key={idea.id}
-                  onClick={() => setActiveIdea(idea)}
-                  className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer group ${
-                    activeItem?.type === 'idea' && activeItem.id === idea.id
-                      ? 'bg-indigo-600/20 text-indigo-300'
-                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-200'
-                  }`}
-                  style={{ paddingLeft: '24px' }}
-                >
-                  <Lightbulb size={13} className="flex-shrink-0 opacity-60" />
-                  <span className="truncate">{idea.title}</span>
-                  <Trash2
-                    size={12}
-                    className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all ml-auto"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm('Удалить идею?')) deleteIdea(idea.id, projectId);
-                    }}
-                  />
-                </button>
-              ))}
+              <button
+                onClick={async (e) => { e.stopPropagation(); await createIdea(projectId); }}
+                className="opacity-0 group-hover/ideas:opacity-100 text-gray-400 hover:text-indigo-500 transition-all cursor-pointer"
+                title={t('Новая идея', 'New idea')}
+              >
+                <Plus size={14} />
+              </button>
             </div>
-          )}
-
-          {data.documents.length === 0 && data.meetings.length === 0 && data.ideas.length === 0 && (
-            <div className="text-xs text-gray-600 px-4 py-2">{t('Пусто', 'Empty')}</div>
-          )}
+            {!ideasCollapsed && filteredData.ideas.map((idea) => (
+              <button
+                key={idea.id}
+                onClick={() => setActiveIdea(idea)}
+                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer group ${
+                  activeItem?.type === 'idea' && activeItem.id === idea.id
+                    ? 'bg-indigo-600/20 text-indigo-300'
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-200'
+                }`}
+                style={{ paddingLeft: '24px' }}
+              >
+                <Lightbulb size={13} className="flex-shrink-0 opacity-60" />
+                <span className="truncate">{idea.title}</span>
+                <Trash2
+                  size={12}
+                  className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all ml-auto"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm('Удалить идею?')) deleteIdea(idea.id, projectId);
+                  }}
+                />
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
