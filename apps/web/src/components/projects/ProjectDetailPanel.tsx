@@ -144,9 +144,9 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
               <div className="text-xs text-gray-500 mb-2">🤝 {t('Встречи', 'Meetings')} ({detail.meetings.length})</div>
               <div className="space-y-1 max-h-32 overflow-auto">
                 {detail.meetings.map(m => (
-                  <div key={m.id} className="text-xs text-gray-600 dark:text-gray-300 flex items-center gap-2 py-1">
-                    <span className="text-gray-400">{m.date}</span>
-                    <span className="truncate">{m.title}</span>
+                  <div key={m.id} className="text-xs text-gray-600 dark:text-gray-300 flex items-start gap-2 py-1">
+                    <span className="text-gray-400 flex-shrink-0">{m.date}</span>
+                    <span>{m.title}</span>
                   </div>
                 ))}
               </div>
@@ -173,9 +173,9 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
               <div className="text-xs text-gray-500 mb-2">📋 {t('Задачи', 'Tasks')} ({detail.tasks.length})</div>
               <div className="space-y-1 max-h-40 overflow-auto">
                 {detail.tasks.slice(0, 15).map(task => (
-                  <div key={task.id} className={`text-xs flex items-center gap-2 py-0.5 ${task.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-600 dark:text-gray-300'}`}>
-                    <span>{task.status === 'done' ? '✅' : task.status === 'in_progress' ? '🔄' : '📋'}</span>
-                    <span className="truncate">{task.title}</span>
+                  <div key={task.id} className={`text-xs flex items-start gap-2 py-0.5 ${task.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-600 dark:text-gray-300'}`}>
+                    <span className="flex-shrink-0">{task.status === 'done' ? '✅' : task.status === 'in_progress' ? '🔄' : '📋'}</span>
+                    <span>{task.title}</span>
                     <span className="ml-auto text-gray-300">{'⭐'.repeat(task.priority)}</span>
                   </div>
                 ))}
