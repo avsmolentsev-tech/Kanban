@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
+import { config } from '../config';
 import { projectsRouter } from './projects';
 import { tasksRouter } from './tasks';
 import { meetingsRouter } from './meetings';
@@ -29,6 +32,14 @@ router.use('/auth', authRouter);
 router.use('/widget', widgetRouter);
 router.use('/email-webhook', emailWebhookRouter);
 router.use('/google-calendar', googleCalendarRouter);
+
+// Public: serve attachment files (images in documents) without auth — filenames are random/unguessable
+router.get('/documents/attachments/file/:filename', (req, res) => {
+  const attachDir = path.join(config.vaultPath, 'Attachments');
+  const filePath = path.join(attachDir, req.params['filename']!);
+  if (!fs.existsSync(filePath)) { res.status(404).json({ success: false, error: 'File not found' }); return; }
+  res.sendFile(filePath);
+});
 
 // All routes below require authentication
 router.use(requireAuth);
