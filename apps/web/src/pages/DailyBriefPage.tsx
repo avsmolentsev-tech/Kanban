@@ -56,12 +56,14 @@ export function DailyBriefPage() {
             <button
               key={task.id}
               onClick={() => setSelectedTask(task)}
-              className="w-full flex items-center gap-2 text-sm text-left rounded-md px-2 py-1 -mx-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+              className="w-full flex items-start gap-2 text-sm text-left rounded-md px-2 py-1.5 -mx-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
             >
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${task.priority >= 4 ? 'bg-red-500' : task.priority === 3 ? 'bg-yellow-500' : 'bg-gray-300'}`} />
-              <span className="text-gray-800 dark:text-gray-200 truncate">{task.title}</span>
-              {proj && <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white ml-auto flex-shrink-0" style={{ backgroundColor: proj.color }}>{proj.name}</span>}
-              {task.due_date && <span className={`text-xs flex-shrink-0 ${task.due_date < today ? 'text-red-500 font-medium' : 'text-gray-400'}`}>{task.due_date}</span>}
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5 ${task.priority >= 4 ? 'bg-red-500' : task.priority === 3 ? 'bg-yellow-500' : 'bg-gray-300'}`} />
+              <span className="text-gray-800 dark:text-gray-200 flex-1">{task.title}</span>
+              <span className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+                {proj && <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: proj.color }}>{proj.name}</span>}
+                {task.due_date && <span className={`text-xs ${task.due_date < today ? 'text-red-500 font-medium' : 'text-gray-400'}`}>{task.due_date}</span>}
+              </span>
             </button>
           );
         })}
