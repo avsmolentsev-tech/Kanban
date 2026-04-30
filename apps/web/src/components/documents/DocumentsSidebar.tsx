@@ -62,15 +62,23 @@ export function DocumentsSidebar() {
     fetchProjects();
   }, [fetchProjects]);
 
-  // Refresh expanded projects when window regains focus (picks up changes from AI assistant, Telegram, etc.)
+  // Refresh expanded projects: on focus, visibility change, and every 30s polling
   useEffect(() => {
-    const onFocus = () => {
+    const refresh = () => {
       for (const pid of useDocumentsStore.getState().expandedProjects) {
         useDocumentsStore.getState().loadProjectData(pid);
       }
     };
+    const onFocus = () => refresh();
+    const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    const interval = setInterval(refresh, 30000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(interval);
+    };
   }, []);
 
   const handleNewDoc = async () => {
