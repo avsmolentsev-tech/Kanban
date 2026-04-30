@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileText, ChevronRight } from 'lucide-react';
+import { FileText, ChevronRight, Trash2 } from 'lucide-react';
 import type { DocumentNode } from '../../api/documents.api';
 import { useDocumentsStore } from '../../store/documents.store';
 
@@ -10,7 +10,7 @@ interface Props {
 
 export function DocumentTreeItem({ doc, depth }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const { activeItem, setActiveDocument } = useDocumentsStore();
+  const { activeItem, setActiveDocument, deleteDocument } = useDocumentsStore();
   const isActive = activeItem?.type === 'document' && activeItem.id === doc.id;
   const hasChildren = doc.children && doc.children.length > 0;
 
@@ -40,6 +40,14 @@ export function DocumentTreeItem({ doc, depth }: Props) {
         )}
         <FileText size={14} className="flex-shrink-0 opacity-60" />
         <span className="truncate">{doc.title}</span>
+        <Trash2
+          size={12}
+          className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all ml-auto"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (confirm('Удалить документ?')) deleteDocument(doc.id);
+          }}
+        />
       </button>
       {expanded && hasChildren && (
         <div>

@@ -1,4 +1,4 @@
-import { ChevronRight, Calendar, Lightbulb } from 'lucide-react';
+import { ChevronRight, Calendar, Lightbulb, Trash2 } from 'lucide-react';
 import type { Project } from '@pis/shared';
 import { useDocumentsStore } from '../../store/documents.store';
 import { DocumentTreeItem } from './DocumentTreeItem';
@@ -13,7 +13,7 @@ export function ProjectTreeItem({ project }: Props) {
   const { t } = useLangStore();
   const {
     expandedProjects, toggleProject, projectData,
-    activeItem, setActiveMeeting, setActiveIdea,
+    activeItem, setActiveMeeting, setActiveIdea, deleteIdea,
   } = useDocumentsStore();
   const projectId = project?.id ?? null;
   const isExpanded = expandedProjects.has(projectId);
@@ -97,7 +97,7 @@ export function ProjectTreeItem({ project }: Props) {
                 <button
                   key={idea.id}
                   onClick={() => setActiveIdea(idea)}
-                  className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer ${
+                  className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer group ${
                     activeItem?.type === 'idea' && activeItem.id === idea.id
                       ? 'bg-indigo-600/20 text-indigo-300'
                       : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-200'
@@ -106,6 +106,14 @@ export function ProjectTreeItem({ project }: Props) {
                 >
                   <Lightbulb size={13} className="flex-shrink-0 opacity-60" />
                   <span className="truncate">{idea.title}</span>
+                  <Trash2
+                    size={12}
+                    className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all ml-auto"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm('Удалить идею?')) deleteIdea(idea.id, projectId);
+                    }}
+                  />
                 </button>
               ))}
             </div>
