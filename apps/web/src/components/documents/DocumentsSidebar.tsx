@@ -42,22 +42,12 @@ export function DocumentsSidebar() {
     const activeId = String(active.id);
     const overId = String(over.id);
 
-    // Document → Project drop
+    // Document → Project drop (move between projects)
     if (activeId.startsWith('doc-drag-') && overId.startsWith('project-drop-')) {
       const docId = Number(activeId.replace('doc-drag-', ''));
       const targetProjectId = overId === 'project-drop-none' ? null : Number(overId.replace('project-drop-', ''));
       await updateDocument(docId, { project_id: targetProjectId, parent_id: null });
-      // Reload ALL expanded projects so source project removes the doc too
       await reloadAllExpanded();
-    }
-    // Document → Document drop (nesting)
-    if (activeId.startsWith('doc-drag-') && overId.startsWith('doc-drop-')) {
-      const docId = Number(activeId.replace('doc-drag-', ''));
-      const parentDocId = Number(overId.replace('doc-drop-', ''));
-      if (docId !== parentDocId) {
-        await updateDocument(docId, { parent_id: parentDocId });
-        await reloadAllExpanded();
-      }
     }
     // Idea → Project drop
     if (activeId.startsWith('idea-drag-') && overId.startsWith('project-drop-')) {

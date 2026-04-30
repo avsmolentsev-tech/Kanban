@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { FileText, ChevronRight, Trash2 } from 'lucide-react';
-import { useDraggable, useDroppable } from '@dnd-kit/core';
+import { useDraggable } from '@dnd-kit/core';
 import type { DocumentNode } from '../../api/documents.api';
 import { useDocumentsStore } from '../../store/documents.store';
 
@@ -28,17 +28,11 @@ export function DocumentTreeItem({ doc, depth }: Props) {
   const hasChildren = doc.children && doc.children.length > 0;
 
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({ id: `doc-drag-${doc.id}` });
-  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: `doc-drop-${doc.id}` });
-
-  const combinedRef = useCallback((node: HTMLElement | null) => {
-    setDragRef(node);
-    setDropRef(node);
-  }, [setDragRef, setDropRef]);
 
   return (
     <div>
       <button
-        ref={combinedRef}
+        ref={setDragRef}
         {...attributes}
         {...listeners}
         data-drag-label={`doc-drag-${doc.id}`}
@@ -47,7 +41,7 @@ export function DocumentTreeItem({ doc, depth }: Props) {
           isActive
             ? 'bg-indigo-600/20 text-indigo-300'
             : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-200'
-        } ${isOver ? 'ring-2 ring-indigo-500' : ''}`}
+        }`}
         style={{ paddingLeft: `${8 + depth * 16}px`, opacity: isDragging ? 0.4 : 1 }}
       >
         {hasChildren ? (

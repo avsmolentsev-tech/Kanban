@@ -71,11 +71,10 @@ export function ProjectTreeItem({ project }: Props) {
   if (!shouldShow) return null;
 
   return (
-    <div className="mb-1">
+    <div className={`mb-1 ${isProjectOver ? 'ring-2 ring-indigo-500 rounded-md' : ''}`} ref={setDropRef}>
       <button
-        ref={setDropRef}
         onClick={() => toggleProject(projectId)}
-        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer ${isProjectOver ? 'bg-indigo-100 dark:bg-indigo-600/20 ring-2 ring-indigo-500' : ''}`}
+        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer ${isProjectOver ? 'bg-indigo-100 dark:bg-indigo-600/20' : ''}`}
       >
         <ChevronRight
           size={14}
