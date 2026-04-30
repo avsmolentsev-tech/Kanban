@@ -1,5 +1,7 @@
-import { Lightbulb } from 'lucide-react';
+import { Lightbulb, Pencil } from 'lucide-react';
 import type { SidebarIdea } from '../../store/documents.store';
+import { useDocumentsStore } from '../../store/documents.store';
+import { useLangStore } from '../../store/lang.store';
 
 const CAT_COLORS: Record<string, string> = {
   business: 'bg-blue-600/20 text-blue-400',
@@ -13,6 +15,7 @@ interface Props {
 }
 
 export function IdeaReadonly({ idea }: Props) {
+  const { t } = useLangStore();
   return (
     <div className="px-8 py-6 max-w-2xl">
       <div className="flex items-center gap-3 mb-4">
@@ -30,6 +33,14 @@ export function IdeaReadonly({ idea }: Props) {
           {idea.status}
         </span>
       </div>
+
+      <button
+        onClick={() => useDocumentsStore.getState().setEditingIdea(true)}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer mb-6"
+      >
+        <Pencil size={14} />
+        {t('Редактировать', 'Edit')}
+      </button>
 
       {idea.body && (
         <div className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">

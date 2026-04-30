@@ -3,7 +3,9 @@ import { DocumentsSidebar } from '../components/documents/DocumentsSidebar';
 import { TiptapEditor } from '../components/documents/TiptapEditor';
 import { Breadcrumbs } from '../components/documents/Breadcrumbs';
 import { MeetingReadonly } from '../components/documents/MeetingReadonly';
+import { MeetingEditable } from '../components/documents/MeetingEditable';
 import { IdeaReadonly } from '../components/documents/IdeaReadonly';
+import { IdeaEditable } from '../components/documents/IdeaEditable';
 import { useDocumentsStore } from '../store/documents.store';
 import { useProjectsStore } from '../store';
 import { useLangStore } from '../store/lang.store';
@@ -14,6 +16,7 @@ export function NotionDocumentsPage() {
   const { projects } = useProjectsStore();
   const {
     activeItem, activeDocument, activeMeeting, activeIdea,
+    editingMeeting, editingIdea,
     saving, lastSaved, updateDocument,
   } = useDocumentsStore();
 
@@ -68,13 +71,13 @@ export function NotionDocumentsPage() {
 
             {activeItem.type === 'meeting' && activeMeeting && (
               <div className="flex-1 overflow-y-auto">
-                <MeetingReadonly meeting={activeMeeting} />
+                {editingMeeting ? <MeetingEditable meeting={activeMeeting} /> : <MeetingReadonly meeting={activeMeeting} />}
               </div>
             )}
 
             {activeItem.type === 'idea' && activeIdea && (
               <div className="flex-1 overflow-y-auto">
-                <IdeaReadonly idea={activeIdea} />
+                {editingIdea ? <IdeaEditable idea={activeIdea} /> : <IdeaReadonly idea={activeIdea} />}
               </div>
             )}
           </>

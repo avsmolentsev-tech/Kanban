@@ -1,5 +1,6 @@
-import { Calendar, Users, Download, FileText, ScrollText } from 'lucide-react';
+import { Calendar, Users, Download, FileText, ScrollText, Pencil } from 'lucide-react';
 import type { SidebarMeeting } from '../../store/documents.store';
+import { useDocumentsStore } from '../../store/documents.store';
 import { useLangStore } from '../../store/lang.store';
 import { useEffect, useState } from 'react';
 import { apiGet, apiClient } from '../../api/client';
@@ -129,6 +130,14 @@ export function MeetingReadonly({ meeting }: Props) {
           <DownloadButton meetingId={meeting.id} type="full" label={t('Скачать транскрипт', 'Download transcript')} icon={ScrollText} />
         )}
       </div>
+
+      <button
+        onClick={() => useDocumentsStore.getState().setEditingMeeting(true)}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer mb-6"
+      >
+        <Pencil size={14} />
+        {t('Редактировать', 'Edit')}
+      </button>
 
       {/* Summary section */}
       {summary && (
