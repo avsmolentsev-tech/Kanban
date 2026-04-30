@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { aiApi } from '../api/ai.api';
 import { useTasksStore, useProjectsStore } from '../store';
 import { useLangStore } from '../store/lang.store';
-import { Sun } from 'lucide-react';
+import { Sun, Check, Calendar, Clock, ArrowRight } from 'lucide-react';
 import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
 import { peopleApi } from '../api/people.api';
+import { tasksApi } from '../api/tasks.api';
 import type { Task, Person } from '@pis/shared';
 
 export function DailyBriefPage() {
@@ -47,22 +48,92 @@ export function DailyBriefPage() {
     fetchTasks();
   };
 
+  const localDateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const markDone = async (e: React.MouseEvent, task: Task) => {
+    e.stopPropagation();
+    await tasksApi.update(task.id, { status: 'done' });
+    fetchTasks();
+  };
+
+  const setDueDate = async (e: React.MouseEvent, task: Task, offset: 'today' | 'tomorrow' | 'week') => {
+    e.stopPropagation();
+    const d = new Date();
+    if (offset === 'tomorrow') d.setDate(d.getDate() + 1);
+    else if (offset === 'week') d.setDate(d.getDate() + 7);
+    await tasksApi.update(task.id, { due_date: localDateStr(d) });
+    fetchTasks();
+  };
+
+  const setCustomDate = async (e: React.ChangeEvent<HTMLInputElement>, task: Task) => {
+    e.stopPropagation();
+    if (e.target.value) {
+      await tasksApi.update(task.id, { due_date: e.target.value });
+      fetchTasks();
+    }
+  };
+
+  const startInProgress = async (e: React.MouseEvent, task: Task) => {
+    e.stopPropagation();
+    await tasksApi.update(task.id, { status: 'in_progress' });
+    fetchTasks();
+  };
+
   const TaskList = ({ items, emptyText }: { items: Task[]; emptyText: string }) => (
     items.length === 0 ? <div className="text-gray-400 text-sm">{emptyText}</div> : (
-      <div className="space-y-1.5">
+      <div className="space-y-0.5">
         {items.map(task => {
           const proj = task.project_id ? projectMap.get(task.project_id) : null;
           return (
-            <button
+            <div
               key={task.id}
-              onClick={() => setSelectedTask(task)}
-              className="w-full flex items-center gap-2 text-sm text-left rounded-md px-2 py-1 -mx-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
+              className="flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 -mx-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors group"
             >
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${task.priority >= 4 ? 'bg-red-500' : task.priority === 3 ? 'bg-yellow-500' : 'bg-gray-300'}`} />
-              <span className="text-gray-800 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">{task.title}</span>
-              {proj && <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white ml-auto flex-shrink-0" style={{ backgroundColor: proj.color }}>{proj.name}</span>}
-              {task.due_date && <span className={`text-xs flex-shrink-0 ${task.due_date < today ? 'text-red-500 font-medium' : 'text-gray-400'}`}>{task.due_date}</span>}
-            </button>
+              {/* Done checkbox */}
+              <button
+                onClick={(e) => markDone(e, task)}
+                className="w-5 h-5 rounded border-2 border-gray-300 dark:border-gray-600 hover:border-green-500 hover:bg-green-500/10 flex items-center justify-center flex-shrink-0 transition-colors cursor-pointer"
+                title={t('Выполнено', 'Done')}
+              >
+                <Check size={12} className="text-transparent group-hover:text-green-500 transition-colors" />
+              </button>
+
+              {/* Title — click opens detail panel */}
+              <button
+                onClick={() => setSelectedTask(task)}
+                className="text-gray-800 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors truncate text-left cursor-pointer flex-1 min-w-0"
+              >
+                {task.title}
+              </button>
+
+              {/* Project badge */}
+              {proj && <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white flex-shrink-0" style={{ backgroundColor: proj.color }}>{proj.name}</span>}
+
+              {/* Quick actions — visible on hover */}
+              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                {task.status !== 'in_progress' && (
+                  <button onClick={(e) => startInProgress(e, task)} className="p-1 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-gray-400 hover:text-indigo-500 cursor-pointer" title={t('В работу', 'Start')}>
+                    <ArrowRight size={13} />
+                  </button>
+                )}
+                <button onClick={(e) => setDueDate(e, task, 'today')} className="px-1.5 py-0.5 rounded text-[10px] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-gray-400 hover:text-blue-600 cursor-pointer" title={t('Сегодня', 'Today')}>
+                  {t('Сег', 'Tod')}
+                </button>
+                <button onClick={(e) => setDueDate(e, task, 'tomorrow')} className="px-1.5 py-0.5 rounded text-[10px] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-gray-400 hover:text-blue-600 cursor-pointer" title={t('Завтра', 'Tomorrow')}>
+                  {t('Завт', 'Tmr')}
+                </button>
+                <button onClick={(e) => setDueDate(e, task, 'week')} className="px-1.5 py-0.5 rounded text-[10px] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-gray-400 hover:text-blue-600 cursor-pointer" title={t('Через неделю', 'In a week')}>
+                  {t('Нед', 'Wk')}
+                </button>
+                <label className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 text-gray-400 hover:text-blue-600 cursor-pointer" title={t('Выбрать дату', 'Pick date')}>
+                  <Calendar size={13} />
+                  <input type="date" className="absolute opacity-0 w-0 h-0" onChange={(e) => setCustomDate(e, task)} onClick={(e) => e.stopPropagation()} />
+                </label>
+              </div>
+
+              {/* Due date */}
+              {task.due_date && <span className={`text-xs flex-shrink-0 ${task.due_date < today ? 'text-red-500 font-medium' : 'text-gray-400'}`}>{task.due_date.slice(5)}</span>}
+            </div>
           );
         })}
       </div>
