@@ -77,7 +77,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <input
-        className="text-2xl font-bold bg-transparent text-gray-100 px-8 pt-6 pb-2 focus:outline-none placeholder-gray-600 w-full"
+        className="text-2xl font-bold bg-transparent text-gray-800 dark:text-gray-100 px-8 pt-6 pb-2 focus:outline-none placeholder-gray-400 dark:placeholder-gray-600 w-full"
         value={title}
         onChange={(e) => onTitleChange(e.target.value)}
         placeholder={t('Без названия', 'Untitled')}

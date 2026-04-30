@@ -216,18 +216,30 @@ input[type="range"].zoom-slider::-moz-range-thumb {
   outline: none;
 }
 
-.tiptap h1 { font-size: 1.75rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #f1f5f9; }
-.tiptap h2 { font-size: 1.35rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #e2e8f0; }
-.tiptap h3 { font-size: 1.1rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; color: #cbd5e1; }
-.tiptap p { margin-bottom: 0.5rem; color: #cbd5e1; line-height: 1.7; }
-.tiptap ul, .tiptap ol { padding-left: 1.5rem; margin-bottom: 0.5rem; color: #cbd5e1; }
+.tiptap h1 { font-size: 1.75rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #1e293b; }
+.tiptap h2 { font-size: 1.35rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #334155; }
+.tiptap h3 { font-size: 1.1rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; color: #475569; }
+.tiptap p { margin-bottom: 0.5rem; color: #475569; line-height: 1.7; }
+.tiptap ul, .tiptap ol { padding-left: 1.5rem; margin-bottom: 0.5rem; color: #475569; }
 .tiptap li { margin-bottom: 0.25rem; }
-.tiptap blockquote { border-left: 3px solid #6366f1; padding-left: 1rem; margin: 0.75rem 0; color: #94a3b8; font-style: italic; }
-.tiptap pre { background: #1e293b; border-radius: 0.5rem; padding: 1rem; margin: 0.75rem 0; overflow-x: auto; }
+.tiptap blockquote { border-left: 3px solid #6366f1; padding-left: 1rem; margin: 0.75rem 0; color: #64748b; font-style: italic; }
+.tiptap pre { background: #f1f5f9; border-radius: 0.5rem; padding: 1rem; margin: 0.75rem 0; overflow-x: auto; }
 .tiptap code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; }
-.tiptap hr { border: none; border-top: 1px solid #334155; margin: 1.5rem 0; }
-.tiptap a { color: #818cf8; text-decoration: underline; }
-.tiptap a:hover { color: #a5b4fc; }
+.tiptap hr { border: none; border-top: 1px solid #e2e8f0; margin: 1.5rem 0; }
+.tiptap a { color: #6366f1; text-decoration: underline; }
+.tiptap a:hover { color: #4f46e5; }
+
+/* Tiptap dark mode */
+html.dark .tiptap h1 { color: #f1f5f9; }
+html.dark .tiptap h2 { color: #e2e8f0; }
+html.dark .tiptap h3 { color: #cbd5e1; }
+html.dark .tiptap p { color: #cbd5e1; }
+html.dark .tiptap ul, html.dark .tiptap ol { color: #cbd5e1; }
+html.dark .tiptap blockquote { color: #94a3b8; }
+html.dark .tiptap pre { background: #1e293b; }
+html.dark .tiptap hr { border-top-color: #334155; }
+html.dark .tiptap a { color: #818cf8; }
+html.dark .tiptap a:hover { color: #a5b4fc; }
 
 /* Task list (checkboxes) */
 .tiptap ul[data-type="taskList"] { list-style: none; padding-left: 0; }

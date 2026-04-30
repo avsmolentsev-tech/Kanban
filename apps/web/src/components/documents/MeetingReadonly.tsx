@@ -33,7 +33,7 @@ export function MeetingReadonly({ meeting }: Props) {
 
   return (
     <div className="px-8 py-6 max-w-2xl">
-      <h1 className="text-2xl font-bold text-gray-100 mb-4">{meeting.title}</h1>
+      <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">{meeting.title}</h1>
 
       <div className="flex items-center gap-4 text-sm text-gray-400 mb-6">
         <span className="flex items-center gap-1.5">
@@ -55,7 +55,7 @@ export function MeetingReadonly({ meeting }: Props) {
       )}
 
       {!meeting.summary_structured && meeting.summary_raw && (
-        <div className="text-sm text-gray-300 whitespace-pre-wrap mb-6">{meeting.summary_raw}</div>
+        <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap mb-6">{meeting.summary_raw}</div>
       )}
 
       {agreements.length > 0 && (

@@ -30,11 +30,11 @@ export function Breadcrumbs({ project, saving, lastSaved }: Props) {
   }
 
   return (
-    <div className="flex items-center gap-1.5 px-4 py-2 text-xs text-gray-400 border-b border-gray-700/50 bg-gray-800/30">
+    <div className="flex items-center gap-1.5 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700/50 bg-gray-50 dark:bg-gray-800/30">
       {crumbs.map((c, i) => (
         <span key={i} className="flex items-center gap-1.5">
           {i > 0 && <ChevronRight size={12} className="text-gray-600" />}
-          <span className={i === crumbs.length - 1 ? 'text-gray-200' : ''}>{c}</span>
+          <span className={i === crumbs.length - 1 ? 'text-gray-800 dark:text-gray-200' : ''}>{c}</span>
         </span>
       ))}
       <span className="ml-auto text-[10px] text-gray-500">

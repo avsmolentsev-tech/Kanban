@@ -42,7 +42,7 @@ export function NotionDocumentsPage() {
         : null;
 
   return (
-    <div className="relative flex h-full overflow-hidden bg-gray-900">
+    <div className="relative flex h-full overflow-hidden bg-white dark:bg-gray-900">
       {/* Background spheres — PIS style */}
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-violet-400/[0.06] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -67,11 +67,15 @@ export function NotionDocumentsPage() {
             )}
 
             {activeItem.type === 'meeting' && activeMeeting && (
-              <MeetingReadonly meeting={activeMeeting} />
+              <div className="flex-1 overflow-y-auto">
+                <MeetingReadonly meeting={activeMeeting} />
+              </div>
             )}
 
             {activeItem.type === 'idea' && activeIdea && (
-              <IdeaReadonly idea={activeIdea} />
+              <div className="flex-1 overflow-y-auto">
+                <IdeaReadonly idea={activeIdea} />
+              </div>
             )}
           </>
         ) : (

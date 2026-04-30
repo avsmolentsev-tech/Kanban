@@ -26,7 +26,7 @@ export function ProjectTreeItem({ project }: Props) {
     <div className="mb-1">
       <button
         onClick={() => toggleProject(projectId)}
-        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-gray-700/50 transition-colors cursor-pointer"
+        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
       >
         <ChevronRight
           size={14}
@@ -36,7 +36,7 @@ export function ProjectTreeItem({ project }: Props) {
           className="w-2.5 h-2.5 rounded-full flex-shrink-0"
           style={{ backgroundColor: project?.color ?? '#9ca3af' }}
         />
-        <span className="text-sm font-medium text-gray-200 truncate">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">
           {project?.name ?? t('Без проекта', 'No project')}
         </span>
       </button>
@@ -70,7 +70,7 @@ export function ProjectTreeItem({ project }: Props) {
                   className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer ${
                     activeItem?.type === 'meeting' && activeItem.id === m.id
                       ? 'bg-indigo-600/20 text-indigo-300'
-                      : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
+                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-200'
                   }`}
                   style={{ paddingLeft: '24px' }}
                 >
@@ -100,7 +100,7 @@ export function ProjectTreeItem({ project }: Props) {
                   className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer ${
                     activeItem?.type === 'idea' && activeItem.id === idea.id
                       ? 'bg-indigo-600/20 text-indigo-300'
-                      : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
+                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-200'
                   }`}
                   style={{ paddingLeft: '24px' }}
                 >

@@ -26,8 +26,8 @@ function Btn({
       title={title}
       className={`p-1.5 rounded transition-colors cursor-pointer ${
         active
-          ? 'bg-indigo-600/20 text-indigo-400'
-          : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
+          ? 'bg-indigo-600/20 text-indigo-600 dark:text-indigo-400'
+          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50'
       }`}
     >
       {children}
@@ -36,7 +36,7 @@ function Btn({
 }
 
 function Sep() {
-  return <div className="w-px h-5 bg-gray-700 mx-1" />;
+  return <div className="w-px h-5 bg-gray-300 dark:bg-gray-700 mx-1" />;
 }
 
 export function EditorToolbar({ editor }: Props) {
@@ -49,7 +49,7 @@ export function EditorToolbar({ editor }: Props) {
   };
 
   return (
-    <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-gray-700/50 bg-gray-800/50 flex-wrap">
+    <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-gray-200 dark:border-gray-700/50 bg-gray-50 dark:bg-gray-800/50 flex-wrap">
       <Btn active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold (Ctrl+B)">
         <Bold size={16} />
       </Btn>
