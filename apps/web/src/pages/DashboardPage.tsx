@@ -280,7 +280,7 @@ export function DashboardPage() {
         </WidgetCard>
 
         {/* Recent ideas */}
-        <WidgetCard title={t('Новые идеи', 'New Ideas')} linkTo="/ideas">
+        <WidgetCard title={t('Новые идеи', 'New Ideas')} linkTo="/documents">
           {ideas.length === 0 && (
             <p className="text-sm text-gray-400 dark:text-gray-500">{t('Нет идей', 'No ideas')}</p>
           )}

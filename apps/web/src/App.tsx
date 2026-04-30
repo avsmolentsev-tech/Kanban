@@ -82,7 +82,6 @@ const getDesktopNav = (t: (ru: string, en: string) => string): NavSection[] => [
   {
     title: t('Знания', 'Knowledge'),
     items: [
-      { to: '/ideas', label: t('Идеи', 'Ideas'), icon: Lightbulb },
       { to: '/documents', label: t('Документы', 'Docs'), icon: FileText },
       { to: '/journal', label: t('Дневник', 'Journal'), icon: BookOpen },
     ],

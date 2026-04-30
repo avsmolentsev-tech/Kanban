@@ -24,7 +24,6 @@ const getItems = (t: (ru: string, en: string) => string): MenuItem[] => [
   { to: '/calendar', label: t('Календарь', 'Calendar'), icon: CalendarDays, color: 'from-cyan-500 to-cyan-600' },
   { to: '/meetings', label: t('Встречи', 'Meetings'), icon: Users, color: 'from-emerald-500 to-emerald-600' },
   { to: '/people', label: t('Люди', 'People'), icon: Users, color: 'from-teal-500 to-teal-600' },
-  { to: '/ideas', label: t('Идеи', 'Ideas'), icon: Lightbulb, color: 'from-amber-500 to-amber-600' },
   { to: '/habits', label: t('Привычки', 'Habits'), icon: Flame, color: 'from-orange-500 to-orange-600' },
   { to: '/goals', label: t('Цели', 'Goals'), icon: Target, color: 'from-rose-500 to-rose-600' },
   { to: '/documents', label: t('Документы', 'Docs'), icon: FileText, color: 'from-slate-500 to-slate-600' },
