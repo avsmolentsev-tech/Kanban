@@ -92,7 +92,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
   const editor = useEditor(
     {
       extensions: [
-        StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+        StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false }),
         LinkExt.configure({
           openOnClick: true,
           HTMLAttributes: { class: 'text-indigo-600 dark:text-indigo-400 underline hover:text-indigo-500 dark:hover:text-indigo-300 cursor-pointer' },

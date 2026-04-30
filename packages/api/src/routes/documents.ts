@@ -83,6 +83,22 @@ documentsRouter.post('/', (req: AuthRequest, res: Response) => {
   res.status(201).json(ok(getDb().prepare('SELECT * FROM documents WHERE id = ?').get(result.lastInsertRowid)));
 });
 
+// Serve attachment files — MUST be before /:id to avoid route conflict
+documentsRouter.get('/attachments/file/:filename', (req: AuthRequest, res: Response) => {
+  const filePath = path.join(attachDir, req.params['filename']!);
+  if (!fs.existsSync(filePath)) { res.status(404).json(fail('Файл не найден')); return; }
+  res.sendFile(filePath);
+});
+
+documentsRouter.delete('/attachments/:attId', (req: AuthRequest, res: Response) => {
+  const att = getDb().prepare('SELECT * FROM attachments WHERE id = ?').get(Number(req.params['attId'])) as { filename: string } | undefined;
+  if (att) {
+    try { fs.unlinkSync(path.join(attachDir, att.filename)); } catch {}
+    getDb().prepare('DELETE FROM attachments WHERE id = ?').run(Number(req.params['attId']));
+  }
+  res.json(ok({ deleted: true }));
+});
+
 documentsRouter.get('/:id', (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   const doc = getDb().prepare('SELECT * FROM documents WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
@@ -159,18 +175,3 @@ documentsRouter.get('/:id/attachments', (req: AuthRequest, res: Response) => {
   res.json(ok(atts));
 });
 
-documentsRouter.delete('/attachments/:attId', (req: AuthRequest, res: Response) => {
-  const att = getDb().prepare('SELECT * FROM attachments WHERE id = ?').get(Number(req.params['attId'])) as { filename: string } | undefined;
-  if (att) {
-    try { fs.unlinkSync(path.join(attachDir, att.filename)); } catch {}
-    getDb().prepare('DELETE FROM attachments WHERE id = ?').run(Number(req.params['attId']));
-  }
-  res.json(ok({ deleted: true }));
-});
-
-// Serve attachment files
-documentsRouter.get('/attachments/file/:filename', (req: AuthRequest, res: Response) => {
-  const filePath = path.join(attachDir, req.params['filename']!);
-  if (!fs.existsSync(filePath)) { res.status(404).json(fail('Файл не найден')); return; }
-  res.sendFile(filePath);
-});
