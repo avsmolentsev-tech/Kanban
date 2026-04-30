@@ -1,13 +1,18 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
+import LinkExt from '@tiptap/extension-link';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Placeholder from '@tiptap/extension-placeholder';
+import tippy, { type Instance as TippyInstance } from 'tippy.js';
 import { EditorToolbar } from './EditorToolbar';
+import { SlashMenu, getSlashMenuItems, type SlashMenuRef } from './SlashMenu';
+import { SlashCommands } from '../../extensions/slash-commands';
+import { ResizableImage } from '../../extensions/resizable-image';
 import { useDocumentsStore } from '../../store/documents.store';
 import { useLangStore } from '../../store/lang.store';
+import { apiClient } from '../../api/client';
 
 interface Props {
   documentId: number;
@@ -18,9 +23,10 @@ interface Props {
 
 export function TiptapEditor({ documentId, initialContent, title, onTitleChange }: Props) {
   const { t } = useLangStore();
-  const { updateDocument, setSaving, setLastSaved } = useDocumentsStore();
+  const { updateDocument, setSaving, setLastSaved, createDocument, setActiveDocument } = useDocumentsStore();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const docIdRef = useRef(documentId);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     docIdRef.current = documentId;
@@ -39,26 +45,143 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
     [updateDocument, setSaving, setLastSaved],
   );
 
+  const uploadImage = useCallback(async (file: File): Promise<string | null> => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await apiClient.post(`/documents/${docIdRef.current}/attachments`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const attachment = res.data?.data;
+      if (attachment?.filename) {
+        return `/v1/documents/attachments/file/${attachment.filename}`;
+      }
+    } catch (err) {
+      console.warn('Image upload failed:', err);
+    }
+    return null;
+  }, []);
+
+  const handleImageInsert = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleChildDocument = useCallback(async (editorInstance: any) => {
+    const activeDoc = useDocumentsStore.getState().activeDocument;
+    if (!activeDoc) return;
+    const child = await createDocument({
+      title: t('Новый документ', 'New document'),
+      project_id: activeDoc.project_id,
+      parent_id: activeDoc.id,
+    });
+    editorInstance?.chain().focus().insertContent(
+      `<p><a href="#doc-${child.id}" class="child-doc-link" data-doc-id="${child.id}">📄 ${child.title}</a></p>`
+    ).run();
+    setActiveDocument(child);
+  }, [createDocument, setActiveDocument, t]);
+
   const editor = useEditor(
     {
       extensions: [
-        StarterKit.configure({
-          heading: { levels: [1, 2, 3] },
-        }),
-        Link.configure({
+        StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+        LinkExt.configure({
           openOnClick: true,
-          HTMLAttributes: { class: 'text-indigo-400 underline hover:text-indigo-300 cursor-pointer' },
+          HTMLAttributes: { class: 'text-indigo-600 dark:text-indigo-400 underline hover:text-indigo-500 dark:hover:text-indigo-300 cursor-pointer' },
         }),
         TaskList,
         TaskItem.configure({ nested: true }),
         Placeholder.configure({
-          placeholder: t('Начните писать...', 'Start writing...'),
+          placeholder: t('Начните писать или нажмите / для команд...', 'Start writing or press / for commands...'),
+        }),
+        ResizableImage,
+        SlashCommands.configure({
+          suggestion: {
+            char: '/',
+            startOfLine: false,
+            items: ({ query }: { query: string }) => {
+              return getSlashMenuItems(query, {
+                onChildDocument: () => handleChildDocument(editor),
+                onImage: () => handleImageInsert(),
+                onLink: () => {
+                  const url = window.prompt('URL:');
+                  if (url) editor?.chain().focus().setLink({ href: url }).run();
+                },
+                onDivider: () => editor?.chain().focus().setHorizontalRule().run(),
+                onTaskList: () => editor?.chain().focus().toggleTaskList().run(),
+                onCodeBlock: () => editor?.chain().focus().toggleCodeBlock().run(),
+                onBlockquote: () => editor?.chain().focus().toggleBlockquote().run(),
+              });
+            },
+            render: () => {
+              let component: ReactRenderer<SlashMenuRef> | null = null;
+              let popup: TippyInstance[] | null = null;
+
+              return {
+                onStart: (props: any) => {
+                  component = new ReactRenderer(SlashMenu, { props, editor: props.editor });
+                  popup = tippy('body', {
+                    getReferenceClientRect: props.clientRect,
+                    appendTo: () => document.body,
+                    content: component.element,
+                    showOnCreate: true,
+                    interactive: true,
+                    trigger: 'manual',
+                    placement: 'bottom-start',
+                    theme: 'slash-menu',
+                  });
+                },
+                onUpdate: (props: any) => {
+                  component?.updateProps(props);
+                  popup?.[0]?.setProps({ getReferenceClientRect: props.clientRect });
+                },
+                onKeyDown: (props: any) => {
+                  if (props.event.key === 'Escape') {
+                    popup?.[0]?.hide();
+                    return true;
+                  }
+                  return component?.ref?.onKeyDown(props.event) ?? false;
+                },
+                onExit: () => {
+                  popup?.[0]?.destroy();
+                  component?.destroy();
+                },
+              };
+            },
+          },
         }),
       ],
       content: initialContent,
       editorProps: {
         attributes: {
-          class: 'prose prose-invert prose-sm max-w-none focus:outline-none min-h-[400px] px-8 py-4',
+          class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] px-8 py-4',
+        },
+        handleDrop: (_view, event) => {
+          const files = event.dataTransfer?.files;
+          if (files && files.length > 0) {
+            const file = files[0];
+            if (file.type.startsWith('image/')) {
+              event.preventDefault();
+              uploadImage(file).then((url) => {
+                if (url) editor?.chain().focus().setImage({ src: url }).run();
+              });
+              return true;
+            }
+          }
+          return false;
+        },
+        handlePaste: (_view, event) => {
+          const files = event.clipboardData?.files;
+          if (files && files.length > 0) {
+            const file = files[0];
+            if (file.type.startsWith('image/')) {
+              event.preventDefault();
+              uploadImage(file).then((url) => {
+                if (url) editor?.chain().focus().setImage({ src: url }).run();
+              });
+              return true;
+            }
+          }
+          return false;
         },
       },
       onUpdate: ({ editor: ed }) => {
@@ -74,6 +197,14 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
     };
   }, []);
 
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = await uploadImage(file);
+    if (url) editor?.chain().focus().setImage({ src: url }).run();
+    e.target.value = '';
+  }, [editor, uploadImage]);
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <input
@@ -86,6 +217,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
       <div className="flex-1 overflow-y-auto">
         <EditorContent editor={editor} />
       </div>
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
     </div>
   );
 }
