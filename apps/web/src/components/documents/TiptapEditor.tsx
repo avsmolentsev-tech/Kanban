@@ -1,5 +1,6 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
+import { Plus } from 'lucide-react';
 import StarterKit from '@tiptap/starter-kit';
 import LinkExt from '@tiptap/extension-link';
 import TaskList from '@tiptap/extension-task-list';
@@ -205,6 +206,41 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
     e.target.value = '';
   }, [editor, uploadImage]);
 
+  // Floating "+" button state
+  const [plusBtnPos, setPlusBtnPos] = useState<{ top: number; visible: boolean }>({ top: 0, visible: false });
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+
+  const handlePlusClick = useCallback(() => {
+    if (!editor) return;
+    // Insert "/" to trigger slash menu
+    editor.chain().focus().insertContent('/').run();
+  }, [editor]);
+
+  // Track cursor position to show "+" on empty lines
+  useEffect(() => {
+    if (!editor) return;
+    const updatePlusBtn = () => {
+      const { $anchor } = editor.state.selection;
+      const node = $anchor.parent;
+      const isEmptyParagraph = node.type.name === 'paragraph' && node.content.size === 0;
+
+      if (isEmptyParagraph && editorContainerRef.current) {
+        const coords = editor.view.coordsAtPos($anchor.pos);
+        const containerRect = editorContainerRef.current.getBoundingClientRect();
+        setPlusBtnPos({ top: coords.top - containerRect.top, visible: true });
+      } else {
+        setPlusBtnPos((prev) => prev.visible ? { ...prev, visible: false } : prev);
+      }
+    };
+
+    editor.on('selectionUpdate', updatePlusBtn);
+    editor.on('update', updatePlusBtn);
+    return () => {
+      editor.off('selectionUpdate', updatePlusBtn);
+      editor.off('update', updatePlusBtn);
+    };
+  }, [editor]);
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <input
@@ -214,7 +250,18 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
         placeholder={t('Без названия', 'Untitled')}
       />
       <EditorToolbar editor={editor} />
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto relative" ref={editorContainerRef}>
+        {/* Floating "+" button on empty lines */}
+        {plusBtnPos.visible && (
+          <button
+            onClick={handlePlusClick}
+            className="absolute left-1 z-10 w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:text-indigo-500 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+            style={{ top: `${plusBtnPos.top}px` }}
+            title={t('Вставить блок', 'Insert block')}
+          >
+            <Plus size={16} />
+          </button>
+        )}
         <EditorContent editor={editor} />
       </div>
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
