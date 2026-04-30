@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { useDocumentsStore } from '../../store/documents.store';
 import { useLangStore } from '../../store/lang.store';
@@ -32,7 +33,6 @@ function buildParentChain(docs: DocumentNode[], targetId: number): DocumentNode[
   let current = findDocById(docs, targetId);
   if (!current) return chain;
 
-  // Walk up parent_id chain
   while (current?.parent_id) {
     const parent = findDocById(docs, current.parent_id);
     if (!parent) break;
@@ -45,6 +45,36 @@ function buildParentChain(docs: DocumentNode[], targetId: number): DocumentNode[
 export function Breadcrumbs({ project, saving, lastSaved }: Props) {
   const { t } = useLangStore();
   const { activeItem, activeDocument, activeMeeting, activeIdea, projectData, setActiveDocument } = useDocumentsStore();
+  // Fallback parent chain loaded via API when tree data doesn't have it yet
+  const [apiParents, setApiParents] = useState<Array<{ id: number; title: string }>>([]);
+
+  // When active document changes, load parent chain if needed
+  useEffect(() => {
+    if (!activeDocument?.parent_id) { setApiParents([]); return; }
+    const projId = activeDocument.project_id;
+    const data = projectData.get(projId);
+    // Check if tree data already has the parent chain
+    if (data) {
+      const parents = buildParentChain(data.documents, activeDocument.id);
+      if (parents.length > 0) { setApiParents([]); return; }
+    }
+    // Fallback: fetch parents via API
+    let cancelled = false;
+    const loadParents = async () => {
+      const chain: Array<{ id: number; title: string }> = [];
+      let parentId: number | null = activeDocument.parent_id;
+      while (parentId) {
+        try {
+          const parent = await documentsApi.get(parentId);
+          chain.unshift({ id: parent.id, title: parent.title });
+          parentId = parent.parent_id;
+        } catch { break; }
+      }
+      if (!cancelled) setApiParents(chain);
+    };
+    loadParents();
+    return () => { cancelled = true; };
+  }, [activeDocument?.id, activeDocument?.parent_id, activeDocument?.project_id, projectData]);
 
   if (!activeItem) return null;
 
@@ -54,20 +84,24 @@ export function Breadcrumbs({ project, saving, lastSaved }: Props) {
   else crumbs.push({ label: t('Без проекта', 'No project') });
 
   if (activeDocument) {
-    // Build parent chain from tree data
+    // Try tree data first, fall back to API-loaded parents
     const projId = activeDocument.project_id;
     const data = projectData.get(projId);
+    let parents: Array<{ id: number; title: string }> = [];
     if (data) {
-      const parents = buildParentChain(data.documents, activeDocument.id);
-      for (const parent of parents) {
-        const p = parent; // capture for closure
-        crumbs.push({
-          label: p.title,
-          onClick: () => {
-            documentsApi.get(p.id).then((doc) => setActiveDocument(doc)).catch(() => {});
-          },
-        });
-      }
+      parents = buildParentChain(data.documents, activeDocument.id);
+    }
+    if (parents.length === 0 && apiParents.length > 0) {
+      parents = apiParents;
+    }
+    for (const p of parents) {
+      const parentId = p.id;
+      crumbs.push({
+        label: p.title,
+        onClick: () => {
+          documentsApi.get(parentId).then((doc) => setActiveDocument(doc)).catch(() => {});
+        },
+      });
     }
     crumbs.push({ label: activeDocument.title });
   } else if (activeMeeting) {

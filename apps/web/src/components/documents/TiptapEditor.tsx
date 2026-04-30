@@ -72,6 +72,17 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
 
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
 
+  const saveNow = useCallback(async () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const ed = editorRef.current;
+    if (ed) {
+      setSaving(true);
+      await updateDocument(docIdRef.current, { body: ed.getHTML() });
+      setLastSaved(new Date().toISOString());
+      setSaving(false);
+    }
+  }, [updateDocument, setSaving, setLastSaved]);
+
   const handleChildDocument = useCallback(async () => {
     const activeDoc = useDocumentsStore.getState().activeDocument;
     if (!activeDoc) return;
@@ -85,9 +96,11 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
       ed.chain().focus().insertContent(
         `<p><a href="#doc-${child.id}" class="child-doc-link" data-doc-id="${child.id}">📄 ${child.title}</a></p>`
       ).run();
+      // Flush save immediately — otherwise unmount kills the 2s debounce timer
+      await saveNow();
     }
     setActiveDocument(child);
-  }, [createDocument, setActiveDocument, t]);
+  }, [createDocument, setActiveDocument, t, saveNow]);
 
   const editor = useEditor(
     {
@@ -242,8 +255,14 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
 
   const handlePlusClick = useCallback(() => {
     if (!editor) return;
-    // Insert "/" to trigger slash menu
-    editor.chain().focus().insertContent('/').run();
+    // Focus editor, then simulate keyboard "/" to trigger suggestion plugin
+    editor.chain().focus().run();
+    const editorElement = editor.view.dom;
+    editorElement.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: '/', bubbles: true, cancelable: true }));
+    // Fallback: insert via view dispatch if InputEvent doesn't trigger suggestion
+    const { state } = editor.view;
+    const tr = state.tr.insertText('/', state.selection.from, state.selection.to);
+    editor.view.dispatch(tr);
   }, [editor]);
 
   // Track cursor position to show "+" on empty lines
