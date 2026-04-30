@@ -146,6 +146,8 @@ documentsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   const existing = getDb().prepare('SELECT id FROM documents WHERE id = ? AND user_id = ?').get(id, userId);
   if (!existing) { res.status(404).json(fail('Document not found')); return; }
+  // Unparent children so they don't become orphaned
+  getDb().prepare('UPDATE documents SET parent_id = NULL WHERE parent_id = ?').run(id);
   // Delete attachments
   const atts = getDb().prepare('SELECT filename FROM attachments WHERE document_id = ?').all(id) as Array<{ filename: string }>;
   for (const a of atts) { try { fs.unlinkSync(path.join(attachDir, a.filename)); } catch {} }

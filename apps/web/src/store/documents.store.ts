@@ -152,10 +152,20 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => ({
   },
 
   deleteDocument: async (id) => {
-    const doc = get().activeDocument;
+    // Fetch the doc before deleting so we know its project_id for reload
+    let projId: number | null = null;
+    try {
+      const doc = await documentsApi.get(id);
+      projId = doc.project_id;
+    } catch {
+      projId = get().activeDocument?.project_id ?? null;
+    }
     await documentsApi.delete(id);
     if (get().activeItem?.id === id) get().clearActive();
-    if (doc) await get().loadProjectData(doc.project_id);
+    // Reload all expanded projects to update sidebar
+    for (const pid of get().expandedProjects) {
+      await get().loadProjectData(pid);
+    }
   },
 
   setSaving: (saving) => set({ saving }),
