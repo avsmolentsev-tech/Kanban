@@ -158,7 +158,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
         handleDrop: (_view, event) => {
           const files = event.dataTransfer?.files;
           if (files && files.length > 0) {
-            const file = files[0];
+            const file = files[0]!;
             if (file.type.startsWith('image/')) {
               event.preventDefault();
               uploadImage(file).then((url) => {
@@ -172,7 +172,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
         handlePaste: (_view, event) => {
           const files = event.clipboardData?.files;
           if (files && files.length > 0) {
-            const file = files[0];
+            const file = files[0]!;
             if (file.type.startsWith('image/')) {
               event.preventDefault();
               uploadImage(file).then((url) => {

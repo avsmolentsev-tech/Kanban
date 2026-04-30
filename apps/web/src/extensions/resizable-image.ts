@@ -52,7 +52,8 @@ export const ResizableImage = Image.extend({
           const finalWidth = Math.max(100, startWidth + (ev.clientX - startX));
           if (typeof getPos === 'function') {
             editor.chain().focus().command(({ tr }) => {
-              tr.setNodeMarkup(getPos(), undefined, { ...node.attrs, width: finalWidth });
+              const pos = getPos();
+              if (pos != null) tr.setNodeMarkup(pos, undefined, { ...node.attrs, width: finalWidth });
               return true;
             }).run();
           }
