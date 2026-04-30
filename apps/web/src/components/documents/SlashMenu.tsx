@@ -9,13 +9,14 @@ export interface SlashMenuItem {
 
 interface Props {
   items: SlashMenuItem[];
+  command: (item: SlashMenuItem) => void;
 }
 
 export interface SlashMenuRef {
   onKeyDown: (event: KeyboardEvent) => boolean;
 }
 
-export const SlashMenu = forwardRef<SlashMenuRef, Props>(({ items }, ref) => {
+export const SlashMenu = forwardRef<SlashMenuRef, Props>(({ items, command }, ref) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   useEffect(() => setSelectedIndex(0), [items]);
@@ -23,9 +24,9 @@ export const SlashMenu = forwardRef<SlashMenuRef, Props>(({ items }, ref) => {
   const selectItem = useCallback(
     (index: number) => {
       const item = items[index];
-      if (item) item.command();
+      if (item) command(item);
     },
-    [items],
+    [items, command],
   );
 
   useImperativeHandle(ref, () => ({
