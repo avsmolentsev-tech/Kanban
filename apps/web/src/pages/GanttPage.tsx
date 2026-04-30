@@ -179,7 +179,12 @@ export function GanttPage() {
                       className="sticky left-0 z-10 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex items-center px-3"
                       style={{ width: PROJECT_LABEL_WIDTH, minWidth: PROJECT_LABEL_WIDTH }}
                     >
-                      <span className="text-sm text-gray-600 dark:text-gray-300 truncate pl-5">{task.title}</span>
+                      <button
+                        onClick={() => setSelected(task)}
+                        className="text-sm text-gray-600 dark:text-gray-300 truncate pl-5 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors cursor-pointer text-left"
+                      >
+                        {task.title}
+                      </button>
                     </div>
                     <div className="relative" style={{ width: TOTAL_DAYS * DAY_WIDTH }}>
                       <div
