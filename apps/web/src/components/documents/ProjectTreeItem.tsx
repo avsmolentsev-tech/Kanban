@@ -1,9 +1,41 @@
 import { ChevronRight, Calendar, Lightbulb, Plus, Trash2 } from 'lucide-react';
 import type { Project } from '@pis/shared';
+import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { useDocumentsStore } from '../../store/documents.store';
 import { DocumentTreeItem } from './DocumentTreeItem';
 import { useLangStore } from '../../store/lang.store';
 import { useState } from 'react';
+
+function DraggableIdeaItem({ idea, isActive, onClick, onDelete }: {
+  idea: { id: number; title: string };
+  isActive: boolean;
+  onClick: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `idea-drag-${idea.id}` });
+  return (
+    <button
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      onClick={onClick}
+      className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer group ${
+        isActive
+          ? 'bg-indigo-600/20 text-indigo-300'
+          : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-200'
+      }`}
+      style={{ paddingLeft: '24px', opacity: isDragging ? 0.4 : 1 }}
+    >
+      <Lightbulb size={13} className="flex-shrink-0 opacity-60" />
+      <span className="truncate">{idea.title}</span>
+      <Trash2
+        size={12}
+        className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all ml-auto"
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+      />
+    </button>
+  );
+}
 
 interface Props {
   project: Project | null;
@@ -17,6 +49,7 @@ export function ProjectTreeItem({ project }: Props) {
     createDocument, setActiveDocument, createMeeting, createIdea,
   } = useDocumentsStore();
   const projectId = project?.id ?? null;
+  const { setNodeRef: setDropRef, isOver: isProjectOver } = useDroppable({ id: `project-drop-${projectId ?? 'none'}` });
   const isExpanded = expandedProjects.has(projectId);
   const data = projectData.get(projectId);
 
@@ -39,8 +72,9 @@ export function ProjectTreeItem({ project }: Props) {
   return (
     <div className="mb-1">
       <button
+        ref={setDropRef}
         onClick={() => toggleProject(projectId)}
-        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer ${isProjectOver ? 'bg-indigo-100 dark:bg-indigo-600/20 ring-2 ring-indigo-500' : ''}`}
       >
         <ChevronRight
           size={14}
@@ -128,27 +162,13 @@ export function ProjectTreeItem({ project }: Props) {
               </button>
             </div>
             {!ideasCollapsed && filteredData.ideas.map((idea) => (
-              <button
+              <DraggableIdeaItem
                 key={idea.id}
+                idea={idea}
+                isActive={activeItem?.type === 'idea' && activeItem.id === idea.id}
                 onClick={() => setActiveIdea(idea)}
-                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left text-sm transition-colors cursor-pointer group ${
-                  activeItem?.type === 'idea' && activeItem.id === idea.id
-                    ? 'bg-indigo-600/20 text-indigo-300'
-                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-200'
-                }`}
-                style={{ paddingLeft: '24px' }}
-              >
-                <Lightbulb size={13} className="flex-shrink-0 opacity-60" />
-                <span className="truncate">{idea.title}</span>
-                <Trash2
-                  size={12}
-                  className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all ml-auto"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (confirm('Удалить идею?')) deleteIdea(idea.id, projectId);
-                  }}
-                />
-              </button>
+                onDelete={() => { if (confirm('Удалить идею?')) deleteIdea(idea.id, projectId); }}
+              />
             ))}
           </div>
         </div>
