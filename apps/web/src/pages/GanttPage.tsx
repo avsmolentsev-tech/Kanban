@@ -25,10 +25,10 @@ function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-const DAY_WIDTH = 40;
-const ROW_HEIGHT = 32;
-const HEADER_HEIGHT = 48;
-const PROJECT_LABEL_WIDTH = 180;
+const DAY_WIDTH = 52;
+const ROW_HEIGHT = 44;
+const HEADER_HEIGHT = 52;
+const PROJECT_LABEL_WIDTH = 220;
 const TOTAL_DAYS = 30;
 
 export function GanttPage() {
@@ -179,22 +179,21 @@ export function GanttPage() {
                       className="sticky left-0 z-10 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex items-center px-3"
                       style={{ width: PROJECT_LABEL_WIDTH, minWidth: PROJECT_LABEL_WIDTH }}
                     >
-                      <span className="text-xs text-gray-500 dark:text-gray-400 truncate pl-5">{task.title}</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-300 truncate pl-5">{task.title}</span>
                     </div>
                     <div className="relative" style={{ width: TOTAL_DAYS * DAY_WIDTH }}>
                       <div
-                        className="absolute top-1 rounded cursor-pointer hover:opacity-80 transition-opacity flex items-center px-2 overflow-hidden"
+                        className="absolute top-1.5 rounded-md cursor-pointer hover:brightness-110 hover:shadow-md transition-all flex items-center px-2.5 overflow-hidden"
                         style={{
                           left: Math.max(0, barLeft),
                           width: Math.max(DAY_WIDTH - 4, barWidth),
-                          height: ROW_HEIGHT - 8,
+                          height: ROW_HEIGHT - 12,
                           backgroundColor: barColor,
-                          opacity: 0.85,
                         }}
                         onClick={() => setSelected(task)}
                         title={task.title}
                       >
-                        <span className="text-[10px] text-white font-medium truncate">{task.title}</span>
+                        <span className="text-xs text-white font-medium truncate">{task.title}</span>
                       </div>
 
                       {/* Today line */}
