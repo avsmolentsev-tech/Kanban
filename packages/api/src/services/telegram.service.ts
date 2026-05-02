@@ -1450,7 +1450,6 @@ BHAG (Большая Дерзкая Цель на год):
         }
 
         // If there's an open draft — voice after audio is treated as correction (context/clarification)
-        const tgId = ctx.from!.id;
         const existing = this.drafts.get(tgId);
         if (existing) {
           await this.applyCorrection(ctx, existing, transcript);
