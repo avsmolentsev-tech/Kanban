@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { apiPost } from '../../api/client';
 import { useLangStore } from '../../store/lang.store';
+import { useActiveMeetingStore } from '../../store/active-meeting.store';
 
 interface SpeechRecognitionEvent extends Event {
   results: { [index: number]: { [index: number]: { transcript: string }; isFinal?: boolean }; length: number };
@@ -168,9 +169,11 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
     setResults([]);
 
     try {
+      const activeMeetingId = useActiveMeetingStore.getState().meetingId;
       const data = await apiPost<{ response: string; results: VoiceResult[] }>('/ai/voice-command', {
         text: userText,
         history,
+        ...(activeMeetingId ? { meeting_id: activeMeetingId } : {}),
       });
       setResponse(data.response);
       setResults(data.results);

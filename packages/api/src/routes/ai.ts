@@ -100,6 +100,7 @@ ${JSON.stringify(upcomingMeetings)}
 const VoiceCommandSchema = z.object({
   text: z.string().min(1),
   history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).optional().default([]),
+  meeting_id: z.number().int().optional(),
 });
 
 aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
@@ -135,12 +136,27 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
     // Auto-detect if question is about meetings → include full content
     const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
     const needsFullMeetings = meetingKeywords.test(parsed.data.text);
+    const requestedMeetingId = parsed.data.meeting_id;
 
     type MeetingWithContent = { id: number; title: string; date: string; project_id: number | null; summary_raw?: string };
     let meetings: MeetingWithContent[];
     let fullMeetingContent = '';
 
-    if (needsFullMeetings) {
+    // If specific meeting_id passed (user is viewing a meeting), always include its full transcript
+    if (requestedMeetingId) {
+      const currentMeeting = db.prepare(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE id = ?${userFilter}`).get(requestedMeetingId, ...userParams) as MeetingWithContent | undefined;
+      if (currentMeeting) {
+        fullMeetingContent = `## ТЕКУЩАЯ ВСТРЕЧА (пользователь сейчас её просматривает):\n## ${currentMeeting.title} (${currentMeeting.date})\n${(currentMeeting.summary_raw || '').slice(0, 12000)}`;
+      }
+      // Also include other recent meetings for broader context
+      const otherMeetings = db.prepare(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE id != ?${userFilter} ORDER BY date DESC LIMIT 4`).all(requestedMeetingId, ...userParams) as Array<MeetingWithContent>;
+      if (otherMeetings.length > 0 && needsFullMeetings) {
+        fullMeetingContent += '\n\n---\n\n' + otherMeetings.map(m =>
+          `## Встреча #${m.id}: ${m.title} (${m.date})\n${(m.summary_raw || '').slice(0, 8000)}`
+        ).join('\n\n---\n\n');
+      }
+      meetings = [currentMeeting, ...otherMeetings].filter(Boolean) as MeetingWithContent[];
+    } else if (needsFullMeetings) {
       const fullMeetings = db.prepare(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 5`).all(...userParams) as Array<MeetingWithContent>;
       fullMeetingContent = fullMeetings.map(m =>
         `## Встреча #${m.id}: ${m.title} (${m.date})\n${(m.summary_raw || '').slice(0, 8000)}`

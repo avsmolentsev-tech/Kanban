@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { apiPost, apiClient } from '../api/client';
 import { useLangStore } from '../store/lang.store';
+import { useActiveMeetingStore } from '../store/active-meeting.store';
 import { MessageCircle, Copy, Check } from 'lucide-react';
 
 interface ChatMessage {
@@ -82,9 +83,11 @@ export function ChatPage() {
     setLoading(true);
 
     try {
+      const activeMeetingId = useActiveMeetingStore.getState().meetingId;
       const res = await apiPost<{ response: string; results?: Array<{ detail: string }> }>('/ai/voice-command', {
         text: text.trim(),
         history: history.slice(-20).map(m => ({ role: m.role, content: m.content })),
+        ...(activeMeetingId ? { meeting_id: activeMeetingId } : {}),
       });
       const reply = res.response + (res.results && res.results.length > 0 ? '\n\n' + res.results.map(r => r.detail).join('\n') : '');
       setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
