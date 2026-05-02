@@ -21,6 +21,7 @@ export class TelegramService {
   private pendingLogins = new Map<number, 'email' | 'password'>(); // tg_id → waiting state
   private pendingEmails = new Map<number, string>(); // tg_id → email entered
   private recentActions = new Map<number, Array<{ type: string; title: string; id: number; table: string; date: string; savedAt: number }>>();
+  private proMode = new Set<number>(); // tg_id → next audio uses OpenAI Whisper API
   private drafts = new DraftSession({
     timeoutMs: 30 * 60_000,
     onTimeout: (c) => { this.saveDraftAsIs(c).catch((e) => console.error('[draft] timeout save failed:', e)); },
@@ -664,6 +665,12 @@ BHAG (Большая Дерзкая Цель на год):
     return 'command';
   }
 
+  /** Transcribe audio via OpenAI Whisper API (pro mode) */
+  private async transcribeProAudio(buffer: Buffer, filename: string): Promise<string> {
+    const { transcribeWithOpenAI } = require('./whisper-queue');
+    return transcribeWithOpenAI(buffer, filename);
+  }
+
   /** Transcribe audio — queued with concurrency limit, OpenAI overflow */
   private async transcribeAudio(buffer: Buffer, filename: string): Promise<string> {
     const { transcribeWithOverflow, getQueueStatus } = require('./whisper-queue');
@@ -1132,6 +1139,13 @@ BHAG (Большая Дерзкая Цель на год):
       await ctx.reply(`✅ ${key} = ${value}`);
     });
 
+    // /pro — next audio will use OpenAI Whisper API for high-quality transcription
+    this.bot.command('pro', (ctx) => {
+      const tgId = ctx.from?.id ?? 0;
+      this.proMode.add(tgId);
+      ctx.reply('🎯 PRO-режим активирован.\n\nОтправьте голосовое или аудиофайл — расшифровка будет через OpenAI Whisper API (высокое качество).\n\nРежим действует для следующей одной записи.');
+    });
+
     // Send executeCommand result — text + optional file
     const sendCommandResult = async (ctx: { reply: (text: string) => Promise<unknown>; replyWithDocument: (doc: { source: string; filename: string }, opts?: Record<string, unknown>) => Promise<unknown> }, result: { text: string; files?: Array<{ path: string; filename: string }> }): Promise<void> => {
       await sendLong(ctx, result.text);
@@ -1397,7 +1411,12 @@ BHAG (Большая Дерзкая Цель на год):
         const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
         // userId auto-created by resolveUserId
 
-        {
+        const tgId = ctx.from?.id ?? 0;
+        const isPro = this.proMode.has(tgId);
+        if (isPro) {
+          this.proMode.delete(tgId);
+          ctx.reply('🎯 PRO: Транскрибирую через OpenAI Whisper...');
+        } else {
           const { getQueueStatus } = require('./whisper-queue');
           const qStatus = getQueueStatus();
           if (qStatus.active >= 2 && qStatus.queued > 0) {
@@ -1411,8 +1430,10 @@ BHAG (Большая Дерзкая Цель на год):
         const fileId = ctx.message.voice.file_id;
         const buffer = await this.downloadTelegramFile(ctx, fileId);
 
-        // Transcribe via Whisper
-        const transcript = await this.transcribeAudio(buffer, 'voice.ogg');
+        // Transcribe via Whisper (pro → OpenAI, normal → local)
+        const transcript = isPro
+          ? await this.transcribeProAudio(buffer, 'voice.ogg')
+          : await this.transcribeAudio(buffer, 'voice.ogg');
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
 
         // Show transcript
@@ -1475,7 +1496,12 @@ BHAG (Большая Дерзкая Цель на год):
 
         if (isAudio) {
           // Transcribe audio file
-          {
+          const tgId = ctx.from?.id ?? 0;
+          const isPro = this.proMode.has(tgId);
+          if (isPro) {
+            this.proMode.delete(tgId);
+            ctx.reply('🎯 PRO: Транскрибирую через OpenAI Whisper...');
+          } else {
             const { getQueueStatus } = require('./whisper-queue');
             const qStatus = getQueueStatus();
             if (qStatus.active >= 2 && qStatus.queued > 0) {
@@ -1486,7 +1512,9 @@ BHAG (Большая Дерзкая Цель на год):
               ctx.reply('🎤 Транскрибирую аудиофайл...');
             }
           }
-          const transcript = await this.transcribeAudio(buffer, filename);
+          const transcript = isPro
+            ? await this.transcribeProAudio(buffer, filename)
+            : await this.transcribeAudio(buffer, filename);
           if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
 
           // Show transcript
@@ -1523,7 +1551,12 @@ BHAG (Большая Дерзкая Цель на год):
           await ctx.reply(`⚠️ Аудио слишком большое (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
           return;
         }
-        {
+        const tgId = ctx.from?.id ?? 0;
+        const isPro = this.proMode.has(tgId);
+        if (isPro) {
+          this.proMode.delete(tgId);
+          ctx.reply('🎯 PRO: Транскрибирую через OpenAI Whisper...');
+        } else {
           const { getQueueStatus } = require('./whisper-queue');
           const qStatus = getQueueStatus();
           if (fileSizeMb > 20) {
@@ -1538,7 +1571,9 @@ BHAG (Большая Дерзкая Цель на год):
         }
         const buffer = await this.downloadTelegramFile(ctx, audio.file_id);
 
-        const transcript = await this.transcribeAudio(buffer, audio.file_name ?? 'audio.mp3');
+        const transcript = isPro
+          ? await this.transcribeProAudio(buffer, audio.file_name ?? 'audio.mp3')
+          : await this.transcribeAudio(buffer, audio.file_name ?? 'audio.mp3');
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
 
         const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;

@@ -83,7 +83,7 @@ async function processJob(job: TranscribeJob): Promise<void> {
   }
 }
 
-async function transcribeWithOpenAI(buffer: Buffer, filename: string): Promise<string> {
+export async function transcribeWithOpenAI(buffer: Buffer, filename: string): Promise<string> {
   const OpenAI = require('openai').default;
   const { config } = require('../config');
   console.log('[whisper-queue] using OpenAI API');
