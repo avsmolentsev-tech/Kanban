@@ -42,6 +42,34 @@ export async function compressForTranscription(buffer: Buffer, filename: string)
   }
 }
 
+/**
+ * Soft compress for OpenAI Whisper API (25 MB limit).
+ * Higher quality: mono 16kHz 128kbps — preserves speech clarity.
+ */
+export async function compressForOpenAI(buffer: Buffer, filename: string): Promise<Buffer> {
+  const tmpDir = os.tmpdir();
+  const id = Date.now() + '-' + Math.random().toString(36).slice(2);
+  const inputPath = path.join(tmpDir, `oai-${id}-${filename}`);
+  const outputPath = path.join(tmpDir, `oai-${id}.mp3`);
+  fs.writeFileSync(inputPath, buffer);
+  try {
+    await runCommand('ffmpeg', [
+      '-i', inputPath,
+      '-vn',
+      '-ac', '1',
+      '-ar', '16000',
+      '-b:a', '128k',
+      '-f', 'mp3',
+      outputPath,
+      '-y',
+    ], 300000);
+    return fs.readFileSync(outputPath);
+  } finally {
+    try { fs.unlinkSync(inputPath); } catch {}
+    try { fs.unlinkSync(outputPath); } catch {}
+  }
+}
+
 /** Run a command non-blocking. Rejects on non-zero exit or timeout. */
 function runCommand(cmd: string, args: string[], timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {

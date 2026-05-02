@@ -89,15 +89,17 @@ export async function transcribeWithOpenAI(buffer: Buffer, filename: string): Pr
   console.log('[whisper-queue] using OpenAI API');
   const openai = new OpenAI({ apiKey: config.openaiApiKey });
 
-  // Compress if needed for OpenAI's 25MB limit
+  // Soft compress only if over 24 MB (OpenAI limit 25 MB)
+  // Uses 128 kbps stereo — much better quality than local whisper's 32 kbps mono
   let audioBuffer = buffer;
   let audioFilename = filename;
   const sizeMb = buffer.length / (1024 * 1024);
-  if (sizeMb > 20) {
+  if (sizeMb > 24) {
     try {
-      const { compressForTranscription } = require('./whisper-local.service');
-      audioBuffer = await compressForTranscription(buffer, filename);
+      const { compressForOpenAI } = require('./whisper-local.service');
+      audioBuffer = await compressForOpenAI(buffer, filename);
       audioFilename = filename.replace(/\.[^.]+$/, '.mp3');
+      console.log(`[whisper-queue] compressed ${Math.round(sizeMb)}MB → ${Math.round(audioBuffer.length / (1024 * 1024))}MB for OpenAI`);
     } catch {}
   }
 
