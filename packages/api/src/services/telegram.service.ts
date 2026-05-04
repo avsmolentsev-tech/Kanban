@@ -119,6 +119,20 @@ export class TelegramService {
       });
       db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultRel, meetingId);
       this.pushRecentAction(draft.tgId, { type: 'meeting', title: draft.title, id: meetingId, table: 'meetings', date: draft.date, savedAt: Date.now() });
+
+      // Async: generate Plaud-style pro summaries (Notes, Q&A, Actions)
+      if (draft.transcript && draft.transcript.length > 200) {
+        const claude = new ClaudeService();
+        claude.generateProSummaries(draft.transcript, draft.title, draft.people).then((summaries) => {
+          db.prepare('UPDATE meetings SET summary_structured = ? WHERE id = ?').run(
+            JSON.stringify({ transcript: draft.transcript, ...summaries }),
+            meetingId
+          );
+          console.log(`[draft] pro summaries generated for meeting #${meetingId}`);
+        }).catch((err) => {
+          console.warn(`[draft] pro summaries failed for meeting #${meetingId}:`, err instanceof Error ? err.message : err);
+        });
+      }
     } else if (draft.type === 'task') {
       // Resolve project
       const cleanProject = (draft.projectName ?? '').replace(/^❓\s*/, '').replace(/\s*\(не найден\)$/, '').trim() || null;
