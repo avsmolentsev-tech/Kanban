@@ -460,7 +460,10 @@ meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
       const jwt = require('jsonwebtoken');
       const payload = jwt.verify(String(req.query['token']), config.jwtSecret);
       req.user = payload;
-    } catch {}
+      console.log('[download] token auth OK, userId:', (payload as Record<string, unknown>).id);
+    } catch (err) {
+      console.warn('[download] token auth failed:', err instanceof Error ? err.message : err, 'secret prefix:', config.jwtSecret?.slice(0, 10));
+    }
   }
   const userId = getUserId(req);
   if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
