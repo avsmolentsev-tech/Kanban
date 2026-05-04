@@ -454,17 +454,6 @@ meetingsRouter.post('/:id/summarize', async (req: AuthRequest, res: Response) =>
 // Download meeting file (summary or full) as md/pdf/docx
 meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
-  // Support token in query param for direct URL downloads (mobile Safari)
-  if (!req.user && req.query['token']) {
-    try {
-      const jwt = require('jsonwebtoken');
-      const payload = jwt.verify(String(req.query['token']), config.jwtSecret);
-      req.user = payload;
-      console.log('[download] token auth OK, userId:', (payload as Record<string, unknown>).id);
-    } catch (err) {
-      console.warn('[download] token auth failed:', err instanceof Error ? err.message : err, 'secret prefix:', config.jwtSecret?.slice(0, 10));
-    }
-  }
   const userId = getUserId(req);
   if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
   const exists = getDb().prepare('SELECT id FROM meetings WHERE id = ? AND user_id = ?').get(id, userId);

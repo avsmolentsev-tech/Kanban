@@ -14,14 +14,20 @@ export interface AuthRequest extends Request {
 }
 
 export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunction): void {
+  // Try Authorization header first
   const header = req.headers['authorization'];
-  if (!header) {
-    // No token — continue without user (public routes or legacy single-user mode)
+  let token = header ? (header.startsWith('Bearer ') ? header.slice(7) : header) : '';
+
+  // Fallback: token in query param (for direct URL downloads on mobile)
+  if (!token && req.query['token']) {
+    token = String(req.query['token']);
+  }
+
+  if (!token) {
     next();
     return;
   }
 
-  const token = header.startsWith('Bearer ') ? header.slice(7) : header;
   try {
     const payload = jwt.verify(token, config.jwtSecret) as AuthUser;
     req.user = payload;
