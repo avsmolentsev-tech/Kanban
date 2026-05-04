@@ -44,6 +44,7 @@ export class DraftSession {
       transcript,
       sourceKind,
       sourceLocalPath,
+      tasks: extraction.tasks ?? [],
       awaitingEdit: false,
       cardMessageId: null,
     };

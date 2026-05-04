@@ -85,7 +85,8 @@ export class TelegramService {
     const obsidian = new ObsidianService(config.vaultPath).forUser(draft.userId);
     const tagsList = draft.tags;
     if (draft.type === 'meeting') {
-      const fullBody = `${draft.summary}\n\n---\n\n## Полная транскрипция\n\n${draft.transcript}`;
+      // summary_raw = readable summary (no transcript), transcript stored separately in summary_structured
+      const summaryBody = draft.summary || draft.title;
       // Resolve project
       const cleanProject = (draft.projectName ?? '').replace(/^❓\s*/, '').replace(/\s*\(не найден\)$/, '').trim() || null;
       let projectId: number | null = null;
@@ -97,7 +98,7 @@ export class TelegramService {
       }
       const result = db.prepare(
         'INSERT INTO meetings (user_id, title, date, project_id, summary_raw, summary_structured, source_file, processed) VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
-      ).run(draft.userId, draft.title, draft.date, projectId, fullBody, JSON.stringify({ transcript: draft.transcript }), draft.sourceKind);
+      ).run(draft.userId, draft.title, draft.date, projectId, summaryBody, JSON.stringify({ transcript: draft.transcript }), draft.sourceKind);
       const meetingId = Number(result.lastInsertRowid);
       // Link people
       for (const personName of draft.people) {
@@ -113,18 +114,31 @@ export class TelegramService {
         title: draft.title, date: draft.date, people: draft.people,
         project: cleanProject ?? undefined,
         company: draft.companyName ?? undefined,
-        summary: fullBody, agreements: 0,
+        summary: summaryBody, agreements: 0,
         source: `telegram-${draft.sourceKind}`,
         tags: tagsList,
       });
       db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultRel, meetingId);
       this.pushRecentAction(draft.tgId, { type: 'meeting', title: draft.title, id: meetingId, table: 'meetings', date: draft.date, savedAt: Date.now() });
 
+      // Auto-create tasks from meeting in backlog
+      if (draft.tasks && draft.tasks.length > 0) {
+        for (const taskTitle of draft.tasks) {
+          if (taskTitle.trim()) {
+            db.prepare('INSERT INTO tasks (user_id, title, status, priority, urgency, project_id, description) VALUES (?, ?, ?, ?, ?, ?, ?)')
+              .run(draft.userId, taskTitle.trim(), 'backlog', 3, 3, projectId, `Из встречи: ${draft.title} (${draft.date})`);
+          }
+        }
+        console.log(`[draft] created ${draft.tasks.length} tasks in backlog from meeting #${meetingId}`);
+      }
+
       // Async: generate Plaud-style pro summaries (Notes, Q&A, Actions)
       if (draft.transcript && draft.transcript.length > 200) {
         const claude = new ClaudeService();
         claude.generateProSummaries(draft.transcript, draft.title, draft.people).then((summaries) => {
-          db.prepare('UPDATE meetings SET summary_structured = ? WHERE id = ?').run(
+          // Update both: summary_raw gets the full notes, summary_structured gets all 3 + transcript
+          db.prepare('UPDATE meetings SET summary_raw = ?, summary_structured = ? WHERE id = ?').run(
+            summaries.notes || summaryBody,
             JSON.stringify({ transcript: draft.transcript, ...summaries }),
             meetingId
           );

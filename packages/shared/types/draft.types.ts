@@ -31,6 +31,7 @@ export interface DraftCard {
   transcript: string;
   sourceKind: 'voice' | 'audio' | 'document' | 'photo' | 'text';
   sourceLocalPath: string | null;
+  tasks: string[];              // extracted task titles from meeting
   awaitingEdit: boolean;
   cardMessageId: number | null; // TG message id of the rendered card
 }
