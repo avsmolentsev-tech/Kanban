@@ -42,27 +42,15 @@ function splitSummaryAndTranscript(raw: string): { summary: string; transcript: 
 function DownloadButton({ meetingId, type, label, icon: Icon }: {
   meetingId: number; type: 'summary' | 'full' | 'notes' | 'qa' | 'actions'; label: string; icon: typeof Download;
 }) {
-  const [loading, setLoading] = useState(false);
-  const handleDownload = async () => {
-    setLoading(true);
-    try {
-      const res = await apiClient.get(`/meetings/${meetingId}/download`, { params: { type, format: 'pdf' }, responseType: 'blob' });
-      const blob = new Blob([res.data], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `meeting-${type}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch { alert('Ошибка скачивания'); } finally { setLoading(false); }
+  const handleDownload = () => {
+    const token = localStorage.getItem('auth_token') || '';
+    window.open(`/v1/meetings/${meetingId}/download?type=${type}&format=pdf&token=${encodeURIComponent(token)}`, '_blank');
   };
   return (
-    <button onClick={handleDownload} disabled={loading}
-      className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-800 dark:hover:text-gray-200 transition-colors cursor-pointer disabled:opacity-50">
+    <button onClick={handleDownload}
+      className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-800 dark:hover:text-gray-200 transition-colors cursor-pointer">
       <Icon size={14} />
-      {loading ? '...' : label}
+      {label}
     </button>
   );
 }

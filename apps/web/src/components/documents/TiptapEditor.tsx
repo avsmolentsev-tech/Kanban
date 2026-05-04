@@ -264,11 +264,8 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
 
   const handlePlusClick = useCallback(() => {
     if (!editor) return;
-    // Focus editor, then simulate keyboard "/" to trigger suggestion plugin
     editor.chain().focus().run();
-    const editorElement = editor.view.dom;
-    editorElement.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: '/', bubbles: true, cancelable: true }));
-    // Fallback: insert via view dispatch if InputEvent doesn't trigger suggestion
+    // Insert "/" via ProseMirror transaction — triggers suggestion plugin
     const { state } = editor.view;
     const tr = state.tr.insertText('/', state.selection.from, state.selection.to);
     editor.view.dispatch(tr);

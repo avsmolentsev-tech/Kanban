@@ -74,25 +74,12 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
     save('project_id', projectId);
   };
 
-  const kindLabels: Record<string, string> = { notes: 'заметки', qa: 'qa', actions: 'анализ', full: 'транскрипт', summary: 'резюме' };
-
-  const downloadFile = async (kind: string) => {
+  const downloadFile = (kind: string) => {
     if (!meeting) return;
-    try {
-      const res = await apiClient.get(`/meetings/${meeting.id}/download`, { params: { type: kind, format: sendFormat }, responseType: 'blob' });
-      const mimeTypes: Record<string, string> = { md: 'text/markdown', pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
-      const blob = new Blob([res.data], { type: mimeTypes[sendFormat] || 'application/octet-stream' });
-      const title = (meeting.title || 'встреча').slice(0, 40);
-      const filename = `${meeting.date}_${title}_${kindLabels[kind] || kind}.${sendFormat}`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch { alert(t('Ошибка скачивания', 'Download error')); }
+    // Direct link to API — works on mobile Safari (no blob black screen)
+    const token = localStorage.getItem('auth_token') || '';
+    const url = `/v1/meetings/${meeting.id}/download?type=${kind}&format=${sendFormat}&token=${encodeURIComponent(token)}`;
+    window.open(url, '_blank');
   };
 
   const sendToTelegram = async (kind: 'summary' | 'full') => {

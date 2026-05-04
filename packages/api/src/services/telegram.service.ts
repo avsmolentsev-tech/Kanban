@@ -136,10 +136,14 @@ export class TelegramService {
       if (draft.transcript && draft.transcript.length > 200) {
         const claude = new ClaudeService();
         claude.generateProSummaries(draft.transcript, draft.title, draft.people).then((summaries) => {
-          // Update both: summary_raw gets the full notes, summary_structured gets all 3 + transcript
+          // Read-merge-write to avoid overwriting user edits
+          const existing = db.prepare('SELECT summary_structured FROM meetings WHERE id = ?').get(meetingId) as { summary_structured: string | null } | undefined;
+          let merged: Record<string, unknown> = {};
+          try { merged = JSON.parse(existing?.summary_structured || '{}'); } catch {}
+          merged = { ...merged, ...summaries, transcript: draft.transcript };
           db.prepare('UPDATE meetings SET summary_raw = ?, summary_structured = ? WHERE id = ?').run(
             summaries.notes || summaryBody,
-            JSON.stringify({ transcript: draft.transcript, ...summaries }),
+            JSON.stringify(merged),
             meetingId
           );
           console.log(`[draft] pro summaries generated for meeting #${meetingId}`);
@@ -1312,6 +1316,8 @@ BHAG (Большая Дерзкая Цель на год):
       if (text.startsWith('/')) return;
 
       const tgId = ctx.from?.id ?? 0;
+      // Clear pro mode if user sends text instead of audio
+      this.proMode.delete(tgId);
 
       // Handle login flow (email → password)
       const loginState = this.pendingLogins.get(tgId);

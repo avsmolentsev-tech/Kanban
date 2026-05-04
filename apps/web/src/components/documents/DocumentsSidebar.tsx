@@ -73,7 +73,7 @@ export function DocumentsSidebar() {
     const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
-    const interval = setInterval(refresh, 30000);
+    const interval = setInterval(refresh, 60000);
     return () => {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
