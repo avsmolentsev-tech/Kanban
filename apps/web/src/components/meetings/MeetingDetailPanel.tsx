@@ -74,17 +74,24 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
     save('project_id', projectId);
   };
 
+  const kindLabels: Record<string, string> = { notes: 'заметки', qa: 'qa', actions: 'анализ', full: 'транскрипт', summary: 'резюме' };
+
   const downloadFile = async (kind: string) => {
     if (!meeting) return;
     try {
       const res = await apiClient.get(`/meetings/${meeting.id}/download`, { params: { type: kind, format: sendFormat }, responseType: 'blob' });
-      const blob = new Blob([res.data]);
+      const mimeTypes: Record<string, string> = { md: 'text/markdown', pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+      const blob = new Blob([res.data], { type: mimeTypes[sendFormat] || 'application/octet-stream' });
+      const title = (meeting.title || 'встреча').slice(0, 40);
+      const filename = `${meeting.date}_${title}_${kindLabels[kind] || kind}.${sendFormat}`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = res.headers['content-disposition']?.match(/filename="?(.+?)"?$/)?.[1] ?? `meeting-${kind}.${sendFormat}`;
+      a.download = filename;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch { alert(t('Ошибка скачивания', 'Download error')); }
   };
 

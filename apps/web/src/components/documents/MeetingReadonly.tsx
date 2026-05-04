@@ -46,14 +46,16 @@ function DownloadButton({ meetingId, type, label, icon: Icon }: {
   const handleDownload = async () => {
     setLoading(true);
     try {
-      const res = await apiClient.get(`/meetings/${meetingId}/download`, { params: { type, format: 'md' }, responseType: 'blob' });
-      const blob = new Blob([res.data], { type: 'text/markdown' });
+      const res = await apiClient.get(`/meetings/${meetingId}/download`, { params: { type, format: 'pdf' }, responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = res.headers['content-disposition']?.match(/filename="?(.+?)"?$/)?.[1] ?? `meeting-${type}.md`;
+      a.download = `meeting-${type}.pdf`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch { alert('Ошибка скачивания'); } finally { setLoading(false); }
   };
   return (
