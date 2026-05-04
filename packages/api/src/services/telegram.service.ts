@@ -222,13 +222,20 @@ export class TelegramService {
       await ctx.reply('❌ Драфт не найден, попробуй заново.');
       return;
     }
-    await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      updated.cardMessageId,
-      undefined,
-      renderDraftCard(updated),
-      { reply_markup: inlineKeyboard(updated) },
-    );
+    try {
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        updated.cardMessageId,
+        undefined,
+        renderDraftCard(updated),
+        { reply_markup: inlineKeyboard(updated) },
+      );
+    } catch (editErr: unknown) {
+      // "message is not modified" is non-fatal — card looks the same but data was updated
+      const msg = editErr instanceof Error ? editErr.message : String(editErr);
+      if (!msg.includes('message is not modified')) throw editErr;
+    }
+    await ctx.reply('✅ Коррекция применена. Нажми OK для сохранения или исправь ещё.');
   }
 
   private async buildAndSendDraft(
