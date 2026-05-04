@@ -1314,8 +1314,15 @@ BHAG (Большая Дерзкая Цель на год):
 
       // If there's an open draft — ANY text is treated as correction (no need to press ✏️ first)
       const draft = this.drafts.get(tgId);
+      console.log(`[bot] text from tgId=${tgId}, draft=${draft ? `exists (${draft.title})` : 'none'}, text="${text.slice(0, 50)}"`);
       if (draft) {
-        await this.applyCorrection(ctx, draft, text);
+        console.log(`[bot] applying correction to draft: ${draft.title}`);
+        try {
+          await this.applyCorrection(ctx, draft, text);
+        } catch (err) {
+          console.error('[bot] applyCorrection failed:', err);
+          ctx.reply(`❌ Не удалось применить коррекцию: ${err instanceof Error ? err.message : 'Unknown'}\n\nПопробуй ещё раз или нажми ОК.`);
+        }
         return;
       }
 
