@@ -458,8 +458,7 @@ meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
   if (!req.user && req.query['token']) {
     try {
       const jwt = require('jsonwebtoken');
-      const { config: appConfig } = require('../config');
-      const payload = jwt.verify(String(req.query['token']), appConfig.jwtSecret);
+      const payload = jwt.verify(String(req.query['token']), config.jwtSecret);
       req.user = payload;
     } catch {}
   }
