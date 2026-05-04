@@ -1,4 +1,4 @@
-import type { DraftCard, DraftType, ExtractionResult } from '@pis/shared';
+import type { DraftCard, ExtractionResult } from '@pis/shared';
 import { randomUUID } from 'node:crypto';
 
 export interface DraftSessionOpts {

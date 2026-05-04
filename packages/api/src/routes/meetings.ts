@@ -408,7 +408,7 @@ async function buildMeetingFile(meetingId: number, type: MeetingFileType, format
   return { path: mdToDocx(tmpMd), filename: `${baseName}.docx` };
 }
 
-export async function sendMeetingToTelegram(meetingId: number, userId: number, type: 'summary' | 'full', format: 'md' | 'pdf' | 'docx'): Promise<void> {
+export async function sendMeetingToTelegram(meetingId: number, userId: number, type: MeetingFileType, format: 'md' | 'pdf' | 'docx'): Promise<void> {
   const db = getDb();
   const user = db.prepare('SELECT tg_id FROM users WHERE id = ?').get(userId) as { tg_id: string | null } | undefined;
   if (!user?.tg_id) throw new Error('Telegram не привязан к аккаунту (зайди в Telegram-бот и пришли /start)');
