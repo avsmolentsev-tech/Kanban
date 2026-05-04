@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { SlidePanel } from '../ui/SlidePanel';
 import { meetingsApi } from '../../api/meetings.api';
-import { apiPost } from '../../api/client';
+import { apiPost, apiGet, apiClient } from '../../api/client';
 import type { Meeting, Project } from '@pis/shared';
 import { useLangStore } from '../../store/lang.store';
 import { useActiveMeetingStore } from '../../store/active-meeting.store';
@@ -74,6 +74,20 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
     save('project_id', projectId);
   };
 
+  const downloadFile = async (kind: string) => {
+    if (!meeting) return;
+    try {
+      const res = await apiClient.get(`/meetings/${meeting.id}/download`, { params: { type: kind, format: sendFormat }, responseType: 'blob' });
+      const blob = new Blob([res.data]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = res.headers['content-disposition']?.match(/filename="?(.+?)"?$/)?.[1] ?? `meeting-${kind}.${sendFormat}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert(t('Ошибка скачивания', 'Download error')); }
+  };
+
   const sendToTelegram = async (kind: 'summary' | 'full') => {
     if (!meeting) return;
     setSendingKind(kind);
@@ -143,11 +157,13 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
           {tab === 'details' && (
             <div className="space-y-4 flex-1 overflow-auto">
               <div>
-                <input
-                  className="w-full text-lg font-semibold bg-transparent text-gray-900 dark:text-gray-100 border-b border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
+                <textarea
+                  className="w-full text-lg font-semibold bg-transparent text-gray-900 dark:text-gray-100 border-b border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-indigo-400 focus:outline-none px-1 py-0.5 resize-none overflow-hidden"
+                  rows={Math.max(1, Math.ceil(((form.title ?? '').length || 1) / 35))}
                   value={form.title ?? ''}
                   onChange={(e) => handleChange('title', e.target.value)}
                   onBlur={() => handleBlur('title')}
+                  onInput={(e) => { const el = e.target as HTMLTextAreaElement; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }}
                 />
               </div>
 
@@ -217,8 +233,9 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                 </div>
               )}
 
+              {/* Download to device */}
               <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">{t('Отправить в Telegram', 'Send to Telegram')}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">{t('Скачать / Отправить', 'Download / Send')}</div>
                 <div className="flex gap-1.5 mb-2">
                   {(['md', 'pdf', 'docx'] as const).map((f) => (
                     <button key={f} type="button" onClick={() => setSendFormat(f)}
@@ -229,6 +246,25 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                       }`}>{f.toUpperCase()}</button>
                   ))}
                 </div>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <button onClick={() => downloadFile('notes')}
+                    className="py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors">
+                    📝 {t('Заметки', 'Notes')}
+                  </button>
+                  <button onClick={() => downloadFile('qa')}
+                    className="py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors">
+                    ❓ Q&A
+                  </button>
+                  <button onClick={() => downloadFile('actions')}
+                    className="py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors">
+                    📊 {t('Анализ', 'Analysis')}
+                  </button>
+                  <button onClick={() => downloadFile('full')}
+                    className="py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors">
+                    📜 {t('Транскрипт', 'Transcript')}
+                  </button>
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">{t('Отправить в Telegram', 'Send to Telegram')}</div>
                 <div className="flex gap-2">
                   <button onClick={() => sendToTelegram('summary')} disabled={sendingKind !== null}
                     className="flex-1 py-2 text-xs text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-colors disabled:opacity-50">
