@@ -2,8 +2,10 @@
  * One-time script: generate pro summaries (Notes, Q&A, Actions) for all existing meetings.
  * Run: cd packages/api && npx tsx src/scripts/backfill-pro-summaries.ts
  */
-import { getDb } from '../db/db';
+import { initDb, getDb } from '../db/db';
 import { ClaudeService } from '../services/claude.service';
+
+initDb();
 
 async function main() {
   const db = getDb();
