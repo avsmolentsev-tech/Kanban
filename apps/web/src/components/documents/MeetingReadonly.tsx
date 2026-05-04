@@ -40,7 +40,7 @@ function splitSummaryAndTranscript(raw: string): { summary: string; transcript: 
 }
 
 function DownloadButton({ meetingId, type, label, icon: Icon }: {
-  meetingId: number; type: 'summary' | 'full'; label: string; icon: typeof Download;
+  meetingId: number; type: 'summary' | 'full' | 'notes' | 'qa' | 'actions'; label: string; icon: typeof Download;
 }) {
   const [loading, setLoading] = useState(false);
   const handleDownload = async () => {
@@ -138,9 +138,16 @@ export function MeetingReadonly({ meeting }: Props) {
       </div>
 
       {/* Action buttons */}
-      <div className="flex items-center gap-2 mb-6">
-        {summary && <DownloadButton meetingId={meeting.id} type="summary" label={t('Скачать резюме', 'Download summary')} icon={FileText} />}
-        {transcript && <DownloadButton meetingId={meeting.id} type="full" label={t('Скачать транскрипт', 'Download transcript')} icon={ScrollText} />}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        {hasProSummaries && (
+          <>
+            <DownloadButton meetingId={meeting.id} type="notes" label={t('Заметки', 'Notes')} icon={FileText} />
+            <DownloadButton meetingId={meeting.id} type="qa" label="Q&A" icon={FileText} />
+            <DownloadButton meetingId={meeting.id} type="actions" label={t('Анализ', 'Analysis')} icon={FileText} />
+          </>
+        )}
+        {!hasProSummaries && summary && <DownloadButton meetingId={meeting.id} type="summary" label={t('Резюме', 'Summary')} icon={FileText} />}
+        {(transcript || proSummaries?.transcript) && <DownloadButton meetingId={meeting.id} type="full" label={t('Транскрипт', 'Transcript')} icon={ScrollText} />}
         <button
           onClick={() => useDocumentsStore.getState().setEditingMeeting(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
@@ -215,7 +222,7 @@ export function MeetingReadonly({ meeting }: Props) {
       )}
 
       {/* Transcript section */}
-      {transcript && (
+      {(transcript || proSummaries?.transcript) && (
         <div>
           <button
             onClick={() => setShowTranscript(!showTranscript)}
@@ -229,7 +236,7 @@ export function MeetingReadonly({ meeting }: Props) {
           </button>
           {showTranscript && (
             <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap leading-relaxed border-l-2 border-gray-200 dark:border-gray-700 pl-4">
-              {transcript}
+              {transcript || proSummaries?.transcript}
             </div>
           )}
         </div>

@@ -350,27 +350,41 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), (req: AuthRequest
 });
 
 // Send meeting summary or full transcription to user's Telegram
+type MeetingFileType = 'summary' | 'full' | 'notes' | 'qa' | 'actions';
+
 const SendToTelegramSchema = z.object({
-  type: z.enum(['summary', 'full']),
+  type: z.enum(['summary', 'full', 'notes', 'qa', 'actions']),
   format: z.enum(['md', 'pdf', 'docx']),
 });
 
-async function buildMeetingFile(meetingId: number, type: 'summary' | 'full', format: 'md' | 'pdf' | 'docx'): Promise<{ path: string; filename: string }> {
+const TYPE_LABELS: Record<MeetingFileType, string> = { summary: 'rezume', full: 'polnaya', notes: 'notes', qa: 'qa', actions: 'analysis' };
+
+async function buildMeetingFile(meetingId: number, type: MeetingFileType, format: 'md' | 'pdf' | 'docx'): Promise<{ path: string; filename: string }> {
   const db = getDb();
-  const m = db.prepare('SELECT id, title, date, project_id, summary_raw FROM meetings WHERE id = ?').get(meetingId) as { id: number; title: string; date: string; project_id: number | null; summary_raw: string | null } | undefined;
+  const m = db.prepare('SELECT id, title, date, project_id, summary_raw, summary_structured FROM meetings WHERE id = ?').get(meetingId) as { id: number; title: string; date: string; project_id: number | null; summary_raw: string | null; summary_structured: string | null } | undefined;
   if (!m) throw new Error('Meeting not found');
   const projectName = m.project_id ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(m.project_id) as { name: string } | undefined)?.name : undefined;
   const people = (db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map((x) => x.name);
 
+  let structured: Record<string, string> = {};
+  try { structured = JSON.parse(m.summary_structured || '{}'); } catch {}
+
   let body: string;
-  if (type === 'summary') {
-    const raw = (m.summary_raw ?? '').trim();
-    if (!raw) throw new Error('No content to summarize');
-    const sys = 'Ты редактор. Сделай компактное структурированное резюме встречи в markdown: цели, ключевые решения, договорённости, задачи, следующие шаги. 200-500 слов, без воды.';
-    const summary = await claude.chat([{ role: 'user', content: raw }], sys, 'gpt-4.1-mini', false, false);
-    body = summary.trim();
+  if (type === 'notes' && structured.notes) {
+    body = structured.notes;
+  } else if (type === 'qa' && structured.qa) {
+    body = structured.qa;
+  } else if (type === 'actions' && structured.actions) {
+    body = structured.actions;
+  } else if (type === 'full') {
+    const transcript = structured.transcript || '';
+    body = (m.summary_raw ?? '') + (transcript ? `\n\n---\n\n## Полная транскрипция\n\n${transcript}` : '');
   } else {
-    body = m.summary_raw ?? '(пусто)';
+    // summary or fallback
+    const raw = (m.summary_raw ?? '').trim();
+    if (!raw) throw new Error('No content');
+    const sys = 'Ты редактор. Сделай компактное структурированное резюме встречи в markdown: цели, ключевые решения, договорённости, задачи, следующие шаги. 200-500 слов, без воды.';
+    body = await claude.chat([{ role: 'user', content: raw }], sys, 'gpt-4.1-mini', false, false);
   }
 
   const header = [
@@ -385,7 +399,7 @@ async function buildMeetingFile(meetingId: number, type: 'summary' | 'full', for
   ].filter((l) => l !== '').join('\n');
 
   const slug = m.title.toLowerCase().replace(/[^a-zа-я0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 60);
-  const baseName = `${m.date}-${slug}-${type === 'summary' ? 'rezume' : 'polnaya'}`;
+  const baseName = `${m.date}-${slug}-${TYPE_LABELS[type] || type}`;
   const tmpMd = path.join('/tmp', `${baseName}-${Date.now()}.md`);
   fs.writeFileSync(tmpMd, `${header}\n\n${body}\n`, 'utf-8');
 
@@ -444,7 +458,8 @@ meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
   if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
   const exists = getDb().prepare('SELECT id FROM meetings WHERE id = ? AND user_id = ?').get(id, userId);
   if (!exists) { res.status(404).json(fail('Meeting not found')); return; }
-  const type = (req.query['type'] as string) === 'full' ? 'full' : 'summary';
+  const validTypes: MeetingFileType[] = ['summary', 'full', 'notes', 'qa', 'actions'];
+  const type = (validTypes.includes(req.query['type'] as MeetingFileType) ? req.query['type'] : 'summary') as MeetingFileType;
   const format = (['md', 'pdf', 'docx'].includes(req.query['format'] as string) ? req.query['format'] : 'md') as 'md' | 'pdf' | 'docx';
   try {
     const { path: filePath, filename } = await buildMeetingFile(id, type, format);
