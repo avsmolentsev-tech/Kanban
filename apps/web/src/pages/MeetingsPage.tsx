@@ -137,13 +137,20 @@ function MobileMeetingsView({ meetings, projects, projectMap, onClickMeeting, on
   }
 
   const activeProjects = projects.filter(p => !p.archived);
+  const activeProjectIds = new Set(activeProjects.map(p => p.id));
   const projectGroups: Array<{ project: Project | null; meetings: Meeting[] }> = [];
   for (const p of activeProjects) {
     const pm = byProject.get(p.id);
     if (pm && pm.length > 0) projectGroups.push({ project: p, meetings: pm });
   }
-  const unassigned = byProject.get(null);
-  if (unassigned && unassigned.length > 0) projectGroups.push({ project: null, meetings: unassigned });
+  // Collect meetings without project + meetings with unknown/archived project
+  const unassigned = byProject.get(null) ?? [];
+  const orphaned: Meeting[] = [];
+  for (const [pid, ms] of byProject) {
+    if (pid !== null && !activeProjectIds.has(pid)) orphaned.push(...ms);
+  }
+  const allUnassigned = [...unassigned, ...orphaned];
+  if (allUnassigned.length > 0) projectGroups.unshift({ project: null, meetings: allUnassigned });
 
   // Count per tab for badges
   const tabCounts: Record<string, number> = {};
