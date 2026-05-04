@@ -333,12 +333,15 @@ ${context}` }], '', 'gpt-4.1'),
     return parsed;
   }
 
-  async correctDraft(current: DraftCard, userText: string): Promise<ExtractionResult> {
+  async correctDraft(current: DraftCard, userText: string, existingProjectNames?: string[]): Promise<ExtractionResult> {
+    const projectList = existingProjectNames && existingProjectNames.length > 0
+      ? `\n\nСПИСОК ПРОЕКТОВ ПОЛЬЗОВАТЕЛЯ (выбирай ТОЛЬКО из этого списка для project_hints):\n${existingProjectNames.map(n => `- ${n}`).join('\n')}\nЕсли пользователь упоминает проект — найди ближайшее совпадение из списка. Если не находишь — оставь пустым.`
+      : '';
     const resp = await this.openai.chat.completions.create({
       model: 'gpt-4.1-mini',
       temperature: 0.1,
       messages: [
-        { role: 'system', content: 'Ты обновляешь черновик карточки по запросу пользователя. Возвращаешь JSON с точно такой же схемой: {detected_type, title, date, project_hints, company_hints, people, tags_hierarchical, tags_free, summary, agreements, tasks}. Берёшь текущие поля и применяешь правку. Если правка не касается поля — оставь как было. ВАЖНО: если пользователь говорит "встреча" или "доправляю встречу" — меняй detected_type на "meeting". Если упоминает людей — добавляй в people. Если упоминает проект — обновляй project_hints. СТРОГО JSON без пояснений.' },
+        { role: 'system', content: `Ты обновляешь черновик карточки по запросу пользователя. Возвращаешь JSON с точно такой же схемой: {detected_type, title, date, project_hints, company_hints, people, tags_hierarchical, tags_free, summary, agreements, tasks}. Берёшь текущие поля и применяешь правку. Если правка не касается поля — оставь как было. ВАЖНО: если пользователь говорит "встреча" или "доправляю встречу" — меняй detected_type на "meeting". Если упоминает людей — добавляй/убирай из people. Если упоминает проект — обновляй project_hints. Если говорит "Компания X" — это company_hints, НЕ project_hints. Если говорит "кого-то НЕ было" — убери из people. СТРОГО JSON без пояснений.${projectList}` },
         { role: 'user', content: `Текущий черновик:\n${JSON.stringify({
           detected_type: current.type,
           title: current.title,

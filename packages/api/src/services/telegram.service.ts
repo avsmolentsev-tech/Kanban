@@ -206,12 +206,25 @@ export class TelegramService {
 
   private async applyCorrection(ctx: any, draft: DraftCard, userText: string): Promise<void> {
     const claude = new ClaudeService();
-    const patched = await claude.correctDraft(draft, userText);
+    const db = getDb();
+    const existingProjects = db.prepare('SELECT name FROM projects WHERE user_id = ? AND archived = 0').all(draft.userId) as Array<{ name: string }>;
+    const patched = await claude.correctDraft(draft, userText, existingProjects.map(p => p.name));
+    // Fuzzy-match project from correction against DB
+    let projectName = patched.project_hints[0] ?? null;
+    if (projectName) {
+      const hint = projectName.toLowerCase();
+      const match = existingProjects.find(p =>
+        p.name.toLowerCase() === hint ||
+        p.name.toLowerCase().includes(hint) ||
+        hint.includes(p.name.toLowerCase())
+      );
+      projectName = match ? match.name : `❓ ${projectName} (не найден)`;
+    }
     const updated = this.drafts.update(draft.tgId, {
       type: patched.detected_type,
       title: patched.title,
       date: patched.date,
-      projectName: patched.project_hints[0] ?? null,
+      projectName,
       companyName: patched.company_hints[0] ?? null,
       people: patched.people,
       tags: [...patched.tags_hierarchical, ...patched.tags_free],
