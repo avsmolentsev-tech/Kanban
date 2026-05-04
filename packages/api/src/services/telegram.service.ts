@@ -218,24 +218,17 @@ export class TelegramService {
       summary: patched.summary,
       awaitingEdit: false,
     });
-    if (!updated || updated.cardMessageId == null) {
+    if (!updated) {
       await ctx.reply('❌ Драфт не найден, попробуй заново.');
       return;
     }
-    try {
-      await ctx.telegram.editMessageText(
-        ctx.chat.id,
-        updated.cardMessageId,
-        undefined,
-        renderDraftCard(updated),
-        { reply_markup: inlineKeyboard(updated) },
-      );
-    } catch (editErr: unknown) {
-      // "message is not modified" is non-fatal — card looks the same but data was updated
-      const msg = editErr instanceof Error ? editErr.message : String(editErr);
-      if (!msg.includes('message is not modified')) throw editErr;
-    }
-    await ctx.reply('✅ Коррекция применена. Нажми OK для сохранения или исправь ещё.');
+    // Send NEW card message (old one is far up in chat — user can't see it)
+    const msg = await ctx.reply(
+      `✅ Коррекция применена:\n\n${renderDraftCard(updated)}`,
+      { reply_markup: inlineKeyboard(updated) },
+    );
+    // Update card message ID to the new message so OK/Fix buttons work on it
+    this.drafts.update(draft.tgId, { cardMessageId: msg.message_id });
   }
 
   private async buildAndSendDraft(
