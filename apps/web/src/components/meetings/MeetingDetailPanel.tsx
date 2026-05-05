@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { SlidePanel } from '../ui/SlidePanel';
 import { meetingsApi } from '../../api/meetings.api';
+import { tasksApi } from '../../api/tasks.api';
 import { apiPost, apiGet, apiClient } from '../../api/client';
 import type { Meeting, Project } from '@pis/shared';
 import { useLangStore } from '../../store/lang.store';
@@ -32,6 +33,10 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [sendFormat, setSendFormat] = useState<'md' | 'pdf' | 'docx'>('pdf');
   const [sendingKind, setSendingKind] = useState<'summary' | 'full' | null>(null);
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [extractedTasks, setExtractedTasks] = useState<string[]>([]);
+  const [selectedTasks, setSelectedTasks] = useState<Set<number>>(new Set());
+  const [creatingTasks, setCreatingTasks] = useState(false);
 
   useEffect(() => {
     if (meeting) {
@@ -41,6 +46,15 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
       setChatMessages([]);
       setTab('details');
       useActiveMeetingStore.getState().setMeetingId(meeting.id);
+      // Load tasks from pro summaries
+      apiGet<{ summary_structured: string }>(`/meetings/${meeting.id}`).then((data) => {
+        try {
+          const s = JSON.parse((data as any).summary_structured || '{}');
+          const notes = s.notes || '';
+          const tasks = notes.split('\n').filter((l: string) => l.trim().startsWith('- [ ]')).map((l: string) => l.replace(/^-\s*\[\s*\]\s*/, '').trim()).filter(Boolean);
+          setExtractedTasks(tasks);
+        } catch { setExtractedTasks([]); }
+      }).catch(() => setExtractedTasks([]));
     } else {
       useActiveMeetingStore.getState().setMeetingId(null);
     }
@@ -81,6 +95,22 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
     const url = `/v1/meetings/${meeting.id}/download?type=${kind}&format=${sendFormat}&token=${encodeURIComponent(token)}`;
     window.open(url, '_blank');
   };
+
+  const handleCreateTasks = useCallback(async () => {
+    if (!meeting || selectedTasks.size === 0) return;
+    setCreatingTasks(true);
+    try {
+      for (const idx of selectedTasks) {
+        const title = extractedTasks[idx];
+        if (title) {
+          await tasksApi.create({ title, status: 'backlog', priority: 3, project_id: meeting.project_id ?? undefined, description: `Из встречи: ${meeting.title} (${meeting.date})` });
+        }
+      }
+      setShowTaskDialog(false);
+      setSelectedTasks(new Set());
+      onUpdated();
+    } catch {} finally { setCreatingTasks(false); }
+  }, [meeting, selectedTasks, extractedTasks, onUpdated]);
 
   const sendToTelegram = async (kind: 'summary' | 'full') => {
     if (!meeting) return;
@@ -253,6 +283,12 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                     className="py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors">
                     📜 {t('Транскрипт', 'Transcript')}
                   </button>
+                  {extractedTasks.length > 0 && (
+                    <button onClick={() => { setShowTaskDialog(true); setSelectedTasks(new Set()); }}
+                      className="py-2 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg border border-indigo-300 dark:border-indigo-700 transition-colors">
+                      ✅ {t('Задачи', 'Tasks')} ({extractedTasks.length})
+                    </button>
+                  )}
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">{t('Отправить в Telegram', 'Send to Telegram')}</div>
                 <div className="flex gap-2">
@@ -339,6 +375,41 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Task selection dialog */}
+      {showTaskDialog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50" onClick={() => setShowTaskDialog(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">{t('Задачи из встречи', 'Tasks from meeting')}</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{t('Выберите задачи для переноса в бэклог', 'Select tasks to add to backlog')}</p>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-3 space-y-2">
+              {extractedTasks.map((task, idx) => (
+                <label key={idx} className="flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors">
+                  <input type="checkbox" checked={selectedTasks.has(idx)}
+                    onChange={() => setSelectedTasks(prev => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n; })}
+                    className="w-4 h-4 mt-0.5 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">{task}</span>
+                </label>
+              ))}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <button onClick={() => setSelectedTasks(prev => prev.size === extractedTasks.length ? new Set() : new Set(extractedTasks.map((_, i) => i)))}
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 cursor-pointer">
+                {selectedTasks.size === extractedTasks.length ? t('Снять всё', 'Deselect all') : t('Выбрать всё', 'Select all')}
+              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setShowTaskDialog(false)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 cursor-pointer">{t('Отмена', 'Cancel')}</button>
+                <button onClick={handleCreateTasks} disabled={selectedTasks.size === 0 || creatingTasks}
+                  className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 cursor-pointer">
+                  {creatingTasks ? '...' : `${t('Добавить', 'Add')} (${selectedTasks.size})`}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </SlidePanel>
