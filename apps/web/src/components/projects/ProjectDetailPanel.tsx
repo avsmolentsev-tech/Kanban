@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { SlidePanel } from '../ui/SlidePanel';
 import { projectsApi } from '../../api/projects.api';
 import { apiGet } from '../../api/client';
+import { peopleApi } from '../../api/people.api';
 import { useLangStore } from '../../store/lang.store';
-import type { Project, ProjectStatus } from '@pis/shared';
+import { TaskDetailPanel } from '../kanban/TaskDetailPanel';
+import type { Project, ProjectStatus, Task, Person } from '@pis/shared';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 const STATUSES: ProjectStatus[] = ['active', 'completed', 'archived'];
@@ -25,6 +27,9 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
   const [form, setForm] = useState<Partial<Project>>({});
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [people, setPeople] = useState<Array<{ id: number; name: string }>>([]);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const [allPeople, setAllPeople] = useState<Person[]>([]);
 
   useEffect(() => {
     if (project) {
@@ -144,10 +149,11 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
               <div className="text-xs text-gray-500 mb-2">🤝 {t('Встречи', 'Meetings')} ({detail.meetings.length})</div>
               <div className="space-y-1 max-h-32 overflow-auto">
                 {detail.meetings.map(m => (
-                  <div key={m.id} className="text-xs text-gray-600 dark:text-gray-300 flex items-start gap-2 py-1">
+                  <button key={m.id} onClick={() => { window.location.href = `/meetings?open=${m.id}`; }}
+                    className="w-full text-xs text-gray-600 dark:text-gray-300 flex items-start gap-2 py-1 text-left hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer transition-colors">
                     <span className="text-gray-400 flex-shrink-0">{m.date}</span>
                     <span>{m.title}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -173,11 +179,17 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
               <div className="text-xs text-gray-500 mb-2">📋 {t('Задачи', 'Tasks')} ({detail.tasks.length})</div>
               <div className="space-y-1 max-h-40 overflow-auto">
                 {detail.tasks.slice(0, 15).map(task => (
-                  <div key={task.id} className={`text-xs flex items-start gap-2 py-0.5 ${task.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-600 dark:text-gray-300'}`}>
+                  <button key={task.id} onClick={async () => {
+                    const full = await apiGet<Task>(`/tasks/${task.id}`);
+                    setSelectedTask(full);
+                    if (!allProjects.length) projectsApi.list().then(setAllProjects);
+                    if (!allPeople.length) peopleApi.list().then(setAllPeople);
+                  }}
+                    className={`w-full text-xs flex items-start gap-2 py-0.5 text-left cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors ${task.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-600 dark:text-gray-300'}`}>
                     <span className="flex-shrink-0">{task.status === 'done' ? '✅' : task.status === 'in_progress' ? '🔄' : '📋'}</span>
                     <span>{task.title}</span>
                     <span className="ml-auto text-gray-300">{'⭐'.repeat(task.priority)}</span>
-                  </div>
+                  </button>
                 ))}
                 {detail.tasks.length > 15 && <div className="text-[10px] text-gray-400">+{detail.tasks.length - 15} {t('ещё', 'more')}</div>}
               </div>
@@ -194,6 +206,14 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
           )}
         </div>
       )}
+      <TaskDetailPanel
+        task={selectedTask}
+        projects={allProjects}
+        people={allPeople}
+        onClose={() => setSelectedTask(null)}
+        onUpdated={() => { setSelectedTask(null); if (project) projectsApi.get(project.id).then((d) => setDetail(d as unknown as ProjectDetail)); onUpdated(); }}
+        onDeleted={() => { setSelectedTask(null); if (project) projectsApi.get(project.id).then((d) => setDetail(d as unknown as ProjectDetail)); onUpdated(); }}
+      />
     </SlidePanel>
   );
 }
