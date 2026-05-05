@@ -248,7 +248,18 @@ export function MeetingsPage() {
   const newFileRef = useRef<HTMLInputElement>(null);
 
   const load = () => {
-    meetingsApi.list().then(setMeetings);
+    meetingsApi.list().then((m) => {
+      setMeetings(m);
+      // Auto-open meeting from URL ?open=ID
+      const params = new URLSearchParams(window.location.search);
+      const openId = params.get('open');
+      if (openId && !selected) {
+        const found = m.find((mt: Meeting) => mt.id === Number(openId));
+        if (found) setSelected(found);
+        // Clean URL
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    });
     projectsApi.list().then(setProjects);
   };
   useEffect(load, []);
