@@ -290,33 +290,45 @@ export function MeetingReadonly({ meeting }: Props) {
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">{t('Задачи из встречи', 'Tasks from meeting')}</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{t('Выберите задачи для переноса в бэклог', 'Select tasks to add to backlog')}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{t('Редактируйте, удаляйте или добавляйте задачи', 'Edit, delete, or add tasks')}</p>
             </div>
-            <div className="flex-1 overflow-y-auto px-6 py-3 space-y-2">
+            <div className="flex-1 overflow-y-auto px-6 py-3 space-y-1">
               {extractedTasks.map((task, idx) => (
-                <label key={idx} className="flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors">
+                <div key={idx} className="flex items-start gap-2 py-1.5 group">
                   <input
                     type="checkbox"
                     checked={selectedTasks.has(idx)}
-                    onChange={() => {
-                      setSelectedTasks(prev => {
-                        const next = new Set(prev);
-                        if (next.has(idx)) next.delete(idx); else next.add(idx);
-                        return next;
-                      });
-                    }}
-                    className="w-4 h-4 mt-0.5 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    onChange={() => setSelectedTasks(prev => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n; })}
+                    className="w-4 h-4 mt-1 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 cursor-pointer flex-shrink-0"
                   />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">{task}</span>
-                </label>
+                  <input
+                    className="flex-1 text-sm bg-transparent text-gray-700 dark:text-gray-300 border-b border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
+                    value={task}
+                    onChange={(e) => setExtractedTasks(prev => prev.map((t, i) => i === idx ? e.target.value : t))}
+                  />
+                  <button
+                    onClick={() => {
+                      setExtractedTasks(prev => prev.filter((_, i) => i !== idx));
+                      setSelectedTasks(prev => { const n = new Set<number>(); for (const v of prev) { if (v < idx) n.add(v); else if (v > idx) n.add(v - 1); } return n; });
+                    }}
+                    className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all cursor-pointer flex-shrink-0 mt-1"
+                    title={t('Удалить', 'Delete')}
+                  >✕</button>
+                </div>
               ))}
+              {/* Add new task */}
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  onClick={() => { setExtractedTasks(prev => [...prev, '']); setTimeout(() => { const inputs = document.querySelectorAll('.task-dialog-input'); (inputs[inputs.length - 1] as HTMLInputElement)?.focus(); }, 50); }}
+                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 cursor-pointer"
+                >
+                  + {t('Добавить задачу', 'Add task')}
+                </button>
+              </div>
             </div>
             <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
               <button
-                onClick={() => {
-                  if (selectedTasks.size === extractedTasks.length) setSelectedTasks(new Set());
-                  else setSelectedTasks(new Set(extractedTasks.map((_, i) => i)));
-                }}
+                onClick={() => setSelectedTasks(prev => prev.size === extractedTasks.length ? new Set() : new Set(extractedTasks.map((_, i) => i)))}
                 className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 cursor-pointer"
               >
                 {selectedTasks.size === extractedTasks.length ? t('Снять всё', 'Deselect all') : t('Выбрать всё', 'Select all')}
@@ -330,7 +342,7 @@ export function MeetingReadonly({ meeting }: Props) {
                   disabled={selectedTasks.size === 0 || creatingTasks}
                   className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
                 >
-                  {creatingTasks ? '...' : `${t('Добавить', 'Add')} (${selectedTasks.size})`}
+                  {creatingTasks ? '...' : `${t('В бэклог', 'To backlog')} (${selectedTasks.size})`}
                 </button>
               </div>
             </div>
