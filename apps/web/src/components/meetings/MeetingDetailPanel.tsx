@@ -249,10 +249,6 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                     className="py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors">
                     ❓ Q&A
                   </button>
-                  <button onClick={() => downloadFile('actions')}
-                    className="py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors">
-                    📊 {t('Анализ', 'Analysis')}
-                  </button>
                   <button onClick={() => downloadFile('full')}
                     className="py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors">
                     📜 {t('Транскрипт', 'Transcript')}

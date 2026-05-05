@@ -121,18 +121,9 @@ export class TelegramService {
       db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultRel, meetingId);
       this.pushRecentAction(draft.tgId, { type: 'meeting', title: draft.title, id: meetingId, table: 'meetings', date: draft.date, savedAt: Date.now() });
 
-      // Auto-create tasks from meeting in backlog
-      if (draft.tasks && draft.tasks.length > 0) {
-        for (const taskTitle of draft.tasks) {
-          if (taskTitle.trim()) {
-            db.prepare('INSERT INTO tasks (user_id, title, status, priority, urgency, project_id, description) VALUES (?, ?, ?, ?, ?, ?, ?)')
-              .run(draft.userId, taskTitle.trim(), 'backlog', 3, 3, projectId, `Из встречи: ${draft.title} (${draft.date})`);
-          }
-        }
-        console.log(`[draft] created ${draft.tasks.length} tasks in backlog from meeting #${meetingId}`);
-      }
+      // Tasks from meeting are NOT auto-created — user selects them via UI dialog
 
-      // Async: generate Plaud-style pro summaries (Notes, Q&A, Actions)
+      // Async: generate pro summaries (Notes, Q&A)
       if (draft.transcript && draft.transcript.length > 200) {
         const claude = new ClaudeService();
         claude.generateProSummaries(draft.transcript, draft.title, draft.people).then((summaries) => {
