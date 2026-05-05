@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { SlidePanel } from '../ui/SlidePanel';
 import { projectsApi } from '../../api/projects.api';
+import { meetingsApi } from '../../api/meetings.api';
 import { apiGet } from '../../api/client';
 import { peopleApi } from '../../api/people.api';
 import { useLangStore } from '../../store/lang.store';
 import { TaskDetailPanel } from '../kanban/TaskDetailPanel';
-import type { Project, ProjectStatus, Task, Person } from '@pis/shared';
+import { MeetingDetailPanel } from '../meetings/MeetingDetailPanel';
+import type { Project, ProjectStatus, Task, Person, Meeting } from '@pis/shared';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 const STATUSES: ProjectStatus[] = ['active', 'completed', 'archived'];
@@ -28,6 +30,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [people, setPeople] = useState<Array<{ id: number; name: string }>>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [allPeople, setAllPeople] = useState<Person[]>([]);
 
@@ -149,7 +152,11 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
               <div className="text-xs text-gray-500 mb-2">🤝 {t('Встречи', 'Meetings')} ({detail.meetings.length})</div>
               <div className="space-y-1 max-h-32 overflow-auto">
                 {detail.meetings.map(m => (
-                  <button key={m.id} onClick={() => { window.location.href = `/meetings?open=${m.id}`; }}
+                  <button key={m.id} onClick={async () => {
+                    const full = await meetingsApi.get(m.id);
+                    setSelectedMeeting(full as unknown as Meeting);
+                    if (!allProjects.length) projectsApi.list().then(setAllProjects);
+                  }}
                     className="w-full text-xs text-gray-600 dark:text-gray-300 flex items-start gap-2 py-1 text-left hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer transition-colors">
                     <span className="text-gray-400 flex-shrink-0">{m.date}</span>
                     <span>{m.title}</span>
@@ -213,6 +220,13 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
         onClose={() => setSelectedTask(null)}
         onUpdated={() => { setSelectedTask(null); if (project) projectsApi.get(project.id).then((d) => setDetail(d as unknown as ProjectDetail)); onUpdated(); }}
         onDeleted={() => { setSelectedTask(null); if (project) projectsApi.get(project.id).then((d) => setDetail(d as unknown as ProjectDetail)); onUpdated(); }}
+      />
+      <MeetingDetailPanel
+        meeting={selectedMeeting}
+        projects={allProjects}
+        onClose={() => setSelectedMeeting(null)}
+        onUpdated={() => { if (project) projectsApi.get(project.id).then((d) => setDetail(d as unknown as ProjectDetail)); onUpdated(); }}
+        onDeleted={() => { setSelectedMeeting(null); if (project) projectsApi.get(project.id).then((d) => setDetail(d as unknown as ProjectDetail)); onUpdated(); }}
       />
     </SlidePanel>
   );
