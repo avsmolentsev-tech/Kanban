@@ -506,16 +506,17 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 
           <div className="text-xs text-gray-400 pt-2">{t('Создано: ', 'Created: ')}{task.created_at}</div>
 
-          {onDeleted && (
+          {(
             <button
               onClick={async () => {
                 if (confirm(t('Удалить задачу?', 'Delete task?'))) {
                   await tasksApi.delete(task.id);
-                  onDeleted();
+                  if (onDeleted) onDeleted();
+                  onUpdated();
                   onClose();
                 }
               }}
-              className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors"
+              className="w-full py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 transition-colors cursor-pointer"
             >
               {t('Удалить задачу', 'Delete task')}
             </button>
