@@ -38,7 +38,7 @@ import { AboutPage } from './pages/AboutPage';
 import {
   LayoutDashboard, Columns3, BarChart3, FolderKanban, Users, CalendarDays,
   Lightbulb, FileText, MessageCircle, Target, BookOpen, GanttChart,
-  Flame, Sun, PieChart, LogOut, ChevronLeft, ChevronRight, Shield
+  Flame, Sun, PieChart, LogOut, ChevronLeft, ChevronRight, Shield, Send
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -236,6 +236,11 @@ export default function App() {
                     <div className="text-[10px] text-gray-400 truncate">{user?.email}</div>
                   </div>
                 </NavLink>
+                <a href="https://t.me/MyBestKanban_bot" target="_blank" rel="noopener"
+                  className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-gray-400 hover:text-indigo-500 transition-colors"
+                  title={t('Telegram-бот', 'Telegram Bot')}>
+                  <Send size={14} />
+                </a>
                 {user?.role === 'admin' && (
                   <a href="/admin.html" target="_blank" rel="noopener"
                     className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-gray-400 hover:text-indigo-500 transition-colors"
