@@ -15,8 +15,22 @@
   --text:#0f172a;--text-muted:#64748b;--text-light:#94a3b8;
   --border:#e2e8f0;--radius:16px;
 }
-body{font-family:'Plus Jakarta Sans',sans-serif;color:var(--text);background:var(--bg);line-height:1.6;overflow-x:hidden}
+html.dark{
+  --bg:#0f172a;--bg-soft:#1e293b;--bg-card:#334155;
+  --text:#f1f5f9;--text-muted:#94a3b8;--text-light:#64748b;
+  --border:#334155;
+}
+body{font-family:'Plus Jakarta Sans',sans-serif;color:var(--text);background:var(--bg);line-height:1.6;overflow-x:hidden;transition:background .3s,color .3s}
 a{text-decoration:none;color:inherit}
+html.dark nav{background:rgba(15,23,42,.85)}
+html.dark .feature-card{background:var(--bg-soft);border-color:var(--border)}
+html.dark .ai-card{background:linear-gradient(135deg,#1e293b,#1e1b4b);border-color:var(--border)}
+html.dark .cta-box .btn{color:var(--primary)}
+
+/* Toggle buttons */
+.toggle-group{display:flex;gap:4px;align-items:center}
+.toggle-btn{padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;transition:all .2s}
+.toggle-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
 
 /* Utility */
 .container{max-width:1200px;margin:0 auto;padding:0 24px}
@@ -121,10 +135,22 @@ footer{padding:40px 0;border-top:1px solid var(--border);text-align:center;color
       Clarity Space
     </a>
     <div class="nav-links">
-      <a href="#features">Возможности</a>
+      <a href="#features" data-i18n="nav_features">Возможности</a>
       <a href="#ai">AI</a>
-      <a href="#comparison">Преимущества</a>
-      <a href="https://kanban.myaipro.ru" class="btn btn-primary" style="padding:10px 24px;font-size:14px">Открыть</a>
+      <a href="#comparison" data-i18n="nav_why">Преимущества</a>
+      <div class="toggle-group">
+        <button class="toggle-btn active" onclick="setLang('ru')">RU</button>
+        <button class="toggle-btn" onclick="setLang('en')">EN</button>
+      </div>
+      <div class="toggle-group">
+        <button class="toggle-btn active" onclick="setTheme('light')" id="theme-light">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        </button>
+        <button class="toggle-btn" onclick="setTheme('dark')" id="theme-dark">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+      <a href="https://kanban.myaipro.ru" class="btn btn-primary" style="padding:10px 24px;font-size:14px" data-i18n="nav_open">Открыть</a>
     </div>
   </div>
 </nav>
@@ -132,9 +158,9 @@ footer{padding:40px 0;border-top:1px solid var(--border);text-align:center;color
 <!-- Hero -->
 <section class="hero">
   <div class="container">
-    <div class="badge">Персональная система управления для основателей</div>
-    <h1 style="margin-top:24px">Ваш бизнес.<br><span>Кристально ясен.</span></h1>
-    <p>Управление задачами, AI-саммери встреч, голосовые команды, синхронизация с Obsidian, Telegram-бот. Всё, что нужно основателю, в одном месте.</p>
+    <div class="badge" data-i18n="hero_badge">Персональная система управления для основателей</div>
+    <h1 style="margin-top:24px" data-i18n-html="hero_title">Ваш бизнес.<br><span>Кристально ясен.</span></h1>
+    <p data-i18n="hero_desc">Управление задачами, AI-саммери встреч, голосовые команды, синхронизация с Obsidian, Telegram-бот. Всё, что нужно основателю, в одном месте.</p>
     <div class="hero-buttons">
       <a href="https://kanban.myaipro.ru" class="btn btn-primary">
         <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -305,5 +331,202 @@ footer{padding:40px 0;border-top:1px solid var(--border);text-align:center;color
   </div>
 </footer>
 
+<script>
+const translations = {
+  ru: {
+    hero_badge: 'Персональная система управления для основателей',
+    hero_title: 'Ваш бизнес.<br><span>Кристально ясен.</span>',
+    hero_desc: 'Управление задачами, AI-саммери встреч, голосовые команды, синхронизация с Obsidian, Telegram-бот. Всё, что нужно основателю, в одном месте.',
+    hero_btn1: 'Начать бесплатно', hero_btn2: 'Возможности',
+    stat1: 'представлений задач', stat2: 'саммери встреч', stat3: 'бот + голос', stat4: 'синхронизация',
+    nav_features: 'Возможности', nav_why: 'Преимущества', nav_open: 'Открыть',
+    feat_title: 'Всё, что нужно', feat_sub: '5 представлений задач. AI для встреч. Голос для скорости.',
+    f1_title: 'Kanban + Timeline + Gantt + Calendar + Swipe',
+    f1_desc: '5 способов смотреть на задачи. Kanban для фокуса. Timeline для дедлайнов. Gantt для планирования. Календарь с Google Calendar. Swipe как Tinder для мобильного.',
+    f2_title: 'Голосовые команды', f2_desc: 'Говорите для создания задач, встреч, идей. Работает в Telegram и на сайте. Русский и английский.',
+    f3_title: 'Документы как в Notion', f3_desc: 'Rich-text редактор с таблицами, изображениями, слэш-командами, дочерними документами. Навигация через breadcrumbs. Автосохранение.', f3_tag: 'НОВОЕ',
+    f4_title: 'Интеллект встреч', f4_desc: 'Записывайте, транскрибируйте, анализируйте. Получайте Notes + Q&A отчёты. Извлекайте задачи одним кликом. Обсуждайте с AI.',
+    f5_title: 'Telegram-бот', f5_desc: 'Полный контроль из Telegram. Голосовые сообщения, карточки-черновики, /pro транскрибация, управление встречами. 24/7.',
+    f6_title: 'Дневной брифинг + Цели + Привычки', f6_desc: 'AI-брифинг каждое утро. Еженедельные цели с авто-планированием. Трекинг привычек. Фокус дня. Напоминания через Telegram.',
+    ai_badge: 'AI внутри', ai_title: 'AI, который работает на вас', ai_sub: 'Не просто чат-бот. Система, которая понимает ваши встречи, задачи и контекст.',
+    ai1_title: 'Саммери встреч', ai1_desc: 'Отправьте аудиозапись. Получите структурированные заметки с решениями, рисками, возможностями и задачами. Плюс Q&A разбор.',
+    ai1_ex: '"Отправь аудио в TG-бот. Получи 2 отчёта: Notes с задачами + Q&A. Выбери задачи для переноса в бэклог."',
+    ai2_title: 'Голосовой ассистент', ai2_desc: 'Говорите естественно. Создавайте задачи, переносите сроки, спрашивайте о встречах. Знает контекст — какую встречу вы сейчас смотрите.',
+    ai2_ex: '"Создай задачу: подготовить презентацию для инвестора, проект V-Cards, приоритет высокий, до пятницы"',
+    ai3_title: 'Обсуждение встреч', ai3_desc: 'Откройте встречу, нажмите "Обсудить с AI". Задавайте вопросы по содержанию. AI имеет полный контекст транскрипции.',
+    ai3_ex: '"О чём договорились по ценообразованию? Кто отвечает за пилотный проект?"',
+    cmp_title: 'Почему Clarity Space?', cmp_sub: 'Создан для основателей, а не для корпораций.',
+    cs1:'AI-транскрибация встреч + саммери + извлечение задач', cs2:'Telegram-бот с голосовыми командами',
+    cs3:'5 представлений задач (Kanban, Timeline, Gantt, Calendar, Swipe)', cs4:'Документы как в Notion + синхронизация с Obsidian',
+    cs5:'Дневной AI-брифинг с приоритизацией', cs6:'Цели, привычки, дневник, управление контактами',
+    cs7:'PRO транскрибация через нейросети (/pro)', cs8:'Self-hosted, ваши данные остаются у вас',
+    ot1:'Нет интеллекта встреч (нужен отдельный сервис)', ot2:'Нет интеграции с Telegram',
+    ot3:'Максимум 1-2 представления', ot4:'Документы отдельно от задач',
+    ot5:'Нет AI-брифингов', ot6:'Цели и привычки — отдельные приложения',
+    ot7:'Базовая транскрибация или отсутствует', ot8:'Только облако, привязка к вендору',
+    cmp_other: 'Обычные инструменты',
+    int_title: 'Интеграции', int_nn: '3+ нейросети',
+    cta_title: 'Начните наводить ясность сегодня', cta_desc: 'Бесплатно. Self-hosted. Без привязки к вендору.', cta_btn: 'Открыть Clarity Space',
+    footer: 'Clarity Space 2026. Персональная система управления.',
+  },
+  en: {
+    hero_badge: 'Personal Intelligence System for Founders',
+    hero_title: 'Your business.<br><span>Crystal clear.</span>',
+    hero_desc: 'Task management, AI meeting summaries, voice commands, Obsidian sync, Telegram bot. Everything a founder needs in one place.',
+    hero_btn1: 'Start Free', hero_btn2: 'See Features',
+    stat1: 'views', stat2: 'meeting summaries', stat3: 'bot + voice', stat4: 'sync',
+    nav_features: 'Features', nav_why: 'Why Us', nav_open: 'Open App',
+    feat_title: 'Everything you need', feat_sub: '5 views for your tasks. AI for your meetings. Voice for speed.',
+    f1_title: 'Kanban + Timeline + Gantt + Calendar + Swipe',
+    f1_desc: '5 ways to view your tasks. Kanban for focus. Timeline for deadlines. Gantt for planning. Calendar with Google sync. Tinder-style swipe for mobile.',
+    f2_title: 'Voice Commands', f2_desc: 'Speak to create tasks, meetings, ideas. Works in Telegram and web. Russian and English.',
+    f3_title: 'Notion-like Documents', f3_desc: 'Rich text editor with tables, images, slash commands, child documents. Breadcrumbs navigation. Auto-save.', f3_tag: 'NEW',
+    f4_title: 'Meeting Intelligence', f4_desc: 'Record, transcribe, summarize. Get Notes + Q&A reports. Extract tasks with one click. Discuss with AI.',
+    f5_title: 'Telegram Bot', f5_desc: 'Full control from Telegram. Voice messages, draft cards, /pro transcription, meeting management. 24/7.',
+    f6_title: 'Daily Briefing + Goals + Habits', f6_desc: 'AI-generated daily brief. Weekly goals with auto-scheduling. Habit tracking with streaks. Focus of the day. Telegram reminders.',
+    ai_badge: 'AI Inside', ai_title: 'AI that works for you', ai_sub: 'Not just a chatbot. A system that understands your meetings, tasks, and context.',
+    ai1_title: 'Meeting Summaries', ai1_desc: 'Send an audio recording. Get structured Notes with decisions, risks, opportunities, and action items. Plus Q&A breakdown.',
+    ai1_ex: '"Send audio to TG bot. Get 2 reports: Notes with action items + Q&A. Select tasks to add to backlog."',
+    ai2_title: 'Voice Assistant', ai2_desc: 'Speak naturally. Create tasks, reschedule, ask about meetings. Context-aware — knows which meeting you\'re viewing.',
+    ai2_ex: '"Create task: prepare investor deck, project V-Cards, priority high, due Friday"',
+    ai3_title: 'Discuss Meetings', ai3_desc: 'Open a meeting, tap "Discuss with AI". Ask questions about what was said. AI has full transcript context.',
+    ai3_ex: '"What did we agree about pricing? Who is responsible for the pilot?"',
+    cmp_title: 'Why Clarity Space?', cmp_sub: 'Built for founders, not for enterprise teams.',
+    cs1:'AI meeting transcription + summaries + task extraction', cs2:'Telegram bot with voice commands',
+    cs3:'5 task views (Kanban, Timeline, Gantt, Calendar, Swipe)', cs4:'Notion-like documents with Obsidian sync',
+    cs5:'Daily briefing with AI prioritization', cs6:'Goals, habits, journal, people management',
+    cs7:'Pro transcription via neural networks (/pro)', cs8:'Self-hosted, your data stays yours',
+    ot1:'No meeting intelligence (need separate tool)', ot2:'No Telegram integration',
+    ot3:'1-2 views max', ot4:'Documents separate from tasks',
+    ot5:'No AI briefings', ot6:'Goals/habits require separate apps',
+    ot7:'Basic transcription or none', ot8:'Cloud only, vendor lock-in',
+    cmp_other: 'Typical Tools',
+    int_title: 'Integrations', int_nn: '3+ neural networks',
+    cta_title: 'Start building clarity today', cta_desc: 'Free to use. Self-hosted. No vendor lock-in.', cta_btn: 'Open Clarity Space',
+    footer: 'Clarity Space 2026. Personal Intelligence System.',
+  }
+};
+
+let currentLang = 'ru';
+
+function setLang(lang) {
+  currentLang = lang;
+  const t = translations[lang];
+  // Update toggle buttons
+  document.querySelectorAll('[onclick^="setLang"]').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.trim() === lang.toUpperCase());
+  });
+  // Update all data-i18n elements
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (t[key]) el.textContent = t[key];
+  });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => {
+    const key = el.getAttribute('data-i18n-html');
+    if (t[key]) el.innerHTML = t[key];
+  });
+}
+
+function setTheme(theme) {
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  document.getElementById('theme-light').classList.toggle('active', theme === 'light');
+  document.getElementById('theme-dark').classList.toggle('active', theme === 'dark');
+}
+
+// Add data-i18n attributes after load
+document.addEventListener('DOMContentLoaded', () => {
+  // We'll use a simple approach: tag elements by their content structure
+  const map = {
+    'hero_btn1': '.hero-buttons .btn-primary',
+    'hero_btn2': '.hero-buttons .btn-outline',
+  };
+  // Tag stat labels
+  const stats = document.querySelectorAll('.stat-label');
+  ['stat1','stat2','stat3','stat4'].forEach((k,i) => { if(stats[i]) stats[i].setAttribute('data-i18n', k); });
+  // Tag feature titles/descs
+  const cards = document.querySelectorAll('.feature-card');
+  const fkeys = [['f1_title','f1_desc'],['f2_title','f2_desc'],['f3_title','f3_desc'],['f4_title','f4_desc'],['f5_title','f5_desc'],['f6_title','f6_desc']];
+  cards.forEach((c,i) => {
+    if(fkeys[i]) {
+      const h = c.querySelector('h3'); if(h) h.setAttribute('data-i18n', fkeys[i][0]);
+      const p = c.querySelector('p'); if(p) p.setAttribute('data-i18n', fkeys[i][1]);
+      const tag = c.querySelector('.feature-tag'); if(tag && i===2) tag.setAttribute('data-i18n', 'f3_tag');
+    }
+  });
+  // Tag sections
+  const secTitles = document.querySelectorAll('.section-title');
+  const secSubs = document.querySelectorAll('.section-subtitle');
+  if(secTitles[0]) secTitles[0].setAttribute('data-i18n','feat_title');
+  if(secSubs[0]) secSubs[0].setAttribute('data-i18n','feat_sub');
+  // AI section
+  const aiBadge = document.querySelectorAll('.ai-section .badge');
+  if(aiBadge[0]) aiBadge[0].setAttribute('data-i18n','ai_badge');
+  if(secTitles[1]) secTitles[1].setAttribute('data-i18n','ai_title');
+  if(secSubs[1]) secSubs[1].setAttribute('data-i18n','ai_sub');
+  const aiCards = document.querySelectorAll('.ai-card');
+  const aiKeys = [['ai1_title','ai1_desc','ai1_ex'],['ai2_title','ai2_desc','ai2_ex'],['ai3_title','ai3_desc','ai3_ex']];
+  aiCards.forEach((c,i) => {
+    if(aiKeys[i]) {
+      const h = c.querySelector('h3'); if(h) h.setAttribute('data-i18n', aiKeys[i][0]);
+      const p = c.querySelector('p'); if(p) p.setAttribute('data-i18n', aiKeys[i][1]);
+      const ex = c.querySelector('.ai-example'); if(ex) ex.setAttribute('data-i18n', aiKeys[i][2]);
+    }
+  });
+  // Comparison
+  if(secTitles[2]) secTitles[2].setAttribute('data-i18n','cmp_title');
+  if(secSubs[2]) secSubs[2].setAttribute('data-i18n','cmp_sub');
+  const lists = document.querySelectorAll('.comparison-list');
+  if(lists[0]) {
+    const items = lists[0].querySelectorAll('li');
+    ['cs1','cs2','cs3','cs4','cs5','cs6','cs7','cs8'].forEach((k,i) => {
+      if(items[i]) { const sp = items[i].querySelector('span:last-child') || items[i]; items[i].setAttribute('data-i18n-li', k); }
+    });
+  }
+  if(lists[1]) {
+    const items = lists[1].querySelectorAll('li');
+    ['ot1','ot2','ot3','ot4','ot5','ot6','ot7','ot8'].forEach((k,i) => {
+      if(items[i]) items[i].setAttribute('data-i18n-li', k);
+    });
+  }
+  // Other headers
+  const cmpHeaders = document.querySelectorAll('.comparison-grid h3');
+  if(cmpHeaders[1]) cmpHeaders[1].setAttribute('data-i18n','cmp_other');
+  // Integrations
+  if(secTitles[3]) secTitles[3].setAttribute('data-i18n','int_title');
+  const intLogos = document.querySelectorAll('.integration-logos span');
+  if(intLogos[3]) intLogos[3].setAttribute('data-i18n','int_nn');
+  // CTA
+  const ctaH2 = document.querySelector('.cta-box h2');
+  const ctaP = document.querySelector('.cta-box p');
+  const ctaBtn = document.querySelector('.cta-box .btn');
+  if(ctaH2) ctaH2.setAttribute('data-i18n','cta_title');
+  if(ctaP) ctaP.setAttribute('data-i18n','cta_desc');
+  // Footer
+  const footerP = document.querySelector('footer p');
+  if(footerP) footerP.setAttribute('data-i18n','footer');
+  // Hero buttons
+  const heroBtn1 = document.querySelector('.hero-buttons .btn-primary');
+  const heroBtn2 = document.querySelector('.hero-buttons .btn-outline');
+
+  // Override setLang to also handle list items and buttons with SVG
+  const origSetLang = setLang;
+  window.setLang = function(lang) {
+    origSetLang(lang);
+    const t = translations[lang];
+    // List items (contain <span class="check"> + text)
+    document.querySelectorAll('[data-i18n-li]').forEach(li => {
+      const key = li.getAttribute('data-i18n-li');
+      if(t[key]) {
+        const check = li.querySelector('.check');
+        if(check) li.innerHTML = check.outerHTML + t[key];
+      }
+    });
+    // Buttons with SVG children
+    if(heroBtn1) { const svg = heroBtn1.querySelector('svg'); heroBtn1.innerHTML = (svg?svg.outerHTML:'') + '\n        ' + t.hero_btn1; }
+    if(heroBtn2) heroBtn2.textContent = t.hero_btn2;
+    if(ctaBtn) { const svg = ctaBtn.querySelector('svg'); ctaBtn.innerHTML = '\n        ' + t.cta_btn + '\n        ' + (svg?svg.outerHTML:''); }
+  };
+});
+</script>
 </body>
 </html>
