@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { DocumentsSidebar } from '../components/documents/DocumentsSidebar';
 import { TiptapEditor } from '../components/documents/TiptapEditor';
 import { Breadcrumbs } from '../components/documents/Breadcrumbs';
@@ -8,7 +8,7 @@ import { IdeaTiptapEditor } from '../components/documents/IdeaTiptapEditor';
 import { useDocumentsStore } from '../store/documents.store';
 import { useProjectsStore } from '../store';
 import { useLangStore } from '../store/lang.store';
-import { FileText } from 'lucide-react';
+import { FileText, Menu, X } from 'lucide-react';
 
 export function NotionDocumentsPage() {
   const { t } = useLangStore();
@@ -20,6 +20,7 @@ export function NotionDocumentsPage() {
   } = useDocumentsStore();
 
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleTitleChange = useCallback(
     (title: string) => {
@@ -46,11 +47,23 @@ export function NotionDocumentsPage() {
   return (
     <div className="relative flex h-full overflow-hidden bg-white dark:bg-gray-900">
       {/* Background spheres — PIS style */}
-      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.08]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] h-[500px] rounded-full bg-violet-400/[0.06] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.08]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-violet-400/[0.06] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+
+      {/* Mobile sidebar toggle */}
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="md:hidden fixed top-3 left-3 z-30 p-2 rounded-lg bg-white dark:bg-gray-800 shadow-md border border-gray-200 dark:border-gray-700 cursor-pointer"
+      >
+        {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+      </button>
 
       {/* Sidebar */}
-      <DocumentsSidebar />
+      <div className={`${sidebarOpen ? 'fixed inset-0 z-20 flex' : 'hidden'} md:relative md:flex`}>
+        <DocumentsSidebar />
+        {/* Overlay on mobile */}
+        <div className="flex-1 md:hidden" onClick={() => setSidebarOpen(false)} />
+      </div>
 
       {/* Editor area */}
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
