@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type MutableRefObject } from 'react';
 import { SlidePanel } from '../ui/SlidePanel';
 import { meetingsApi } from '../../api/meetings.api';
 import { tasksApi } from '../../api/tasks.api';
@@ -31,6 +31,8 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [recording, setRecording] = useState(false);
+  const recognitionRef = useRef<any>(null);
   const [sendFormat, setSendFormat] = useState<'md' | 'pdf' | 'docx'>('pdf');
   const [sendingKind, setSendingKind] = useState<'summary' | 'full' | null>(null);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
@@ -357,16 +359,54 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
 
               {/* Chat input */}
               <div className="flex gap-2 pb-20 md:pb-0 pr-16 md:pr-0">
+                <button
+                  onClick={() => {
+                    if (recording) {
+                      recognitionRef.current?.stop();
+                      setRecording(false);
+                      return;
+                    }
+                    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+                    if (!SR) return;
+                    const recognition = new SR();
+                    recognition.continuous = true;
+                    recognition.interimResults = true;
+                    recognition.lang = 'ru-RU';
+                    let lastInterim = '';
+                    recognition.onresult = (event: any) => {
+                      let newFinal = '', interim = '';
+                      for (let i = event.resultIndex; i < event.results.length; i++) {
+                        if (event.results[i].isFinal) newFinal += event.results[i][0].transcript;
+                        else interim += event.results[i][0].transcript;
+                      }
+                      setChatInput(prev => {
+                        let base = prev;
+                        if (lastInterim && base.endsWith(lastInterim)) base = base.slice(0, -lastInterim.length);
+                        lastInterim = interim;
+                        return base + (newFinal ? newFinal + ' ' : '') + interim;
+                      });
+                    };
+                    recognition.onerror = () => setRecording(false);
+                    recognition.onend = () => setRecording(false);
+                    recognitionRef.current = recognition;
+                    recognition.start();
+                    setRecording(true);
+                  }}
+                  className={`p-2 rounded-lg transition-colors cursor-pointer flex-shrink-0 ${recording ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'}`}
+                  title={recording ? t('Остановить', 'Stop') : t('Голосовой ввод', 'Voice input')}
+                >
+                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+                </button>
                 <input
                   className="flex-1 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
-                  placeholder={t('Спросите о встрече...', 'Ask about the meeting...')}
+                  placeholder={recording ? t('Говорите...', 'Speaking...') : t('Спросите о встрече...', 'Ask about the meeting...')}
                   value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+                  onChange={(e) => { if (recording) { recognitionRef.current?.stop(); setRecording(false); } setChatInput(e.target.value); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (recording) { recognitionRef.current?.stop(); setRecording(false); } sendChat(); } }}
                   disabled={chatLoading}
                 />
                 <button
-                  onClick={sendChat}
+                  onClick={() => { if (recording) { recognitionRef.current?.stop(); setRecording(false); } sendChat(); }}
                   disabled={chatLoading || !chatInput.trim()}
                   className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                 >
