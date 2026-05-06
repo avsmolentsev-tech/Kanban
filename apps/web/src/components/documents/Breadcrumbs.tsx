@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import { useDocumentsStore } from '../../store/documents.store';
 import { useLangStore } from '../../store/lang.store';
 import { documentsApi } from '../../api/documents.api';
+import { apiGet } from '../../api/client';
 import type { DocumentNode } from '../../api/documents.api';
 import type { Project } from '@pis/shared';
 
@@ -58,21 +59,11 @@ export function Breadcrumbs({ project, saving, lastSaved }: Props) {
       const parents = buildParentChain(data.documents, activeDocument.id);
       if (parents.length > 0) { setApiParents([]); return; }
     }
-    // Fallback: fetch parents via API
+    // Fallback: single request for full ancestor chain
     let cancelled = false;
-    const loadParents = async () => {
-      const chain: Array<{ id: number; title: string }> = [];
-      let parentId: number | null = activeDocument.parent_id;
-      while (parentId) {
-        try {
-          const parent = await documentsApi.get(parentId);
-          chain.unshift({ id: parent.id, title: parent.title });
-          parentId = parent.parent_id;
-        } catch { break; }
-      }
-      if (!cancelled) setApiParents(chain);
-    };
-    loadParents();
+    apiGet<Array<{ id: number; title: string }>>(`/documents/${activeDocument.id}/ancestors`)
+      .then((chain) => { if (!cancelled) setApiParents(chain); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [activeDocument?.id, activeDocument?.parent_id, activeDocument?.project_id, projectData]);
 

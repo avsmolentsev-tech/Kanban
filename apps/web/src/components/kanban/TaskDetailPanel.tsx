@@ -220,43 +220,54 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             disabled={saving}
           />
 
-          {/* Period (replaces status + deadline) */}
+          {/* Status */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">{t('Когда', 'When')}</div>
+            <div className="text-xs text-gray-500 mb-1">{t('Статус', 'Status')}</div>
             <div className="flex flex-wrap gap-1.5">
-              {PERIOD_OPTIONS.map((opt) => {
-                const active = currentPeriod(form.status, form.due_date || null) === opt.value;
+              {([
+                { value: 'backlog' as const, label: t('Бэклог', 'Backlog') },
+                { value: 'todo' as const, label: 'Todo' },
+                { value: 'in_progress' as const, label: t('В работе', 'In progress') },
+                { value: 'done' as const, label: t('Готово', 'Done') },
+                { value: 'someday' as const, label: t('Когда-нибудь', 'Someday') },
+              ]).map((opt) => (
+                <button key={opt.value} type="button" disabled={saving}
+                  onClick={() => { setForm((f) => ({ ...f, status: opt.value })); save({ status: opt.value }); }}
+                  className={`px-2.5 py-1 text-xs rounded border transition-colors cursor-pointer ${form.status === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-indigo-300'}`}
+                >{opt.label}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Due date */}
+          <div>
+            <div className="text-xs text-gray-500 mb-1">{t('Дата', 'Due date')}</div>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {([
+                { label: t('Сегодня', 'Today'), offset: 0 },
+                { label: t('Завтра', 'Tomorrow'), offset: 1 },
+                { label: t('На неделе', 'This week'), offset: 5 },
+                { label: t('В этом месяце', 'This month'), offset: 30 },
+                { label: t('Без даты', 'No date'), offset: -1 },
+              ]).map((opt) => {
+                const d = new Date(); d.setDate(d.getDate() + (opt.offset >= 0 ? opt.offset : 0));
+                const dateStr = opt.offset >= 0 ? localDateStr(d) : '';
+                const isActive = opt.offset === -1 ? !form.due_date : form.due_date === dateStr;
                 return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    disabled={saving}
-                    onClick={() => {
-                      const updates = periodToUpdates(opt.value);
-                      setForm((f) => ({ ...f, status: updates.status, due_date: 'due_date' in updates ? (updates.due_date ?? '') : f.due_date }));
-                      save(updates as Partial<FormState>);
-                    }}
-                    className={`px-2.5 py-1 text-xs rounded border transition-colors ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-indigo-300'}`}
-                  >
-                    {opt.label}
-                  </button>
+                  <button key={opt.label} type="button" disabled={saving}
+                    onClick={() => { const val = opt.offset === -1 ? '' : dateStr; setForm((f) => ({ ...f, due_date: val })); save({ due_date: val || null } as Partial<FormState>); }}
+                    className={`px-2.5 py-1 text-xs rounded border transition-colors cursor-pointer ${isActive ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-indigo-300'}`}
+                  >{opt.label}</button>
                 );
               })}
             </div>
-            {/* Exact date picker */}
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-xs text-gray-500">{t('Дата:', 'Date:')}</span>
-              <input
-                type="date"
-                className="text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1 focus:outline-none focus:border-indigo-300"
-                value={form.due_date}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, due_date: e.target.value, status: e.target.value ? 'todo' : f.status }));
-                  save({ due_date: e.target.value || null, status: e.target.value ? 'todo' : form.status } as Partial<FormState>);
-                }}
-                disabled={saving}
-              />
-            </div>
+            <input
+              type="date"
+              className="text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1 focus:outline-none focus:border-indigo-300"
+              value={form.due_date}
+              onChange={(e) => { setForm((f) => ({ ...f, due_date: e.target.value })); save({ due_date: e.target.value || null } as Partial<FormState>); }}
+              disabled={saving}
+            />
           </div>
 
           {/* Project */}

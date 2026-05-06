@@ -85,6 +85,19 @@ export class TelegramService {
     const obsidian = new ObsidianService(config.vaultPath).forUser(draft.userId);
     const tagsList = draft.tags;
     if (draft.type === 'meeting') {
+      // Check for duplicate: same title + date
+      const existing = db.prepare('SELECT id, title FROM meetings WHERE user_id = ? AND date = ? AND title = ?').get(draft.userId, draft.date, draft.title) as { id: number; title: string } | undefined;
+      if (existing) {
+        console.log(`[draft] duplicate meeting detected: "${draft.title}" on ${draft.date} (existing #${existing.id})`);
+        // Update existing instead of creating new
+        db.prepare('UPDATE meetings SET summary_raw = ?, summary_structured = ? WHERE id = ?').run(
+          draft.summary || draft.title,
+          JSON.stringify({ transcript: draft.transcript }),
+          existing.id
+        );
+        this.pushRecentAction(draft.tgId, { type: 'meeting', title: draft.title, id: existing.id, table: 'meetings', date: draft.date, savedAt: Date.now() });
+        return;
+      }
       // summary_raw = readable summary (no transcript), transcript stored separately in summary_structured
       const summaryBody = draft.summary || draft.title;
       // Resolve project

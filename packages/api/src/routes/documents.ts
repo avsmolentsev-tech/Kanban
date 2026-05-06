@@ -83,6 +83,24 @@ documentsRouter.post('/', (req: AuthRequest, res: Response) => {
   res.status(201).json(ok(getDb().prepare('SELECT * FROM documents WHERE id = ?').get(result.lastInsertRowid)));
 });
 
+// Get ancestor chain for breadcrumbs (single request instead of N+1)
+documentsRouter.get('/:id/ancestors', (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  const docId = Number(req.params['id']);
+  const chain: Array<{ id: number; title: string; parent_id: number | null }> = [];
+  let currentId: number | null = docId;
+  const seen = new Set<number>();
+  while (currentId) {
+    if (seen.has(currentId)) break; // cycle protection
+    seen.add(currentId);
+    const doc = getDb().prepare('SELECT id, title, parent_id FROM documents WHERE id = ? AND user_id = ?').get(currentId, userId) as { id: number; title: string; parent_id: number | null } | undefined;
+    if (!doc || doc.id === docId) { currentId = doc?.parent_id ?? null; continue; } // skip self
+    chain.unshift(doc);
+    currentId = doc.parent_id;
+  }
+  res.json(ok(chain));
+});
+
 // Serve attachment files — MUST be before /:id to avoid route conflict
 documentsRouter.get('/attachments/file/:filename', (req: AuthRequest, res: Response) => {
   const filePath = path.join(attachDir, req.params['filename']!);

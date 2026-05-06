@@ -56,21 +56,41 @@ function DownloadButton({ meetingId, type, label, icon: Icon }: {
   );
 }
 
-/** Render markdown-ish text with basic formatting */
+/** Parse inline markdown: **bold**, *italic*, `code`, [[wiki-links]] */
+function renderInline(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let key = 0;
+  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|\[\[(.+?)\]\])/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(remaining)) !== null) {
+    if (match.index > lastIndex) parts.push(remaining.slice(lastIndex, match.index));
+    if (match[2]) parts.push(<strong key={key++} className="font-semibold text-gray-800 dark:text-gray-100">{match[2]}</strong>);
+    else if (match[3]) parts.push(<em key={key++} className="italic">{match[3]}</em>);
+    else if (match[4]) parts.push(<code key={key++} className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs font-mono">{match[4]}</code>);
+    else if (match[5]) parts.push(<span key={key++} className="text-indigo-500 dark:text-indigo-400 font-medium">{match[5]}</span>);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < remaining.length) parts.push(remaining.slice(lastIndex));
+  return parts.length > 0 ? parts : [text];
+}
+
+/** Render markdown-ish text with block + inline formatting */
 function MarkdownText({ text }: { text: string }) {
   const lines = text.split('\n');
   return (
     <div className="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 leading-relaxed">
       {lines.map((line, i) => {
-        if (line.startsWith('# ')) return <h1 key={i} className="text-xl font-bold mt-4 mb-2 text-gray-800 dark:text-gray-100">{line.slice(2)}</h1>;
-        if (line.startsWith('## ')) return <h2 key={i} className="text-lg font-semibold mt-4 mb-2 text-gray-800 dark:text-gray-100">{line.slice(3)}</h2>;
-        if (line.startsWith('### ')) return <h3 key={i} className="text-base font-semibold mt-3 mb-1 text-gray-800 dark:text-gray-100">{line.slice(4)}</h3>;
-        if (line.startsWith('- [ ] ')) return <div key={i} className="flex items-start gap-2 ml-2 my-0.5"><span className="w-4 h-4 mt-0.5 rounded border border-gray-300 dark:border-gray-600 flex-shrink-0" /><span>{line.slice(6)}</span></div>;
-        if (line.startsWith('- [x] ')) return <div key={i} className="flex items-start gap-2 ml-2 my-0.5"><span className="w-4 h-4 mt-0.5 rounded border border-green-500 bg-green-500/20 flex-shrink-0 text-center text-[10px] text-green-400">✓</span><span className="line-through text-gray-400">{line.slice(6)}</span></div>;
-        if (line.startsWith('- ')) return <div key={i} className="ml-2 my-0.5">• {line.slice(2)}</div>;
-        if (line.startsWith('> ')) return <blockquote key={i} className="border-l-2 border-indigo-400 pl-3 italic text-gray-500 dark:text-gray-400 my-1">{line.slice(2)}</blockquote>;
+        if (line.startsWith('# ')) return <h1 key={i} className="text-xl font-bold mt-4 mb-2 text-gray-800 dark:text-gray-100">{renderInline(line.slice(2))}</h1>;
+        if (line.startsWith('## ')) return <h2 key={i} className="text-lg font-semibold mt-4 mb-2 text-gray-800 dark:text-gray-100">{renderInline(line.slice(3))}</h2>;
+        if (line.startsWith('### ')) return <h3 key={i} className="text-base font-semibold mt-3 mb-1 text-gray-800 dark:text-gray-100">{renderInline(line.slice(4))}</h3>;
+        if (line.startsWith('- [ ] ')) return <div key={i} className="flex items-start gap-2 ml-2 my-0.5"><span className="w-4 h-4 mt-0.5 rounded border border-gray-300 dark:border-gray-600 flex-shrink-0" /><span>{renderInline(line.slice(6))}</span></div>;
+        if (line.startsWith('- [x] ')) return <div key={i} className="flex items-start gap-2 ml-2 my-0.5"><span className="w-4 h-4 mt-0.5 rounded border border-green-500 bg-green-500/20 flex-shrink-0 text-center text-[10px] text-green-400">✓</span><span className="line-through text-gray-400">{renderInline(line.slice(6))}</span></div>;
+        if (line.startsWith('- ')) return <div key={i} className="ml-2 my-0.5">• {renderInline(line.slice(2))}</div>;
+        if (line.startsWith('> ')) return <blockquote key={i} className="border-l-2 border-indigo-400 pl-3 italic text-gray-500 dark:text-gray-400 my-1">{renderInline(line.slice(2))}</blockquote>;
         if (line.trim() === '') return <div key={i} className="h-2" />;
-        return <p key={i} className="my-0.5">{line}</p>;
+        return <p key={i} className="my-0.5">{renderInline(line)}</p>;
       })}
     </div>
   );

@@ -76,6 +76,13 @@ jobs:
             package.json
           retention-days: 1
 
+      - name: Upload shared types
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-types
+          path: packages/shared/
+          retention-days: 1
+
       - name: Upload backup scripts
         uses: actions/upload-artifact@v4
         with:
@@ -164,6 +171,19 @@ jobs:
             claude-ops-bot/ \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/apps/claude-ops-bot/
 
+      - name: Download shared types
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-types
+          path: shared-types/
+
+      - name: Deploy shared types
+        run: |
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            --exclude='node_modules' \
+            shared-types/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/packages/shared/
+
       - name: Deploy workspace manifests
         run: |
           rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
@@ -177,8 +197,15 @@ jobs:
 
       - name: Restart API
         run: |
-          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
-            "pm2 restart kanban-api && pm2 save"
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "bash -lc '
+            if pm2 describe kanban-api > /dev/null 2>&1; then
+              pm2 restart kanban-api
+            else
+              cd /var/www/kanban-app
+              pm2 start ecosystem.config.cjs 2>/dev/null || pm2 start \"npx tsx packages/api/src/index.ts\" --name kanban-api --cwd /var/www/kanban-app/packages/api
+            fi
+            pm2 save
+          '"
 
       - name: Start or restart claude-ops-bot
         run: |
