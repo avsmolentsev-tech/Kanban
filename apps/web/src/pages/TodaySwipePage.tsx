@@ -69,7 +69,7 @@ export function TodaySwipePage() {
         <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full bg-purple-400/10 dark:bg-purple-400/[0.08]" style={{ animation: 'circleRightSlow 28s cubic-bezier(0.45,0,0.55,1) infinite' }} />
         <div className="text-6xl mb-4">🎉</div>
         <div className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">{t('Все задачи сделаны!', 'All tasks done!')}</div>
-        <div className="text-sm text-gray-500 dark:text-gray-400">{t('На сегодня задач нет', 'No tasks for today')}</div>
+        <div className="text-sm text-gray-500 dark:text-gray-400">{t('Всё разобрано! Отличная работа', 'All cleared! Great job')}</div>
         <button
           onClick={() => { setIndex(0); fetchTasks(); }}
           className="mt-6 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"

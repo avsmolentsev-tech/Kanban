@@ -97,6 +97,16 @@ export function GanttPage() {
           <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Диаграмма Ганта', 'Gantt Chart')}</h1>
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400">{t('Ближайшие 30 дней', 'Next 30 days')}</p>
+        {rows.length > 0 && (
+          <div className="flex flex-wrap gap-3 mt-2">
+            {rows.map(({ project }) => (
+              <div key={project?.id ?? 'none'} className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                <div className="w-3 h-2 rounded-sm" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                {project?.name ?? t('Без проекта', 'No project')}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div ref={scrollRef} className="relative z-10 flex-1 overflow-auto">

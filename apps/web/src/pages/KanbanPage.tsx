@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Columns3 } from 'lucide-react';
+import { Columns3, Plus } from 'lucide-react';
 import { useTasksStore, useProjectsStore, useFiltersStore } from '../store';
 import { KanbanBoard } from '../components/kanban/KanbanBoard';
 import { ProjectFilter } from '../components/filters/ProjectFilter';
@@ -10,13 +10,14 @@ import { tasksApi } from '../api/tasks.api';
 import { useLangStore } from '../store/lang.store';
 import { TaskCard } from '../components/kanban/TaskCard';
 import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
+import { AddTaskModal } from '../components/kanban/AddTaskModal';
 
 const KANBAN_MOBILE_TABS: Array<{ key: TaskStatus; shortRu: string; shortEn: string }> = [
-  { key: 'backlog', shortRu: 'Бэк', shortEn: 'Back' },
+  { key: 'backlog', shortRu: 'Бэклог', shortEn: 'Backlog' },
   { key: 'todo', shortRu: 'Todo', shortEn: 'Todo' },
   { key: 'in_progress', shortRu: 'В работе', shortEn: 'Active' },
   { key: 'done', shortRu: 'Готово', shortEn: 'Done' },
-  { key: 'someday', shortRu: 'Когда-н', shortEn: 'Some' },
+  { key: 'someday', shortRu: 'Потом', shortEn: 'Later' },
 ];
 
 /** Mobile: tabs by status, vertical list grouped by project */
@@ -84,7 +85,7 @@ function MobileKanbanView({ tasks, projects, people, onToggleDone, onRefresh }: 
         <div className="relative z-10 flex-1 overflow-auto px-3 py-2 space-y-4 pb-24">
           {projectGroups.length === 0 && (
             <div className="text-gray-400 dark:text-gray-500 text-sm text-center py-12">
-              {activeTab === 'done' ? t('Нет завершённых задач', 'No completed tasks') : t('Нет задач', 'No tasks')}
+              {activeTab === 'done' ? t('Пока нет завершённых задач', 'No completed tasks yet') : t('Пусто. Создайте задачу!', 'Empty. Create a task!')}
             </div>
           )}
           {projectGroups.map(({ project, tasks: groupTasks }) => (
@@ -125,6 +126,7 @@ export function KanbanPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [activeFilter, setActiveFilter] = useState<SavedFilter | null>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [showAddTask, setShowAddTask] = useState(false);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768);
@@ -163,8 +165,17 @@ export function KanbanPage() {
           <div className="flex items-center gap-3">
             <SavedFilters active={activeFilter?.id ?? null} onApply={setActiveFilter} />
             <ProjectFilter projects={projects} />
+            <button onClick={() => setShowAddTask(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer">
+              <Plus size={14} />
+            </button>
           </div>
         </div>
+        {showAddTask && (
+          <div className="relative z-20 px-4 pb-2">
+            <AddTaskModal status="todo" projectId={null} people={people} onCreated={() => { setShowAddTask(false); refresh(); }} onCancel={() => setShowAddTask(false)} />
+          </div>
+        )}
         <MobileKanbanView
           tasks={filteredTasks}
           projects={filteredProjects}
@@ -191,8 +202,18 @@ export function KanbanPage() {
         <div className="flex items-center gap-3">
           <SavedFilters active={activeFilter?.id ?? null} onApply={setActiveFilter} />
           <ProjectFilter projects={projects} />
+          <button onClick={() => setShowAddTask(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer shadow-sm">
+            <Plus size={16} />
+            {t('Задача', 'Task')}
+          </button>
         </div>
       </div>
+      {showAddTask && (
+        <div className="relative z-20 px-4 pb-2">
+          <AddTaskModal status="todo" projectId={null} people={people} onCreated={() => { setShowAddTask(false); refresh(); }} onCancel={() => setShowAddTask(false)} />
+        </div>
+      )}
       <div className="relative z-10 flex-1 overflow-hidden">
         <KanbanBoard
           tasks={filteredTasks}
