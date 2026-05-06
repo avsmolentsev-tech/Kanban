@@ -392,10 +392,13 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                   <input type="checkbox" checked={selectedTasks.has(idx)}
                     onChange={() => setSelectedTasks(prev => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n; })}
                     className="w-4 h-4 mt-1 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 cursor-pointer flex-shrink-0" />
-                  <input
-                    className="flex-1 text-sm bg-transparent text-gray-700 dark:text-gray-300 border-b border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
+                  <textarea
+                    className="flex-1 text-sm bg-transparent text-gray-700 dark:text-gray-300 border-b border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-indigo-400 focus:outline-none px-1 py-0.5 resize-none overflow-hidden"
+                    rows={Math.max(1, Math.ceil((task.length || 1) / 50))}
                     value={task}
                     onChange={(e) => setExtractedTasks(prev => prev.map((t, i) => i === idx ? e.target.value : t))}
+                    onInput={(e) => { const el = e.target as HTMLTextAreaElement; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }}
+                    ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
                   />
                   <button onClick={() => {
                     setExtractedTasks(prev => prev.filter((_, i) => i !== idx));
