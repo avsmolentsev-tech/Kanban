@@ -27,6 +27,7 @@ import { MobileNav } from './components/layout/MobileNav';
 import { SettingsMenu } from './components/layout/SettingsMenu';
 import { HotkeysHelp } from './components/layout/HotkeysHelp';
 import { CommandPalette } from './components/layout/CommandPalette';
+import { OnboardingWelcome } from './components/layout/OnboardingWelcome';
 import { VoiceCommandButton } from './components/voice/VoiceCommandButton';
 import { PomodoroTimer } from './components/pomodoro/PomodoroTimer';
 import { isTelegramWebApp, initTelegramApp } from './lib/telegram';
@@ -304,6 +305,7 @@ export default function App() {
         <HideOnChat><VoiceCommandButton onActionDone={refreshAll} /></HideOnChat>
         <PomodoroTimer />
         {isAuthenticated && <CommandPalette />}
+        {isAuthenticated && <OnboardingWelcome />}
       </div>
     </BrowserRouter>
   );
