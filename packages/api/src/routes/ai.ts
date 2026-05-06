@@ -32,7 +32,7 @@ aiRouter.post('/chat', async (req: AuthRequest, res: Response) => {
       vaultContext ? `\n\nДанные из Obsidian Vault (проекты, задачи, встречи, идеи, люди):\n\n${vaultContext}` : '',
     ].filter(Boolean).join('\n');
 
-    const reply = await claude.chat(parsed.data.messages, systemPrompt, 'gpt-4.1');
+    const reply = await claude.chat(parsed.data.messages, systemPrompt, 'gpt-4.1-mini');
     res.json(ok({ reply }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
@@ -89,7 +89,7 @@ ${JSON.stringify(upcomingMeetings)}
 4. Рекомендации на следующую неделю
 5. Общие наблюдения и тренды`;
 
-    const brief = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1');
+    const brief = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
     res.json(ok({ brief }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
@@ -173,8 +173,9 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
 ДАННЫЕ СИСТЕМЫ:
 Сегодня: ${today}
 Проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
-Задачи: ${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id, due_date: t.due_date })))}
-${overdueTasks.length > 0 ? `\n⚠️ ПРОСРОЧЕННЫЕ ЗАДАЧИ (${overdueTasks.length}): ${JSON.stringify(overdueTasks.map(t => ({ id: t.id, title: t.title, due_date: t.due_date, project_id: t.project_id })))}\nОбязательно напоминай пользователю о просроченных задачах если он спрашивает о статусе, задачах или прогрессе!\n` : ''}Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
+Задачи (последние 30 + в работе): ${JSON.stringify([...overdueTasks, ...tasks.filter(t => t.status === 'in_progress'), ...tasks.filter(t => !overdueTasks.includes(t) && t.status !== 'in_progress' && t.status !== 'done' && t.status !== 'someday')].slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id, due_date: t.due_date })))}
+Всего задач: ${tasks.length} (показаны приоритетные)
+${overdueTasks.length > 0 ? `\n⚠️ ПРОСРОЧЕННЫЕ (${overdueTasks.length}): ${JSON.stringify(overdueTasks.map(t => ({ id: t.id, title: t.title, due_date: t.due_date, project_id: t.project_id })))}\n` : ''}Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕДНИХ ВСТРЕЧ ===\n${fullMeetingContent}\n=== КОНЕЦ ===\n\nОтвечай конкретно на основе содержимого транскрипций выше. Цитируй фрагменты когда уместно.` : ''}
 
@@ -225,7 +226,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
       { role: 'user', content: parsed.data.text },
     ];
 
-    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1', false, true);
+    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1-mini', false, true);
 
     let command: { actions: Array<Record<string, unknown>>; response: string };
     try {
