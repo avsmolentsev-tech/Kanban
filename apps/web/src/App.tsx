@@ -25,6 +25,8 @@ import { ProfilePage } from './pages/ProfilePage';
 import { SearchBar } from './components/search/SearchBar';
 import { MobileNav } from './components/layout/MobileNav';
 import { SettingsMenu } from './components/layout/SettingsMenu';
+import { HotkeysHelp } from './components/layout/HotkeysHelp';
+import { CommandPalette } from './components/layout/CommandPalette';
 import { VoiceCommandButton } from './components/voice/VoiceCommandButton';
 import { PomodoroTimer } from './components/pomodoro/PomodoroTimer';
 import { isTelegramWebApp, initTelegramApp } from './lib/telegram';
@@ -263,6 +265,7 @@ export default function App() {
           {!useMobileLayout && isAuthenticated && (
             <div className="flex items-center justify-end gap-2 px-4 py-2 bg-white dark:bg-gray-800 border-b dark:border-gray-700">
               <SearchBar />
+              <HotkeysHelp />
               <SettingsMenu />
             </div>
           )}
@@ -300,6 +303,7 @@ export default function App() {
         {/* Voice command FAB — hidden on chat page */}
         <HideOnChat><VoiceCommandButton onActionDone={refreshAll} /></HideOnChat>
         <PomodoroTimer />
+        {isAuthenticated && <CommandPalette />}
       </div>
     </BrowserRouter>
   );

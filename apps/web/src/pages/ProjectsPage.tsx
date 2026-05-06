@@ -29,6 +29,8 @@ interface TaskStats {
   total: number;
   done: number;
   in_progress: number;
+  overdue: number;
+  lastMeeting?: string;
 }
 
 function DraggableProjectCard({ project, stats, onClick }: { project: Project; stats?: TaskStats; onClick: () => void }) {
@@ -57,9 +59,11 @@ function DraggableProjectCard({ project, stats, onClick }: { project: Project; s
           <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
             <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, backgroundColor: project.color }} />
           </div>
-          {stats.in_progress > 0 && (
-            <div className="text-[10px] text-gray-400 mt-1">🔄 {stats.in_progress} {t('в работе', 'in progress')}</div>
-          )}
+          <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-400">
+            {stats.in_progress > 0 && <span>🔄 {stats.in_progress} {t('в работе', 'active')}</span>}
+            {stats.overdue > 0 && <span className="text-red-500 font-semibold">⚠ {stats.overdue} {t('просрочено', 'overdue')}</span>}
+            {stats.lastMeeting && <span className="ml-auto">📅 {stats.lastMeeting.slice(5)}</span>}
+          </div>
         </div>
       )}
     </div>
@@ -105,20 +109,30 @@ export function ProjectsPage() {
 
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
-  // Fetch task stats per project
+  // Fetch task stats + meetings per project
   useEffect(() => {
     if (projects.length === 0) return;
     (async () => {
       const map = new Map<number, TaskStats>();
+      const today = new Date().toISOString().split('T')[0]!;
       try {
-        const tasks = await apiGet<Array<{ project_id: number | null; status: string }>>('/tasks');
+        const tasks = await apiGet<Array<{ project_id: number | null; status: string; due_date: string | null }>>('/tasks');
         for (const t of tasks) {
           if (t.project_id === null) continue;
-          if (!map.has(t.project_id)) map.set(t.project_id, { total: 0, done: 0, in_progress: 0 });
+          if (!map.has(t.project_id)) map.set(t.project_id, { total: 0, done: 0, in_progress: 0, overdue: 0 });
           const s = map.get(t.project_id)!;
+          if (t.status === 'done' || t.status === 'someday') { s.total++; if (t.status === 'done') s.done++; continue; }
           s.total++;
-          if (t.status === 'done') s.done++;
           if (t.status === 'in_progress') s.in_progress++;
+          if (t.due_date && t.due_date < today && t.status !== 'done') s.overdue++;
+        }
+        // Fetch last meeting per project
+        const meetings = await apiGet<Array<{ project_id: number | null; date: string }>>('/meetings');
+        for (const m of meetings) {
+          if (m.project_id === null) continue;
+          if (!map.has(m.project_id)) map.set(m.project_id, { total: 0, done: 0, in_progress: 0, overdue: 0 });
+          const s = map.get(m.project_id)!;
+          if (!s.lastMeeting || m.date > s.lastMeeting) s.lastMeeting = m.date;
         }
       } catch {}
       setStatsMap(map);
