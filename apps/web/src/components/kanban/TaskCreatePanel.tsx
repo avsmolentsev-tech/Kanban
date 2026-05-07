@@ -129,16 +129,19 @@ export function TaskCreatePanel({ open, projects, people, initialProjectId, init
   return (
     <SlidePanel open={open} onClose={onClose} title={t('Новая задача', 'New task')}>
       <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-auto space-y-4 pb-24">
+      {/* Title — always visible at top */}
+      <div className="pb-2 mb-2 border-b border-gray-100 dark:border-gray-700">
         <input
           autoFocus
-          className={`w-full text-lg font-semibold bg-transparent text-gray-800 dark:text-gray-100 border-b focus:outline-none px-1 py-0.5 ${titleError ? 'border-red-500 placeholder-red-400' : 'border-gray-200 dark:border-gray-600 focus:border-indigo-400'}`}
-          placeholder={titleError ? t('Введите название задачи!', 'Enter task name!') : t('Название задачи...', 'Task title...')}
+          className={`w-full text-lg font-semibold bg-transparent text-gray-800 dark:text-gray-100 border-b-2 focus:outline-none px-1 py-1.5 ${titleError ? 'border-red-500 placeholder-red-400' : 'border-indigo-200 dark:border-gray-600 focus:border-indigo-500'}`}
+          placeholder={titleError ? t('⚠ Введите название задачи!', '⚠ Enter task name!') : t('Название задачи...', 'Task title...')}
           value={title}
           onChange={(e) => { setTitle(e.target.value); setTitleError(false); }}
           onKeyDown={(e) => { if (e.key === 'Enter' && title.trim()) submit(); }}
           disabled={saving}
         />
+      </div>
+      <div className="flex-1 overflow-auto space-y-4 pb-24">
 
         {/* Period */}
         <div>
