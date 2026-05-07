@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../api/client';
 import { useLangStore } from '../store/lang.store';
+import { Flame } from 'lucide-react';
 
 interface Habit {
   id: number;
@@ -158,7 +159,8 @@ export function HabitsPage() {
   const [color, setColor] = useState('#6366f1');
   const [loading, setLoading] = useState(true);
 
-  const weeksCount = 15;
+  const isMobileHabits = typeof window !== 'undefined' && window.innerWidth < 640;
+  const weeksCount = isMobileHabits ? 8 : 15;
   const grid = getWeeksGrid(weeksCount);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -288,13 +290,23 @@ export function HabitsPage() {
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       {/* Header */}
-      <div className="relative z-10 flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">{t('Привычки', 'Habits')}</h1>
-        <button
-          onClick={openCreate}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
-        >
-          + {t('Добавить', 'Add')}
+      <div className="relative z-10 flex items-center justify-between mb-5">
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/25">
+            <Flame size={20} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Привычки', 'Habits')}</h1>
+            {habits.length > 0 && (
+              <div className="text-[10px] text-gray-400">
+                {habits.filter(h => logMap[h.id]?.has(today)).length}/{habits.length} {t('сегодня', 'today')}
+              </div>
+            )}
+          </div>
+        </div>
+        <button onClick={openCreate}
+          className="flex items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium cursor-pointer">
+          + {t('Привычка', 'Habit')}
         </button>
       </div>
 
@@ -377,7 +389,7 @@ export function HabitsPage() {
                     {DAY_LABELS.map((label, i) => (
                       <div
                         key={i}
-                        className="w-6 h-[14px] text-[10px] text-gray-400 dark:text-gray-500 flex items-center justify-end pr-0.5"
+                        className="w-6 h-4 md:h-[14px] text-[10px] text-gray-400 dark:text-gray-500 flex items-center justify-end pr-0.5"
                       >
                         {i % 2 === 0 ? label : ''}
                       </div>
@@ -399,7 +411,7 @@ export function HabitsPage() {
                             onClick={() => date && toggleLog(habit.id, date)}
                             disabled={isFuture}
                             title={`${DAY_LABELS[rowIdx]}, ${date}${isLogged ? ` — ${t('выполнено', 'done')}` : ''}`}
-                            className={`w-[14px] h-[14px] rounded-sm transition-colors ${
+                            className={`w-4 h-4 md:w-[14px] md:h-[14px] rounded-sm transition-colors ${
                               isFuture
                                 ? 'bg-gray-100 dark:bg-gray-700/30 cursor-default'
                                 : isLogged
