@@ -477,10 +477,15 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             />
           </div>
 
-          {/* Assignees */}
+          {/* Assignees with search */}
           {people.length > 0 && (
             <div>
               <div className="text-xs text-gray-500 mb-2">{t('Исполнители', 'Assignees')}</div>
+              <PeopleSearchList people={people} selectedIds={assignedIds} onToggle={togglePerson} disabled={saving} />
+            </div>
+          )}
+          {/* HIDDEN — replaced by PeopleSearchList */ false && people.length > 0 && (
+            <div>
               <div className="flex flex-wrap gap-2">
                 {people.map((p) => {
                   const assigned = assignedIds.has(p.id);
@@ -627,6 +632,36 @@ function MeetingLink({ description }: { description: string }) {
     >
       📋 {t('Из встречи', 'From meeting')}: {meetingTitle} {meetingDate ? `(${meetingDate})` : ''}
     </button>
+  );
+}
+
+function PeopleSearchList({ people, selectedIds, onToggle, disabled }: { people: Person[]; selectedIds: Set<number>; onToggle: (id: number) => void; disabled: boolean }) {
+  const { t } = useLangStore();
+  const [search, setSearch] = useState('');
+  const filtered = search ? people.filter(p => p.name.toLowerCase().includes(search.toLowerCase())) : people;
+  return (
+    <div>
+      <input
+        className="w-full text-xs border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2.5 py-1.5 mb-2 focus:outline-none focus:border-indigo-300"
+        placeholder={t('Поиск людей...', 'Search people...')}
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+      />
+      <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+        {filtered.map(p => {
+          const active = selectedIds.has(p.id);
+          return (
+            <button key={p.id} onClick={() => onToggle(p.id)} disabled={disabled}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs border transition-colors cursor-pointer ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-indigo-400'}`}>
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${active ? 'bg-indigo-400' : 'bg-gray-200 dark:bg-gray-600 dark:text-gray-200'}`}>
+                {p.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
+              </span>
+              {p.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

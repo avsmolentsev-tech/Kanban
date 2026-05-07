@@ -68,6 +68,7 @@ export function TaskCreatePanel({ open, projects, people, initialProjectId, init
   const [urgency, setUrgency] = useState(3);
   const [recurrence, setRecurrence] = useState<string | null>(null);
   const [assignedIds, setAssignedIds] = useState<number[]>([]);
+  const [peopleSearch, setPeopleSearch] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -214,16 +215,24 @@ export function TaskCreatePanel({ open, projects, people, initialProjectId, init
           />
         </div>
 
-        {/* Assignees */}
+        {/* Assignees with search */}
         {people.length > 0 && (
           <div>
             <div className="text-xs text-gray-500 mb-2">{t('Исполнители', 'Assignees')}</div>
-            <div className="flex flex-wrap gap-2">
-              {people.map((p) => {
+            <input
+              className="w-full text-xs border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2.5 py-1.5 mb-2 focus:outline-none focus:border-indigo-300"
+              placeholder={t('Поиск людей...', 'Search people...')}
+              value={peopleSearch}
+              onChange={e => setPeopleSearch(e.target.value)}
+            />
+            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+              {people
+                .filter(p => !peopleSearch || p.name.toLowerCase().includes(peopleSearch.toLowerCase()))
+                .map((p) => {
                 const assigned = assignedSet.has(p.id);
                 return (
                   <button key={p.id} type="button" onClick={() => togglePerson(p.id)} disabled={saving}
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs border transition-colors ${assigned ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-indigo-400'}`}>
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs border transition-colors cursor-pointer ${assigned ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-indigo-400'}`}>
                     <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${assigned ? 'bg-indigo-400' : 'bg-gray-200 dark:bg-gray-600 dark:text-gray-200'}`}>
                       {p.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
                     </span>
