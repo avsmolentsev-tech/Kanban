@@ -91,8 +91,11 @@ export function TaskCreatePanel({ open, projects, people, initialProjectId, init
     setDueDate(periodToDate(p));
   };
 
+  const [titleError, setTitleError] = useState(false);
+
   const submit = async () => {
-    if (!title.trim()) return;
+    if (!title.trim()) { setTitleError(true); return; }
+    setTitleError(false);
     setSaving(true);
     try {
       await tasksApi.create({
@@ -108,6 +111,9 @@ export function TaskCreatePanel({ open, projects, people, initialProjectId, init
       } as Parameters<typeof tasksApi.create>[0]);
       onCreated();
       onClose();
+    } catch (err) {
+      console.error('Create task failed:', err);
+      alert(`Ошибка: ${err instanceof Error ? err.message : 'Неизвестная ошибка'}`);
     } finally {
       setSaving(false);
     }
@@ -126,10 +132,10 @@ export function TaskCreatePanel({ open, projects, people, initialProjectId, init
       <div className="flex-1 overflow-auto space-y-4 pb-24">
         <input
           autoFocus
-          className="w-full text-lg font-semibold bg-transparent text-gray-800 dark:text-gray-100 border-b border-gray-200 dark:border-gray-600 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
-          placeholder={t('Название задачи...', 'Task title...')}
+          className={`w-full text-lg font-semibold bg-transparent text-gray-800 dark:text-gray-100 border-b focus:outline-none px-1 py-0.5 ${titleError ? 'border-red-500 placeholder-red-400' : 'border-gray-200 dark:border-gray-600 focus:border-indigo-400'}`}
+          placeholder={titleError ? t('Введите название задачи!', 'Enter task name!') : t('Название задачи...', 'Task title...')}
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => { setTitle(e.target.value); setTitleError(false); }}
           onKeyDown={(e) => { if (e.key === 'Enter' && title.trim()) submit(); }}
           disabled={saving}
         />
