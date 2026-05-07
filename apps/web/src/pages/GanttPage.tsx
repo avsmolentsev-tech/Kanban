@@ -38,6 +38,7 @@ export function GanttPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [selected, setSelected] = useState<Task | null>(null);
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<number | null> | null>(null); // null = show all
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<number | null>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -184,14 +185,26 @@ export function GanttPage() {
           </div>
 
           {/* Rows */}
-          {rows.map(({ project, tasks: pTasks }) => (
-            <div key={project?.id ?? 'none'} className="border-b border-gray-100 dark:border-gray-700">
-              {/* Project header */}
-              <div className="flex" style={{ minHeight: ROW_HEIGHT }}>
+          {rows.map(({ project, tasks: pTasks }) => {
+            const pid = project?.id ?? null;
+            const isCollapsed = collapsedProjects.has(pid);
+            return (
+            <div key={pid ?? 'none'} className="border-b border-gray-100 dark:border-gray-700">
+              {/* Project header — clickable to collapse */}
+              <div className="flex cursor-pointer" style={{ minHeight: ROW_HEIGHT }}
+                onClick={() => setCollapsedProjects(prev => {
+                  const next = new Set(prev);
+                  if (next.has(pid)) next.delete(pid); else next.add(pid);
+                  return next;
+                })}>
                 <div
                   className="sticky left-0 z-10 bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex items-center px-3 gap-2"
                   style={{ width: PROJECT_LABEL_WIDTH, minWidth: PROJECT_LABEL_WIDTH }}
                 >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                    className={`text-gray-400 flex-shrink-0 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>
+                    <path d="M9 18l6-6-6-6" />
+                  </svg>
                   <div
                     className="w-3 h-3 rounded-full flex-shrink-0"
                     style={{ backgroundColor: project?.color ?? '#9ca3af' }}
@@ -204,8 +217,8 @@ export function GanttPage() {
                 <div style={{ width: TOTAL_DAYS * DAY_WIDTH }} />
               </div>
 
-              {/* Task bars */}
-              {pTasks.map((task) => {
+              {/* Task bars — hidden when collapsed */}
+              {!isCollapsed && pTasks.map((task) => {
                 const taskStart = task.start_date ? new Date(task.start_date) : task.due_date ? new Date(task.due_date) : null;
                 const taskEnd = task.due_date ? new Date(task.due_date) : task.start_date ? new Date(task.start_date) : null;
                 if (!taskStart || !taskEnd) return null;
@@ -262,7 +275,8 @@ export function GanttPage() {
                 );
               })}
             </div>
-          ))}
+          );
+          })}
 
           {rows.length === 0 && (
             <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500">
