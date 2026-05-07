@@ -1632,15 +1632,72 @@ BHAG (Большая Дерзкая Цель на год):
     this.bot.on(message('photo'), async (ctx) => {
       try {
         const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
-        // userId auto-created by resolveUserId
+        if (!userId) { ctx.reply('Привяжите аккаунт через /login'); return; }
         const photo = ctx.message.photo[ctx.message.photo.length - 1]!;
         const buffer = await this.downloadTelegramFile(ctx, photo.file_id);
+        const caption = (ctx.message.caption || '').trim();
 
-        const ingestService = new IngestService();
-        const result = await ingestService.ingestBuffer(buffer, 'photo.jpg', userId);
-        ctx.reply(`📷 Фото обработано: ${result.detected_type}\n${result.summary}`);
+        ctx.reply('📷 Анализирую фото...');
+
+        // Use GPT-4.1-mini vision to extract contact info
+        const OpenAI = require('openai').default;
+        const openai = new OpenAI({ apiKey: config.openaiApiKey });
+        const base64 = buffer.toString('base64');
+        const mimeType = 'image/jpeg';
+
+        const visionResult = await openai.chat.completions.create({
+          model: 'gpt-4.1-mini',
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: `Проанализируй это изображение. Если это визитка, скриншот контакта, или любая информация о человеке — извлеки данные. ${caption ? `Дополнительный контекст от пользователя: "${caption}"` : ''}
+
+Верни СТРОГО JSON:
+{
+  "is_contact": true/false,
+  "name": "Имя Фамилия",
+  "company": "компания или ''",
+  "role": "должность или ''",
+  "phone": "телефон или ''",
+  "email": "email или ''",
+  "telegram": "@username или ''",
+  "notes": "другая полезная информация",
+  "summary": "Краткое описание что на фото (1-2 предложения)"
+}` },
+              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+            ],
+          }],
+          response_format: { type: 'json_object' },
+          max_tokens: 1000,
+        });
+
+        const raw = visionResult.choices[0]?.message?.content ?? '{}';
+        const parsed = JSON.parse(raw);
+
+        if (parsed.is_contact && parsed.name) {
+          // Create contact
+          const db = getDb();
+          const existing = db.prepare('SELECT id FROM people WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(userId, parsed.name.trim()) as { id: number } | undefined;
+          if (existing) {
+            // Update existing
+            if (parsed.phone) db.prepare('UPDATE people SET phone = ? WHERE id = ? AND phone = ""').run(parsed.phone, existing.id);
+            if (parsed.email) db.prepare('UPDATE people SET email = ? WHERE id = ? AND email = ""').run(parsed.email, existing.id);
+            if (parsed.telegram) db.prepare('UPDATE people SET telegram = ? WHERE id = ? AND telegram = ""').run(parsed.telegram, existing.id);
+            if (parsed.company) db.prepare('UPDATE people SET company = ? WHERE id = ? AND company = ""').run(parsed.company, existing.id);
+            if (parsed.role) db.prepare('UPDATE people SET role = ? WHERE id = ? AND role = ""').run(parsed.role, existing.id);
+            ctx.reply(`✅ Контакт "${parsed.name}" обновлён\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.email ? `📧 ${parsed.email}\n` : ''}${parsed.company ? `🏢 ${parsed.company}\n` : ''}${parsed.notes || ''}`);
+          } else {
+            db.prepare('INSERT INTO people (name, company, role, phone, email, telegram, notes, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+              parsed.name, parsed.company || '', parsed.role || '', parsed.phone || '', parsed.email || '', parsed.telegram || '', parsed.notes || '', userId
+            );
+            ctx.reply(`✅ Контакт создан: ${parsed.name}\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.email ? `📧 ${parsed.email}\n` : ''}${parsed.company ? `🏢 ${parsed.company}\n` : ''}${parsed.role ? `💼 ${parsed.role}\n` : ''}${parsed.notes ? `📝 ${parsed.notes}` : ''}\n\nЧтобы привязать к проекту — напишите: "привяжи ${parsed.name} к проекту <название>"`);
+          }
+        } else {
+          // Not a contact — process as regular image
+          ctx.reply(`📷 ${parsed.summary || 'Фото обработано'}`);
+        }
       } catch (err) {
-        ctx.reply(`❌ Error: ${err instanceof Error ? err.message : 'Unknown'}`);
+        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
     });
 
@@ -1658,6 +1715,7 @@ BHAG (Большая Дерзкая Цель на год):
       { command: 'focus', description: '🎯 Фокус дня (показать/поставить)' },
       { command: 'search', description: '🔍 Поиск в vault' },
       { command: 'all', description: '📊 Все задачи по статусам' },
+      { command: 'pro', description: '🎯 PRO-транскрибация (OpenAI Whisper)' },
       { command: 'cmd', description: '🤖 Выполнить команду' },
       { command: 'settings', description: '⚙️ Настройки (время напоминания)' },
       { command: 'start', description: '🚀 Справка' },

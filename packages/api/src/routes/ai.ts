@@ -207,7 +207,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
     {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number]},
     {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?},
     {"type": "delete_meeting", "meeting_id": number},
-    {"type": "create_person", "name": "string", "company": "string?", "role": "string?"},
+    {"type": "create_person", "name": "string", "company": "string?", "role": "string?", "phone": "string?", "email": "string?", "telegram": "string?", "notes": "string?", "project_id": number|null},
     {"type": "delete_person", "person_id": number},
     {"type": "send_to_telegram", "content": "текст для файла", "filename": "name.md", "message": "сопроводительное сообщение"}
   ],
@@ -365,8 +365,17 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             break;
           }
           case 'create_person': {
-            const r = db.prepare('INSERT INTO people (name, company, role, user_id) VALUES (?, ?, ?, ?)').run(action['name'], action['company'] ?? '', action['role'] ?? '', userId);
-            results.push({ type: 'create_person', success: true, detail: `Контакт "${action['name']}" создан` });
+            const r = db.prepare('INSERT INTO people (name, company, role, phone, email, telegram, notes, project_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+              action['name'], action['company'] ?? '', action['role'] ?? '',
+              action['phone'] ?? '', action['email'] ?? '', action['telegram'] ?? '',
+              action['notes'] ?? '', action['project_id'] ?? null, userId
+            );
+            const personId = Number(r.lastInsertRowid);
+            // Link to project via junction table if project_id provided
+            if (action['project_id']) {
+              try { db.prepare('INSERT OR IGNORE INTO people_projects (person_id, project_id) VALUES (?, ?)').run(personId, action['project_id']); } catch {}
+            }
+            results.push({ type: 'create_person', success: true, detail: `Контакт "${action['name']}" создан${action['company'] ? ` (${action['company']})` : ''}${action['project_id'] ? ' + привязан к проекту' : ''}` });
             break;
           }
           case 'delete_person': {
