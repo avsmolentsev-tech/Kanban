@@ -127,14 +127,15 @@ export function TaskCreatePanel({ open, projects, people, initialProjectId, init
   const assignedSet = new Set(assignedIds);
 
   return (
-    <SlidePanel open={open} onClose={onClose} title={t('Новая задача', 'New task')}>
-      <div className="flex flex-col h-full">
-      {/* Title — always visible at top */}
-      <div className="pb-2 mb-2 border-b border-gray-100 dark:border-gray-700">
+    <SlidePanel open={open} onClose={onClose} title="">
+      <div className="flex flex-col h-full -mt-4">
+      {/* Title — fixed at top, never scrolls away */}
+      <div className="pb-3 mb-1">
+        <div className="text-xs text-gray-400 mb-1">{t('Новая задача', 'New task')}</div>
         <input
           autoFocus
-          className={`w-full text-lg font-semibold bg-transparent text-gray-800 dark:text-gray-100 border-b-2 focus:outline-none px-1 py-1.5 ${titleError ? 'border-red-500 placeholder-red-400' : 'border-indigo-200 dark:border-gray-600 focus:border-indigo-500'}`}
-          placeholder={titleError ? t('⚠ Введите название задачи!', '⚠ Enter task name!') : t('Название задачи...', 'Task title...')}
+          className={`w-full text-xl font-bold bg-transparent text-gray-800 dark:text-gray-100 border-b-2 focus:outline-none px-0 py-2 ${titleError ? 'border-red-500 placeholder-red-400' : 'border-indigo-300 dark:border-indigo-600 focus:border-indigo-500'}`}
+          placeholder={titleError ? t('⚠ Введите название!', '⚠ Enter name!') : t('Название задачи...', 'Task title...')}
           value={title}
           onChange={(e) => { setTitle(e.target.value); setTitleError(false); }}
           onKeyDown={(e) => { if (e.key === 'Enter' && title.trim()) submit(); }}
