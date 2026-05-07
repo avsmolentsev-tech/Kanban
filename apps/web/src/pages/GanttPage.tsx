@@ -37,6 +37,7 @@ export function GanttPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [selected, setSelected] = useState<Task | null>(null);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<number | null> | null>(null); // null = show all
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -70,13 +71,36 @@ export function GanttPage() {
   }
 
   // Build ordered rows
-  const rows: Array<{ project: Project | null; tasks: Task[] }> = [];
+  const allRows: Array<{ project: Project | null; tasks: Task[] }> = [];
   for (const p of projects) {
     const pts = grouped.get(p.id);
-    if (pts && pts.length > 0) rows.push({ project: p, tasks: pts });
+    if (pts && pts.length > 0) allRows.push({ project: p, tasks: pts });
   }
   const unassigned = grouped.get(null);
-  if (unassigned && unassigned.length > 0) rows.push({ project: null, tasks: unassigned });
+  if (unassigned && unassigned.length > 0) allRows.push({ project: null, tasks: unassigned });
+
+  // Filter by selected projects
+  const rows = selectedProjectIds === null
+    ? allRows
+    : allRows.filter(r => selectedProjectIds.has(r.project?.id ?? null));
+
+  const toggleProject = (pid: number | null) => {
+    setSelectedProjectIds(prev => {
+      if (prev === null) {
+        // Was showing all → show only this one
+        return new Set([pid]);
+      }
+      const next = new Set(prev);
+      if (next.has(pid)) {
+        next.delete(pid);
+        // If empty → show all
+        return next.size === 0 ? null : next;
+      }
+      next.add(pid);
+      // If all selected → show all (null)
+      return next.size === allRows.length ? null : next;
+    });
+  };
 
   const todayOffset = 0; // today is always first column
 
@@ -97,14 +121,31 @@ export function GanttPage() {
           <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Диаграмма Ганта', 'Gantt Chart')}</h1>
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400">{t('Ближайшие 30 дней', 'Next 30 days')}</p>
-        {rows.length > 0 && (
-          <div className="flex flex-wrap gap-3 mt-2">
-            {rows.map(({ project }) => (
-              <div key={project?.id ?? 'none'} className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                <div className="w-3 h-2 rounded-sm" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
-                {project?.name ?? t('Без проекта', 'No project')}
-              </div>
-            ))}
+        {allRows.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            <button
+              onClick={() => setSelectedProjectIds(null)}
+              className={`px-2 py-0.5 text-xs rounded-full border transition-colors cursor-pointer ${
+                selectedProjectIds === null ? 'bg-indigo-600 text-white border-indigo-600' : 'text-gray-500 border-gray-200 dark:border-gray-600 hover:border-indigo-300'
+              }`}
+            >{t('Все', 'All')}</button>
+            {allRows.map(({ project }) => {
+              const pid = project?.id ?? null;
+              const isActive = selectedProjectIds === null || selectedProjectIds.has(pid);
+              return (
+                <button
+                  key={pid ?? 'none'}
+                  onClick={() => toggleProject(pid)}
+                  className={`flex items-center gap-1.5 px-2 py-0.5 text-xs rounded-full border transition-colors cursor-pointer ${
+                    isActive ? 'border-current font-medium' : 'opacity-40 border-gray-200 dark:border-gray-600'
+                  }`}
+                  style={isActive ? { color: project?.color ?? '#9ca3af', borderColor: project?.color ?? '#9ca3af' } : undefined}
+                >
+                  <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: project?.color ?? '#9ca3af' }} />
+                  {project?.name ?? t('Без проекта', 'No project')}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

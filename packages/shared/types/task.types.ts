@@ -16,6 +16,7 @@ export interface Task {
   archived: boolean;
   order_index: number;
   recurrence?: string | null;
+  revenue_impact?: number | null;
   people?: Array<{ id: number; name: string }>;
   tags?: Array<{ id: number; name: string; color: string }>;
 }

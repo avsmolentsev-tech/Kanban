@@ -423,6 +423,8 @@ export function initTestDb(): void {
 
   // Tasks: parent_id for subtasks
   try { _db.exec("ALTER TABLE tasks ADD COLUMN parent_id INTEGER REFERENCES tasks(id)"); } catch {}
+  // Tasks: revenue impact ($)
+  try { _db.exec("ALTER TABLE tasks ADD COLUMN revenue_impact REAL"); } catch {}
 
   // Attachments table
   try {

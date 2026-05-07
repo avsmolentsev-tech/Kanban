@@ -29,6 +29,7 @@ type FormState = {
   due_date: string;
   project_id: number | null;
   recurrence: string | null;
+  revenue_impact: number | null;
 };
 
 export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, onDeleted }: Props) {
@@ -103,6 +104,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
     due_date: '',
     project_id: null,
     recurrence: null,
+    revenue_impact: null,
   });
   const [saving, setSaving] = useState(false);
   const [assignedIdsLocal, setAssignedIdsLocal] = useState<number[]>([]);
@@ -127,6 +129,7 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
         due_date: task.due_date ?? '',
         project_id: task.project_id,
         recurrence: (task as unknown as Record<string, unknown>)['recurrence'] as string | null ?? null,
+        revenue_impact: task.revenue_impact ?? null,
       });
       setAssignedIdsLocal((task.people ?? []).map((p) => p.id));
       apiGet<Array<{id: number; text: string; created_at: string}>>(`/tasks/${task.id}/comments`).then(setComments).catch(() => {});
@@ -417,6 +420,25 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
               onChange={(v) => handleRatingClick('urgency', v)}
               disabled={saving}
             />
+          </div>
+
+          {/* Revenue Impact */}
+          <div>
+            <div className="text-xs text-gray-500 mb-1">{t('Выручка ($)', 'Revenue ($)')}</div>
+            <div className="flex flex-wrap gap-1.5">
+              {[null, 1000, 5000, 10000, 50000, 100000, 500000].map((val) => {
+                const isActive = form.revenue_impact === val;
+                const label = val === null ? t('Нет', 'None') : val >= 1000 ? `$${val / 1000}K` : `$${val}`;
+                return (
+                  <button key={val ?? 'none'} type="button" disabled={saving}
+                    onClick={() => { setForm(f => ({ ...f, revenue_impact: val })); save({ revenue_impact: val } as Partial<FormState>); }}
+                    className={`px-2.5 py-1 text-xs rounded border transition-colors cursor-pointer ${
+                      isActive ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-green-300'
+                    }`}
+                  >{label}</button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Recurrence */}
