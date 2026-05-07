@@ -188,9 +188,9 @@ export function JournalPage() {
         </button>
       </div>
 
-      {/* Date pills */}
+      {/* Date pills — left to right (oldest → newest) */}
       <div className="relative z-10 flex gap-1.5 px-4 pb-3 overflow-x-auto">
-        {recentDates.slice(0, 7).map(date => {
+        {[...recentDates.slice(0, 7)].reverse().map(date => {
           const d = new Date(date + 'T12:00:00');
           const dayNum = d.getDate();
           const isSelected = date === selectedDate;
