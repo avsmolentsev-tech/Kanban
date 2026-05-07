@@ -173,7 +173,7 @@ export function KanbanPage() {
         </div>
         {showAddTask && (
           <div className="relative z-20 px-4 pb-2">
-            <AddTaskModal status="todo" projectId={null} people={people} onCreated={() => { setShowAddTask(false); refresh(); }} onCancel={() => setShowAddTask(false)} />
+            <AddTaskModal status="todo" projectId={null} people={people} projects={projects} onCreated={() => { setShowAddTask(false); refresh(); }} onCancel={() => setShowAddTask(false)} />
           </div>
         )}
         <MobileKanbanView
@@ -211,7 +211,7 @@ export function KanbanPage() {
       </div>
       {showAddTask && (
         <div className="relative z-20 px-4 pb-2">
-          <AddTaskModal status="todo" projectId={null} people={people} onCreated={() => { setShowAddTask(false); refresh(); }} onCancel={() => setShowAddTask(false)} />
+          <AddTaskModal status="todo" projectId={null} people={people} projects={projects} onCreated={() => { setShowAddTask(false); refresh(); }} onCancel={() => setShowAddTask(false)} />
         </div>
       )}
       <div className="relative z-10 flex-1 overflow-hidden">
