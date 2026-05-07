@@ -130,7 +130,7 @@ export function TaskCreatePanel({ open, projects, people, initialProjectId, init
     <SlidePanel open={open} onClose={onClose} title="">
       <div className="flex flex-col h-full -mt-4">
       {/* Title — fixed at top, never scrolls away */}
-      <div className="pb-3 mb-1">
+      <div className="pb-3 mb-1 pt-8">
         <div className="text-xs text-gray-400 mb-1">{t('Новая задача', 'New task')}</div>
         <input
           autoFocus
