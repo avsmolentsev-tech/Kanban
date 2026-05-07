@@ -10,7 +10,8 @@ import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { SavedFilters, applyFilterCriteria, type SavedFilter } from '../components/filters/SavedFilters';
 import type { Task, Person, TaskStatus } from '@pis/shared';
 import { useLangStore } from '../store/lang.store';
-import { BarChart3 } from 'lucide-react';
+import { BarChart3, Plus } from 'lucide-react';
+import { AddTaskModal } from '../components/kanban/AddTaskModal';
 
 function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -48,6 +49,8 @@ export function TimelinePage() {
   const [selected, setSelected] = useState<Task | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const [activeFilter, setActiveFilter] = useState<SavedFilter | null>(null);
+  const [showAddTask, setShowAddTask] = useState(false);
+  const refresh = () => { fetchTasks(); fetchProjects(); };
   const { selectedProjectIds } = useFiltersStore();
   const pMap = new Map(projects.map((p) => [p.id, p]));
 
@@ -135,8 +138,14 @@ export function TimelinePage() {
         <div className="flex items-center gap-3">
           <SavedFilters active={activeFilter?.id ?? null} onApply={setActiveFilter} />
           <ProjectFilter projects={projects} />
+          <button onClick={() => setShowAddTask(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer shadow-sm">
+            <Plus size={16} />
+            {t('Задача', 'Task')}
+          </button>
         </div>
       </div>
+      {showAddTask && <AddTaskModal status="todo" projectId={null} people={people} projects={projects} onCreated={() => { setShowAddTask(false); refresh(); }} onCancel={() => setShowAddTask(false)} />}
       <div className="relative z-10 flex-1 overflow-hidden">
         <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <TimelineView
