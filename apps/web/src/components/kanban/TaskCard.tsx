@@ -52,7 +52,8 @@ export function TaskCard({ task, project, onClick, onToggleDone, dragMode = 'sor
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
-  const overdue = task.due_date ? new Date(task.due_date) < new Date() : false;
+  const today = new Date().toISOString().slice(0, 10);
+  const overdue = task.due_date ? task.due_date < today : false;
 
   const handleFileDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes('Files')) {
