@@ -11,6 +11,7 @@ interface Task {
   project_id: number | null;
   created_at: string;
   updated_at: string;
+  archived?: boolean;
 }
 
 interface HabitStat {
@@ -203,6 +204,117 @@ export function StatsPage() {
           </a>
         </div>
       </div>
+
+      {/* Velocity — tasks completed per week (last 8 weeks) */}
+      <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 relative z-10">
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
+          {t('Velocity', 'Velocity')}
+        </h2>
+        <p className="text-xs text-gray-400 mb-4">{t('Задач завершено в неделю', 'Tasks completed per week')}</p>
+        {(() => {
+          const weeks: Array<{ label: string; count: number }> = [];
+          for (let i = 7; i >= 0; i--) {
+            const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay() - i * 7 + 1);
+            const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+            const ws = weekStart.toISOString().slice(0, 10);
+            const we = weekEnd.toISOString().slice(0, 10);
+            const count = doneTasks.filter(tk => {
+              const d = tk.updated_at?.slice(0, 10) ?? '';
+              return d >= ws && d <= we;
+            }).length;
+            weeks.push({ label: `${weekStart.getDate()}.${weekStart.getMonth() + 1}`, count });
+          }
+          const maxV = Math.max(...weeks.map(w => w.count), 1);
+          const avg = Math.round(weeks.reduce((s, w) => s + w.count, 0) / weeks.length);
+          return (
+            <>
+              <div className="flex items-end gap-2 h-32">
+                {weeks.map((w, i) => (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">{w.count}</span>
+                    <div className="w-full rounded-t-md bg-gradient-to-t from-indigo-600 to-indigo-400 transition-all"
+                      style={{ height: `${(w.count / maxV) * 100}%`, minHeight: w.count > 0 ? '4px' : '0px' }} />
+                    <span className="text-[10px] text-gray-400">{w.label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center gap-4 text-xs text-gray-500">
+                <span>{t('Среднее:', 'Average:')} <strong className="text-indigo-600">{avg}</strong> {t('задач/нед', 'tasks/wk')}</span>
+                {weeks.length >= 2 && (() => {
+                  const last = weeks[weeks.length - 1]!.count;
+                  const prev = weeks[weeks.length - 2]!.count;
+                  const diff = last - prev;
+                  return diff !== 0 ? (
+                    <span className={diff > 0 ? 'text-green-600' : 'text-red-500'}>
+                      {diff > 0 ? '↑' : '↓'} {Math.abs(diff)} {t('vs прошлая', 'vs prev')}
+                    </span>
+                  ) : null;
+                })()}
+              </div>
+            </>
+          );
+        })()}
+      </section>
+
+      {/* Burndown — remaining active tasks over last 30 days */}
+      <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 relative z-10">
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
+          {t('Burndown', 'Burndown')}
+        </h2>
+        <p className="text-xs text-gray-400 mb-4">{t('Оставшиеся задачи за 30 дней', 'Remaining tasks over 30 days')}</p>
+        {(() => {
+          const last30 = getLastNDays(30);
+          const activeTasks = tasks.filter(tk => !tk.archived);
+          const totalCreated = activeTasks.length;
+          // For each day, count how many tasks were still open (not done by that date)
+          const points = last30.map(day => {
+            const doneByDay = activeTasks.filter(tk => tk.status === 'done' && (tk.updated_at?.slice(0, 10) ?? '') <= day).length;
+            return { day, remaining: totalCreated - doneByDay };
+          });
+          const maxR = Math.max(...points.map(p => p.remaining), 1);
+          const minR = Math.min(...points.map(p => p.remaining));
+          const range = maxR - minR || 1;
+          // SVG line chart
+          const w = 100;
+          const h = 60;
+          const pathPoints = points.map((p, i) => {
+            const x = (i / (points.length - 1)) * w;
+            const y = h - ((p.remaining - minR) / range) * (h - 10) - 5;
+            return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+          }).join(' ');
+          const remaining = points[points.length - 1]?.remaining ?? 0;
+          const velocity = doneTasks.filter(tk => {
+            const d = tk.updated_at?.slice(0, 10) ?? '';
+            const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+            return d >= weekAgo.toISOString().slice(0, 10);
+          }).length;
+          const weeksToZero = velocity > 0 ? Math.ceil(remaining / velocity) : null;
+          return (
+            <>
+              <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-32" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="burnGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#6366f1" stopOpacity="0.2" />
+                    <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <path d={`${pathPoints} L${w},${h} L0,${h} Z`} fill="url(#burnGrad)" />
+                <path d={pathPoints} fill="none" stroke="#6366f1" strokeWidth="0.5" />
+              </svg>
+              <div className="flex items-center justify-between text-xs text-gray-400 -mt-1">
+                <span>{last30[0]?.slice(5)}</span>
+                <span>{t('Сегодня', 'Today')}</span>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-500">
+                <span>{t('Осталось:', 'Remaining:')} <strong className="text-gray-800 dark:text-gray-200">{remaining}</strong> {t('задач', 'tasks')}</span>
+                {weeksToZero && (
+                  <span>{t('Прогноз:', 'Forecast:')} <strong className="text-indigo-600">~{weeksToZero} {t('нед', 'wk')}</strong></span>
+                )}
+              </div>
+            </>
+          );
+        })()}
+      </section>
 
       {/* 1. Tasks per week (bar chart) */}
       <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
