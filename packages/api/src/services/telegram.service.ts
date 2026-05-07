@@ -48,29 +48,14 @@ export class TelegramService {
     return Buffer.from(await response.arrayBuffer());
   }
 
-  /** Resolve internal user id from Telegram user id. Auto-creates account if not found. */
-  private resolveUserId(tgId: number, tgName?: string): number | null {
+  /** Resolve internal user id from Telegram user id. Returns null if not linked — user must /login first. */
+  private resolveUserId(tgId: number, _tgName?: string): number | null {
     if (!tgId) return null;
     const db = getDb();
     const row = db.prepare("SELECT id FROM users WHERE tg_id = ?").get(String(tgId)) as { id: number } | undefined;
     if (row) return row.id;
-
-    // Auto-create user from Telegram
-    try {
-      const name = tgName || `tg_${tgId}`;
-      const bcrypt = require('bcryptjs');
-      const randomPass = require('crypto').randomBytes(16).toString('hex');
-      const hash = bcrypt.hashSync(randomPass, 10);
-      const result = db.prepare('INSERT INTO users (email, password_hash, name, role, tg_id) VALUES (?, ?, ?, ?, ?)').run(
-        `tg_${tgId}@telegram.local`, hash, name, 'user', String(tgId)
-      );
-      const newId = Number(result.lastInsertRowid);
-      console.log(`[telegram] auto-created user #${newId} for tg_id ${tgId} (${name})`);
-      return newId;
-    } catch (err) {
-      console.error('[telegram] auto-create user failed:', err);
-      return null;
-    }
+    // No auto-create — user must link via /login
+    return null;
   }
 
   private pushRecentAction(tgId: number, action: { type: string; title: string; id: number; table: string; date: string; savedAt: number }): void {
@@ -778,26 +763,21 @@ BHAG (Большая Дерзкая Цель на год):
           ctx.reply(text);
         }
       } else {
-        // Not linked — offer choice
+        // Not linked — must login with existing account
         ctx.reply(
-          '👋 Добро пожаловать в Clarity Space!\n\nВыбери вариант:',
+          '👋 Добро пожаловать в Clarity Space!\n\n' +
+          'Для начала привяжите свой аккаунт:\n\n' +
+          '1️⃣ Зарегистрируйтесь на сайте: https://kanban.myaipro.ru\n' +
+          '2️⃣ Нажмите /login и введите email и пароль\n\n' +
+          'После привязки бот будет работать с вашими задачами, встречами и проектами.',
           Markup.inlineKeyboard([
-            [Markup.button.callback('🆕 Новый аккаунт', 'onboard_new')],
-            [Markup.button.callback('🔑 У меня есть аккаунт', 'onboard_login')],
+            [Markup.button.callback('🔑 Привязать аккаунт', 'onboard_login')],
           ])
         );
       }
     });
 
-    // Callback: new account
-    this.bot.action('onboard_new', (ctx) => {
-      const tgId = ctx.from?.id ?? 0;
-      const tgName = [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username || `tg_${tgId}`;
-      this.resolveUserId(tgId, tgName); // auto-creates
-      ctx.editMessageText(`✅ Аккаунт создан!\n\n👤 Имя: ${tgName}\n\nТеперь можешь пользоваться — просто напиши что нужно.`);
-    });
-
-    // Callback: existing account → ask email
+    // Callback: link existing account → ask email
     this.bot.action('onboard_login', (ctx) => {
       const tgId = ctx.from?.id ?? 0;
       this.pendingLogins.set(tgId, 'email');
