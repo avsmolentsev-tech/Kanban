@@ -130,11 +130,11 @@ export function TaskCreatePanel({ open, projects, people, initialProjectId, init
     <SlidePanel open={open} onClose={onClose} title="">
       <div className="flex flex-col h-full -mt-4">
       {/* Title — fixed at top, never scrolls away */}
-      <div className="pb-3 mb-1 pt-8">
-        <div className="text-xs text-gray-400 mb-1">{t('Новая задача', 'New task')}</div>
+      <div className="pb-3 mb-1 pt-14">
+        <div className="text-sm text-gray-400 mb-2">{t('Новая задача', 'New task')}</div>
         <textarea
           autoFocus
-          rows={2}
+          rows={3}
           className={`w-full text-xl font-bold bg-transparent text-gray-800 dark:text-gray-100 border-b-2 focus:outline-none px-0 py-2 resize-none overflow-hidden ${titleError ? 'border-red-500 placeholder-red-400' : 'border-indigo-300 dark:border-indigo-600 focus:border-indigo-500'}`}
           placeholder={titleError ? t('⚠ Введите название!', '⚠ Enter name!') : t('Название задачи...', 'Task title...')}
           value={title}
