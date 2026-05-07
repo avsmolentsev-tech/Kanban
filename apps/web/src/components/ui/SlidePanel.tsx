@@ -54,8 +54,8 @@ export function SlidePanel({ open, onClose, title, children, expandable }: Slide
   };
 
   const panelClass = fullscreen
-    ? 'fixed inset-0 bg-white dark:bg-gray-900 z-50'
-    : 'fixed top-0 right-0 h-full w-full md:w-[480px] bg-white dark:bg-gray-900 shadow-xl z-50 transition-transform duration-300';
+    ? 'fixed inset-0 bg-white dark:bg-gray-900 z-[55]'
+    : 'fixed top-0 right-0 h-full w-full md:w-[480px] bg-white dark:bg-gray-900 shadow-xl z-[55] transition-transform duration-300';
 
   const translateX = !fullscreen && open ? swipeX : (!fullscreen && !open ? window.innerWidth : 0);
 
