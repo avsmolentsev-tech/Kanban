@@ -186,7 +186,7 @@ export function PomodoroTimer() {
           if (state === 'idle') startWork();
           else setMode('full');
         }}
-        className="fixed bottom-20 right-4 md:bottom-4 md:right-16 z-40 shadow-lg rounded-full"
+        className="fab-pomodoro fixed bottom-20 right-4 md:bottom-4 md:right-16 z-40 shadow-lg rounded-full"
         title={t('Помодоро', 'Pomodoro')}
       >
         <CircularProgress progress={progress} color={color} size={48}>

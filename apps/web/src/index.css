@@ -3,6 +3,10 @@
 @tailwind utilities;
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Hide FAB and Pomodoro when SlidePanel is open */
+body.slide-panel-open .fab-voice,
+body.slide-panel-open .fab-pomodoro { display: none !important; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* Dark scrollbars */

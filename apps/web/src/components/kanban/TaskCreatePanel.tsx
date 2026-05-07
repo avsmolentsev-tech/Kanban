@@ -246,7 +246,7 @@ export function TaskCreatePanel({ open, projects, people, initialProjectId, init
         )}
 
       </div>
-      {/* Fixed footer — always visible */}
+      {/* Fixed footer */}
       <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-800 px-4 pt-3 pb-6 border-t border-gray-200 dark:border-gray-700 flex gap-3">
         <button onClick={onClose} disabled={saving}
           className="flex-1 py-3 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer">

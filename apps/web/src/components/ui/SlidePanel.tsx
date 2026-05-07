@@ -11,6 +11,13 @@ export function SlidePanel({ open, onClose, title, children, expandable }: Slide
   const startY = useRef<number | null>(null);
   const isHorizontal = useRef<boolean | null>(null);
 
+  // Hide FAB when panel is open
+  useEffect(() => {
+    if (open) document.body.classList.add('slide-panel-open');
+    else document.body.classList.remove('slide-panel-open');
+    return () => document.body.classList.remove('slide-panel-open');
+  }, [open]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (fullscreen) setFullscreen(false); else onClose(); } };
     window.addEventListener('keydown', handler);

@@ -215,7 +215,7 @@ export function VoiceCommandButton({ onActionDone }: { onActionDone?: () => void
             chimeOnce("start");
           }
         }}
-        className={`fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${
+        className={`fab-voice fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${
           recording ? 'animate-pulse bg-red-500' : open ? 'bg-gray-700' : 'bg-indigo-600 hover:bg-indigo-700'
         }`}
       >
