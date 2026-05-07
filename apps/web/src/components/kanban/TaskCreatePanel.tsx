@@ -244,14 +244,14 @@ export function TaskCreatePanel({ open, projects, people, initialProjectId, init
           </div>
         )}
 
-        <div className="flex justify-end gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+        <div className="sticky bottom-0 bg-white dark:bg-gray-800 pt-3 pb-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
           <button onClick={onClose} disabled={saving}
-            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-3 py-1.5">
+            className="flex-1 py-3 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer">
             {t('Отмена', 'Cancel')}
           </button>
           <button onClick={submit} disabled={!title.trim() || saving}
-            className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded hover:bg-indigo-700 disabled:opacity-50">
-            {saving ? '...' : t('Создать', 'Create')}
+            className="flex-1 py-3 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 cursor-pointer font-semibold shadow-md shadow-indigo-500/20">
+            {saving ? '...' : t('Создать задачу', 'Create task')}
           </button>
         </div>
       </div>
