@@ -189,6 +189,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
 4. Для вопросов (что, как, когда, расскажи) → actions пусты, ответ в response.
 5. НИКОГДА не говори "добавляю" или "делаю" в response если actions массив пустой! Либо делай, либо объясни почему не можешь.
 5. Контекст предыдущих сообщений — для "её", "эту", "ту"
+6. "Привяжи X к проекту Y" = найди person_id по имени X и project_id по имени Y → update_person с project_id. ОБЯЗАТЕЛЬНО используй action!
 
 Верни ТОЛЬКО JSON (без markdown, без \`\`\`):
 {
@@ -208,6 +209,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
     {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?},
     {"type": "delete_meeting", "meeting_id": number},
     {"type": "create_person", "name": "string", "company": "string?", "role": "string?", "phone": "string?", "email": "string?", "telegram": "string?", "notes": "string?", "project_id": number|null},
+    {"type": "update_person", "person_id": number, "name": "string?", "company": "string?", "role": "string?", "phone": "string?", "email": "string?", "telegram": "string?", "project_id": number|null},
     {"type": "delete_person", "person_id": number},
     {"type": "send_to_telegram", "content": "текст для файла", "filename": "name.md", "message": "сопроводительное сообщение"}
   ],
@@ -384,6 +386,23 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             db.prepare('DELETE FROM people_projects WHERE person_id = ?').run(action['person_id']);
             db.prepare('DELETE FROM people WHERE id = ?').run(action['person_id']);
             results.push({ type: 'delete_person', success: true, detail: `Контакт #${action['person_id']} удалён` });
+            break;
+          }
+          case 'update_person': {
+            const pid = action['person_id'] as number;
+            const fields: string[] = [];
+            const values: unknown[] = [];
+            for (const f of ['name', 'company', 'role', 'phone', 'email', 'telegram', 'project_id']) {
+              if (action[f] !== undefined) { fields.push(`${f} = ?`); values.push(action[f]); }
+            }
+            if (fields.length > 0) {
+              db.prepare(`UPDATE people SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, pid, userId);
+              // Update project junction
+              if (action['project_id']) {
+                try { db.prepare('INSERT OR IGNORE INTO people_projects (person_id, project_id) VALUES (?, ?)').run(pid, action['project_id']); } catch {}
+              }
+            }
+            results.push({ type: 'update_person', success: true, detail: `Контакт #${pid} обновлён` });
             break;
           }
           case 'send_to_telegram': {
