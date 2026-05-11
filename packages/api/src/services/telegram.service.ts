@@ -1648,6 +1648,32 @@ BHAG (Большая Дерзкая Цель на год):
       }
     });
 
+    // Contact shared from phone book
+    this.bot.on(message('contact'), async (ctx) => {
+      try {
+        const userId = this.resolveUserId(ctx.from?.id ?? 0);
+        if (!userId) { ctx.reply('Привяжите аккаунт через /login'); return; }
+        const c = ctx.message.contact;
+        const name = [c.first_name, c.last_name].filter(Boolean).join(' ').trim();
+        const phone = c.phone_number || '';
+        if (!name) { ctx.reply('❌ Контакт без имени'); return; }
+
+        const db = getDb();
+        const existing = db.prepare('SELECT id FROM people WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(userId, name) as { id: number } | undefined;
+        if (existing) {
+          if (phone) db.prepare("UPDATE people SET phone = ? WHERE id = ? AND (phone = '' OR phone IS NULL)").run(phone, existing.id);
+          ctx.reply(`✅ Контакт "${name}" обновлён\n${phone ? `📱 ${phone}` : ''}`);
+        } else {
+          const result = db.prepare('INSERT INTO people (name, phone, user_id) VALUES (?, ?, ?)').run(name, phone, userId);
+          const newId = Number(result.lastInsertRowid);
+          this.lastCreatedPerson.set(ctx.from!.id, { name, id: newId });
+          ctx.reply(`✅ Контакт создан: ${name}\n${phone ? `📱 ${phone}\n` : ''}\nПривязать к проекту? Напишите название.`);
+        }
+      } catch (err) {
+        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
+      }
+    });
+
     this.bot.on(message('photo'), async (ctx) => {
       try {
         const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
