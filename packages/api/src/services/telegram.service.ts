@@ -1679,12 +1679,12 @@ BHAG (Большая Дерзкая Цель на год):
           const db = getDb();
           const existing = db.prepare('SELECT id FROM people WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(userId, parsed.name.trim()) as { id: number } | undefined;
           if (existing) {
-            // Update existing
-            if (parsed.phone) db.prepare('UPDATE people SET phone = ? WHERE id = ? AND phone = ""').run(parsed.phone, existing.id);
-            if (parsed.email) db.prepare('UPDATE people SET email = ? WHERE id = ? AND email = ""').run(parsed.email, existing.id);
-            if (parsed.telegram) db.prepare('UPDATE people SET telegram = ? WHERE id = ? AND telegram = ""').run(parsed.telegram, existing.id);
-            if (parsed.company) db.prepare('UPDATE people SET company = ? WHERE id = ? AND company = ""').run(parsed.company, existing.id);
-            if (parsed.role) db.prepare('UPDATE people SET role = ? WHERE id = ? AND role = ""').run(parsed.role, existing.id);
+            // Update existing — only fill empty fields
+            if (parsed.phone) db.prepare("UPDATE people SET phone = ? WHERE id = ? AND (phone = '' OR phone IS NULL)").run(parsed.phone, existing.id);
+            if (parsed.email) db.prepare("UPDATE people SET email = ? WHERE id = ? AND (email = '' OR email IS NULL)").run(parsed.email, existing.id);
+            if (parsed.telegram) db.prepare("UPDATE people SET telegram = ? WHERE id = ? AND (telegram = '' OR telegram IS NULL)").run(parsed.telegram, existing.id);
+            if (parsed.company) db.prepare("UPDATE people SET company = ? WHERE id = ? AND (company = '' OR company IS NULL)").run(parsed.company, existing.id);
+            if (parsed.role) db.prepare("UPDATE people SET role = ? WHERE id = ? AND (role = '' OR role IS NULL)").run(parsed.role, existing.id);
             ctx.reply(`✅ Контакт "${parsed.name}" обновлён\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.email ? `📧 ${parsed.email}\n` : ''}${parsed.company ? `🏢 ${parsed.company}\n` : ''}${parsed.notes || ''}`);
           } else {
             db.prepare('INSERT INTO people (name, company, role, phone, email, telegram, notes, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
