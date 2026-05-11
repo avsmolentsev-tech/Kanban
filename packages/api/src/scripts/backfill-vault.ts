@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   }
 
   // --- People ---
-  const people = db.prepare('SELECT id, name, company, role FROM people WHERE user_id = ?').all(userId) as Array<{ id: number; name: string; company: string | null; role: string | null }>;
+  const people = db.prepare('SELECT id, name, company, role, phone, email, telegram FROM people WHERE user_id = ?').all(userId) as Array<{ id: number; name: string; company: string | null; role: string | null; phone: string | null; email: string | null; telegram: string | null }>;
   console.log(`[backfill] people: ${people.length}`);
   for (const person of people) {
     const personProjects = (db.prepare('SELECT p.name FROM projects p JOIN people_projects pp ON p.id = pp.project_id WHERE pp.person_id = ? ORDER BY p.name').all(person.id) as Array<{ name: string }>).map((x) => x.name);
@@ -55,6 +55,9 @@ async function main(): Promise<void> {
       name: person.name,
       company: person.company ?? '',
       role: person.role ?? '',
+      phone: person.phone ?? '',
+      email: person.email ?? '',
+      telegram: person.telegram ?? '',
       projects: personProjects,
       meetings: personMeetings,
     });

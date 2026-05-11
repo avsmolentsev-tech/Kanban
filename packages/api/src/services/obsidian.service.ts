@@ -31,6 +31,9 @@ interface WritePersonParams {
   name: string;
   company?: string;
   role?: string;
+  phone?: string;
+  email?: string;
+  telegram?: string;
   tags?: string[];
   projects?: string[];
   meetings?: Array<{ title: string; date: string; vault_path?: string | null }>;
@@ -118,6 +121,11 @@ export class ObsidianService {
     return new Date().toISOString();
   }
 
+  /** YYYY-MM-DD for Obsidian Dataview-friendly dates */
+  private today(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
   meetingFileName(date: string, title: string): string {
     return `${date}-${this.toSlug(title)}.md`;
   }
@@ -130,6 +138,7 @@ export class ObsidianService {
     const people = (params.people ?? []).map((p) => this.wikiLink(p));
     const frontmatter = [
       '---', 'type: task', `status: ${params.status}`,
+      `date: ${params.due_date ?? this.today()}`,
       `project: ${this.wikiOrNull(params.project)}`,
       `company: ${this.wikiOrNull(params.company)}`,
       `priority: ${params.priority}`, `urgency: ${params.urgency}`,
@@ -168,20 +177,33 @@ export class ObsidianService {
     const dir = this.userPath('People');
     this.ensureDir(dir);
     const projects = (params.projects ?? []).map((p) => this.wikiLink(p));
+    // Aliases: first name for quick search
+    const firstName = params.name.split(/\s+/)[0] ?? '';
+    const aliases = firstName && firstName !== params.name ? `aliases: ["${firstName}"]` : 'aliases: []';
     const frontmatter = [
       '---', 'type: person', `name: "${params.name}"`,
+      aliases,
       `company: "${params.company ?? ''}"`, `role: "${params.role ?? ''}"`,
+      `phone: "${params.phone ?? ''}"`,
+      `email: "${params.email ?? ''}"`,
+      `telegram: "${params.telegram ?? ''}"`,
       `projects: [${projects.join(', ')}]`,
       `tags: [${(params.tags ?? ['person']).join(', ')}]`,
       `updated_at: ${this.now()}`, '---',
     ].join('\n');
+    const contactLines: string[] = [];
+    if (params.role) contactLines.push(`**Роль:** ${params.role}`);
+    if (params.company) contactLines.push(`**Компания:** ${params.company}`);
+    if (params.phone) contactLines.push(`**Телефон:** ${params.phone}`);
+    if (params.email) contactLines.push(`**Email:** ${params.email}`);
+    if (params.telegram) contactLines.push(`**Telegram:** ${params.telegram}`);
     const meetingsSection = (params.meetings && params.meetings.length > 0)
       ? `## Встречи\n\n${params.meetings.map((m) => `- ${m.date} — ${this.wikiLink(m.title)}`).join('\n')}\n`
       : '';
     const projectsSection = (params.projects && params.projects.length > 0)
       ? `## Проекты\n\n${params.projects.map((p) => `- ${this.wikiLink(p)}`).join('\n')}\n`
       : '';
-    const body = `# ${params.name}\n\n${params.role ? `**Роль:** ${params.role}  \n` : ''}${params.company ? `**Компания:** ${params.company}  \n` : ''}\n${projectsSection}\n${meetingsSection}`;
+    const body = `# ${params.name}\n\n${contactLines.join('  \n')}\n\n${projectsSection}\n${meetingsSection}`;
     fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n${body}`, 'utf-8');
     return this.userRelative('People', filename);
   }
@@ -216,7 +238,8 @@ export class ObsidianService {
     const dir = this.userPath('Ideas');
     this.ensureDir(dir);
     const frontmatter = [
-      '---', 'type: idea', `category: ${params.category}`,
+      '---', 'type: idea', `date: ${params.date}`,
+      `category: ${params.category}`,
       `project: ${this.wikiOrNull(params.project)}`,
       `company: ${this.wikiOrNull(params.company)}`,
       `source: ${params.source ?? 'manual'}`,
@@ -254,6 +277,7 @@ export class ObsidianService {
     const frontmatter = [
       '---',
       'type: document',
+      `date: ${this.today()}`,
       `title: "${params.title}"`,
       `category: ${params.category}`,
       `status: ${params.status}`,

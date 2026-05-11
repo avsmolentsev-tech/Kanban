@@ -16,7 +16,7 @@ function syncPersonToVault(personId: number, userId: number | null): void {
   void (async () => {
     try {
       const db = getDb();
-      const p = db.prepare('SELECT name, company, role FROM people WHERE id = ?').get(personId) as { name: string; company: string | null; role: string | null } | undefined;
+      const p = db.prepare('SELECT name, company, role, phone, email, telegram FROM people WHERE id = ?').get(personId) as { name: string; company: string | null; role: string | null; phone: string | null; email: string | null; telegram: string | null } | undefined;
       if (!p) return;
       const projects = db.prepare('SELECT p.name FROM projects p JOIN people_projects pp ON p.id = pp.project_id WHERE pp.person_id = ? ORDER BY p.name').all(personId) as Array<{ name: string }>;
       const meetings = db.prepare('SELECT m.title, m.date FROM meetings m JOIN meeting_people mp ON m.id = mp.meeting_id WHERE mp.person_id = ? ORDER BY m.date DESC').all(personId) as Array<{ title: string; date: string }>;
@@ -24,6 +24,9 @@ function syncPersonToVault(personId: number, userId: number | null): void {
         name: p.name,
         company: p.company ?? '',
         role: p.role ?? '',
+        phone: p.phone ?? '',
+        email: p.email ?? '',
+        telegram: p.telegram ?? '',
         projects: projects.map((x) => x.name),
         meetings,
       });
