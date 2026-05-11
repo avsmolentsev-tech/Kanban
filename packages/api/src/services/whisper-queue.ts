@@ -42,15 +42,16 @@ async function processJob(job: TranscribeJob): Promise<void> {
   try {
     const { isLocalWhisperAvailable, transcribeLocal, compressForTranscription } = require('./whisper-local.service');
 
+    // Always boost audio first for better recognition
+    let audioBuffer = await boostAudio(job.buffer, job.filename);
+    let audioFilename = job.filename.replace(/\.[^.]+$/, '.mp3');
+
     // Pre-compress large files
-    let audioBuffer = job.buffer;
-    let audioFilename = job.filename;
     const sizeMb = audioBuffer.length / (1024 * 1024);
     if (sizeMb > 10) {
       try {
         console.log(`[whisper-queue] pre-compressing ${Math.round(sizeMb)}MB`);
         audioBuffer = await compressForTranscription(audioBuffer, audioFilename);
-        audioFilename = audioFilename.replace(/\.[^.]+$/, '.mp3');
         console.log(`[whisper-queue] compressed → ${Math.round(audioBuffer.length / (1024 * 1024))}MB`);
       } catch {}
     }
