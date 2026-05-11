@@ -255,8 +255,14 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
       try {
         switch (action['type']) {
           case 'create_task': {
+            // Security: verify project belongs to this user
+            let safeProjId = action['project_id'] ?? null;
+            if (safeProjId) {
+              const projCheck = db.prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(safeProjId, userId);
+              if (!projCheck) safeProjId = null;
+            }
             const r = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-              action['project_id'] ?? null, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId
+              safeProjId, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId
             );
             const taskId = Number(r.lastInsertRowid);
             // Auto-add self if no people specified
@@ -272,12 +278,12 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             break;
           }
           case 'move_task': {
-            db.prepare("UPDATE tasks SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(action['status'], action['task_id']);
+            db.prepare("UPDATE tasks SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?").run(action['status'], action['task_id'], userId);
             results.push({ type: 'move_task', success: true, detail: `Задача #${action['task_id']} → ${action['status']}` });
             break;
           }
           case 'delete_task': {
-            db.prepare("UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(action['task_id']);
+            db.prepare("UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?").run(action['task_id'], userId);
             results.push({ type: 'delete_task', success: true, detail: `Задача #${action['task_id']} удалена` });
             break;
           }
@@ -286,7 +292,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             for (const key of ['title', 'priority', 'urgency', 'due_date', 'start_date', 'project_id', 'description', 'status']) {
               if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
             }
-            if (fields.length > 0) db.prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, action['task_id']);
+            if (fields.length > 0) db.prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?`).run(...values, action['task_id'], userId);
             results.push({ type: 'update_task', success: true, detail: `Задача #${action['task_id']} обновлена` });
             break;
           }
@@ -318,7 +324,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             const fields: string[] = []; const values: unknown[] = [];
             if (action['current_value'] !== undefined) { fields.push('current_value = ?'); values.push(action['current_value']); }
             if (action['status'] !== undefined) { fields.push('status = ?'); values.push(action['status']); }
-            if (fields.length > 0) db.prepare(`UPDATE goals SET ${fields.join(', ')} WHERE id = ?`).run(...values, action['goal_id']);
+            if (fields.length > 0) db.prepare(`UPDATE goals SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, action['goal_id'], userId);
             results.push({ type: 'update_goal', success: true, detail: `🎯 Цель #${action['goal_id']} обновлена` });
             break;
           }
@@ -338,12 +344,12 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             for (const key of ['name', 'color', 'status']) {
               if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
             }
-            if (fields.length > 0) db.prepare(`UPDATE projects SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, action['project_id']);
+            if (fields.length > 0) db.prepare(`UPDATE projects SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?`).run(...values, action['project_id'], userId);
             results.push({ type: 'update_project', success: true, detail: `Проект #${action['project_id']} обновлён` });
             break;
           }
           case 'delete_project': {
-            db.prepare("UPDATE projects SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(action['project_id']);
+            db.prepare("UPDATE projects SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?").run(action['project_id'], userId);
             results.push({ type: 'delete_project', success: true, detail: `Проект #${action['project_id']} удалён` });
             break;
           }
@@ -361,13 +367,13 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             for (const key of ['title', 'date', 'project_id', 'summary_raw']) {
               if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
             }
-            if (fields.length > 0) db.prepare(`UPDATE meetings SET ${fields.join(', ')} WHERE id = ?`).run(...values, action['meeting_id']);
+            if (fields.length > 0) db.prepare(`UPDATE meetings SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, action['meeting_id'], userId);
             results.push({ type: 'update_meeting', success: true, detail: `Встреча #${action['meeting_id']} обновлена` });
             break;
           }
           case 'delete_meeting': {
-            db.prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(action['meeting_id']);
-            db.prepare('DELETE FROM meetings WHERE id = ?').run(action['meeting_id']);
+            db.prepare('DELETE FROM meeting_people WHERE meeting_id IN (SELECT id FROM meetings WHERE id = ? AND user_id = ?)').run(action['meeting_id'], userId);
+            db.prepare('DELETE FROM meetings WHERE id = ? AND user_id = ?').run(action['meeting_id'], userId);
             results.push({ type: 'delete_meeting', success: true, detail: `Встреча #${action['meeting_id']} удалена` });
             break;
           }
@@ -386,10 +392,13 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             break;
           }
           case 'delete_person': {
-            db.prepare('DELETE FROM task_people WHERE person_id = ?').run(action['person_id']);
-            db.prepare('DELETE FROM meeting_people WHERE person_id = ?').run(action['person_id']);
-            db.prepare('DELETE FROM people_projects WHERE person_id = ?').run(action['person_id']);
-            db.prepare('DELETE FROM people WHERE id = ?').run(action['person_id']);
+            const personOwnerCheck = db.prepare('SELECT id FROM people WHERE id = ? AND user_id = ?').get(action['person_id'], userId);
+            if (personOwnerCheck) {
+              db.prepare('DELETE FROM task_people WHERE person_id = ?').run(action['person_id']);
+              db.prepare('DELETE FROM meeting_people WHERE person_id = ?').run(action['person_id']);
+              db.prepare('DELETE FROM people_projects WHERE person_id = ?').run(action['person_id']);
+              db.prepare('DELETE FROM people WHERE id = ? AND user_id = ?').run(action['person_id'], userId);
+            }
             results.push({ type: 'delete_person', success: true, detail: `Контакт #${action['person_id']} удалён` });
             break;
           }

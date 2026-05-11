@@ -144,6 +144,11 @@ tasksRouter.post('/', async (req: AuthRequest, res: Response) => {
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, person_ids, recurrence, goal_id } = parsed.data;
   const userId = getUserId(req);
+  // Security: verify project belongs to this user
+  if (project_id) {
+    const proj = getDb().prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(project_id, userId);
+    if (!proj) { res.status(400).json(fail('Project not found or not yours')); return; }
+  }
   const result = getDb().prepare('INSERT INTO tasks (project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, recurrence, goal_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(project_id ?? null, parent_id ?? null, title, description, status, priority, urgency, due_date ?? null, start_date ?? null, recurrence ?? null, goal_id ?? null, userId);
   const taskId = result.lastInsertRowid as number;
 
