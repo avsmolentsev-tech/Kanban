@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../api/client';
 import { useLangStore } from '../store/lang.store';
 import {
@@ -64,13 +64,102 @@ function getToday(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-function getLast7(): string[] {
-  const r: string[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    r.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-  }
-  return r;
+
+/* ── Ring component for mobile ── */
+function HabitRing({
+  habit, isLogged, onToggle, onEdit,
+}: {
+  habit: Habit; isLogged: boolean; onToggle: () => void; onEdit: () => void;
+}) {
+  const [pulse, setPulse] = useState(false);
+  const size = 110;
+  const stroke = 6;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = isLogged ? 0 : circumference;
+
+  const handleTap = () => {
+    if (!isLogged) setPulse(true);
+    onToggle();
+    setTimeout(() => setPulse(false), 500);
+  };
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ type: 'spring', damping: 20 }}
+      className="flex flex-col items-center gap-1.5 cursor-pointer group"
+      onClick={handleTap}
+    >
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="transform -rotate-90">
+          <circle cx={size / 2} cy={size / 2} r={radius}
+            fill="none" strokeWidth={stroke}
+            className="stroke-gray-200 dark:stroke-gray-700" />
+          <circle cx={size / 2} cy={size / 2} r={radius}
+            fill="none" strokeWidth={stroke} strokeLinecap="round"
+            stroke={isLogged ? '#10b981' : habit.color}
+            strokeDasharray={circumference} strokeDashoffset={offset}
+            style={{
+              transition: 'stroke-dashoffset 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              filter: isLogged ? `drop-shadow(0 0 6px ${habit.color}40)` : 'none',
+            }}
+          />
+        </svg>
+
+        {/* Center */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <AnimatePresence>
+            {pulse && (
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0.7 }}
+                animate={{ scale: 2.5, opacity: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.5 }}
+                className="absolute w-12 h-12 rounded-full bg-green-400/30"
+              />
+            )}
+          </AnimatePresence>
+          <motion.div
+            animate={pulse ? { scale: [1, 1.3, 1] } : {}}
+            transition={{ duration: 0.35 }}
+          >
+            {isLogged
+              ? <Check size={28} className="text-green-500" strokeWidth={3} />
+              : <HIcon icon={habit.icon} size={28} className="text-gray-600 dark:text-gray-300" />
+            }
+          </motion.div>
+        </div>
+
+        {/* Streak badge */}
+        {habit.streak > 0 && (
+          <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30">
+            <Zap size={9} className="text-orange-500" fill="currentColor" />
+            <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400">{habit.streak}</span>
+          </div>
+        )}
+
+        {/* Edit */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          className="absolute top-0 right-0 p-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 opacity-0 group-hover:opacity-100 active:opacity-100 transition-all"
+        >
+          <Settings2 size={11} />
+        </button>
+      </div>
+
+      {/* Label */}
+      <div className="text-center" style={{ maxWidth: size }}>
+        <div className={`text-[11px] font-bold uppercase tracking-wide leading-tight ${
+          isLogged ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-300'
+        }`}>
+          {habit.title}
+        </div>
+      </div>
+    </motion.div>
+  );
 }
 
 export function HabitsSwipePage() {
@@ -86,8 +175,6 @@ export function HabitsSwipePage() {
   const [freq, setFreq] = useState('daily');
   const [remind, setRemind] = useState('');
   const today = getToday();
-  const last7 = getLast7();
-  const dayLabels = [t('Пн','Mo'),t('Вт','Tu'),t('Ср','We'),t('Чт','Th'),t('Пт','Fr'),t('Сб','Sa'),t('Вс','Su')];
 
   const load = useCallback(async () => {
     try {
@@ -110,6 +197,9 @@ export function HabitsSwipePage() {
       await apiPost(`/habits/${id}/log`, { date: today });
       setDoneIds(p => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
       setLogMap(p => { const n = { ...p }; const s = new Set(p[id] || []); if (s.has(today)) s.delete(today); else s.add(today); n[id] = s; return n; });
+      // Refresh streaks
+      const updated = await apiGet<Habit[]>('/habits');
+      if (updated) setHabits(updated);
     } catch {}
   };
 
@@ -133,67 +223,34 @@ export function HabitsSwipePage() {
 
   const doneCount = habits.filter(h => doneIds.has(h.id)).length;
   const total = habits.length;
-  const pct = total > 0 ? (doneCount / total) * 100 : 0;
-  const radius = 54;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (pct / 100) * circumference;
 
   return (
-    <div className="flex flex-col h-full pb-24 bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
-      {/* Animated decorative circles */}
-      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full bg-purple-400/10 dark:bg-purple-400/[0.08]" style={{ animation: 'circleRightSlow 28s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-
-      {/* Header with progress ring */}
-      <div className="relative z-10 px-4 pt-5 pb-4">
-        <div className="flex items-center justify-between mb-4">
+    <div className="flex flex-col h-full pb-24 relative overflow-hidden">
+      {/* Header */}
+      <div className="relative z-10 px-4 pt-4 pb-2">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center shadow-lg shadow-orange-500/25">
               <Flame size={20} className="text-white" />
             </div>
-            <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Привычки', 'Habits')}</h1>
+            <div>
+              <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Привычки', 'Habits')}</h1>
+              <p className="text-[10px] text-gray-400">
+                {doneCount}/{total} {t('сегодня', 'today')}
+                {doneCount === total && total > 0 && ' ✨'}
+              </p>
+            </div>
           </div>
           <button onClick={openAdd}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium shadow-lg shadow-indigo-500/25 active:scale-95 transition-all">
             <Plus size={16} strokeWidth={2.5} />
           </button>
         </div>
-
-        {/* Progress ring */}
-        {total > 0 && (
-          <div className="flex items-center justify-center py-2">
-            <div className="relative w-32 h-32">
-              <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
-                <circle cx="60" cy="60" r={radius} fill="none" stroke="currentColor"
-                  className="text-gray-200 dark:text-gray-700" strokeWidth="8" />
-                <circle cx="60" cy="60" r={radius} fill="none"
-                  stroke="url(#ring-grad)" strokeWidth="8" strokeLinecap="round"
-                  strokeDasharray={circumference} strokeDashoffset={offset}
-                  className="transition-all duration-700 ease-out" />
-                <defs>
-                  <linearGradient id="ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#f97316" />
-                    <stop offset="100%" stopColor="#ef4444" />
-                  </linearGradient>
-                </defs>
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                {pct === 100
-                  ? <Trophy size={28} className="text-orange-500 mb-0.5" />
-                  : <span className="text-2xl font-bold text-gray-800 dark:text-gray-100">{doneCount}/{total}</span>
-                }
-                <span className="text-[10px] text-gray-400">{pct === 100 ? t('Всё!', 'Done!') : t('сегодня', 'today')}</span>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Habit list */}
-      <div className="relative z-10 flex-1 overflow-auto px-4 space-y-2">
-        {total === 0 && (
+      {/* Ring Grid */}
+      <div className="relative z-10 flex-1 overflow-auto px-4 pt-4">
+        {total === 0 ? (
           <div className="text-center py-16">
             <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-orange-500/10 to-red-500/10 flex items-center justify-center mx-auto mb-4">
               <Flame size={36} className="text-orange-400" />
@@ -203,92 +260,56 @@ export function HabitsSwipePage() {
               <Plus size={16} className="inline mr-1" /> {t('Добавить', 'Add')}
             </button>
           </div>
-        )}
-
-        {habits.map((h, i) => {
-          const done = doneIds.has(h.id);
-          const logs = logMap[h.id] || new Set();
-          return (
-            <motion.div
-              key={h.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05, duration: 0.2 }}
-            >
-            <div
-              className={`flex items-center gap-3 p-3 rounded-2xl transition-all active:scale-[0.98] ${
-                done
-                  ? 'bg-green-50 dark:bg-green-900/15 border border-green-200 dark:border-green-800/40'
-                  : 'bg-white dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700/50'
-              }`}>
-              {/* Icon */}
-              <motion.button
-                onClick={() => toggle(h.id)}
-                whileTap={{ scale: 0.88 }}
-                animate={done ? { scale: [1, 1.15, 1] } : { scale: 1 }}
-                transition={{ duration: 0.2 }}
-                className="rounded-2xl flex items-center justify-center flex-shrink-0"
-                style={{
-                  width: 48, height: 48,
-                  background: done ? 'linear-gradient(135deg, #22c55e, #10b981)' : `linear-gradient(135deg, ${h.color}20, ${h.color}08)`,
-                  color: done ? '#fff' : h.color,
-                  boxShadow: done ? '0 4px 12px rgba(34,197,94,0.3)' : 'none',
-                }}>
-                {done ? <Check size={22} strokeWidth={3} /> : <HIcon icon={h.icon} size={22} />}
-              </motion.button>
-
-              {/* Title + dots */}
-              <div className="flex-1 min-w-0" onClick={() => toggle(h.id)}>
-                <div className={`text-sm font-semibold ${done ? 'line-through text-green-700 dark:text-green-400' : 'text-gray-800 dark:text-gray-100'}`}>
-                  {h.title}
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 justify-items-center">
+              {habits.map((h) => (
+                <HabitRing
+                  key={h.id}
+                  habit={h}
+                  isLogged={doneIds.has(h.id)}
+                  onToggle={() => toggle(h.id)}
+                  onEdit={() => openEdit(h)}
+                />
+              ))}
+              {/* Add cell */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex flex-col items-center gap-1.5 cursor-pointer"
+                onClick={openAdd}
+              >
+                <div className="flex items-center justify-center rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600"
+                  style={{ width: 110, height: 110 }}>
+                  <Plus size={28} className="text-gray-300 dark:text-gray-600" />
                 </div>
-                {/* 7-day dots */}
-                <div className="flex gap-[3px] mt-1.5">
-                  {last7.map((d, i) => {
-                    const logged = logs.has(d);
-                    const isToday = d === today;
-                    return (
-                      <div key={d} className="flex flex-col items-center" style={{ width: 18 }}>
-                        <div className={`w-[14px] h-[14px] rounded-full transition-colors ${
-                          logged ? 'shadow-sm' : isToday ? 'border-4 border-gray-300 dark:border-gray-500' : 'bg-gray-100 dark:bg-gray-700/50'
-                        }`}
-                          style={logged ? { backgroundColor: h.color } : undefined} />
-                        <span className="text-[8px] text-gray-400 mt-0.5">{dayLabels[(new Date(d+'T12:00:00').getDay() + 6) % 7]}</span>
-                      </div>
-                    );
-                  })}
+                <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                  {t('Добавить', 'Add')}
                 </div>
-              </div>
-
-              {/* Streak + edit */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {h.streak > 0 && (
-                  <div className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-orange-50 dark:bg-orange-900/20">
-                    <Zap size={11} className="text-orange-500" fill="currentColor" />
-                    <span className="text-[11px] text-orange-600 dark:text-orange-400 font-bold">{h.streak}</span>
-                  </div>
-                )}
-                <button onClick={() => openEdit(h)}
-                  className="p-1.5 rounded-lg text-gray-300 hover:text-gray-500 dark:hover:text-gray-400 transition-colors">
-                  <Settings2 size={14} />
-                </button>
-              </div>
+              </motion.div>
             </div>
-            </motion.div>
-          );
-        })}
 
-        {pct === 100 && total > 0 && (
-          <div className="text-center py-4">
-            <span className="text-sm text-green-600 dark:text-green-400 font-medium">{t('Все привычки выполнены!', 'All habits done!')}</span>
-          </div>
+            {/* All done */}
+            <AnimatePresence>
+              {doneCount === total && total > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="mt-6 p-4 rounded-2xl bg-green-50 dark:bg-green-900/15 border border-green-200/50 dark:border-green-800/30 text-center"
+                >
+                  <Trophy size={24} className="text-green-500 mx-auto mb-1" />
+                  <p className="text-sm font-bold text-green-600 dark:text-green-400">{t('Все привычки выполнены!', 'All habits done!')}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </>
         )}
       </div>
 
-      {/* Add/Edit Modal — full screen on mobile */}
+      {/* Add/Edit Modal — full screen */}
       {modal && (
         <div className="fixed inset-0 z-50 bg-white dark:bg-gray-900">
-          {/* Top bar */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700/50">
             <button onClick={() => setModal(null)} className="text-sm text-gray-500 dark:text-gray-400 font-medium">
               {t('Отмена', 'Cancel')}
@@ -302,9 +323,8 @@ export function HabitsSwipePage() {
             </button>
           </div>
 
-          {/* Form */}
           <div className="overflow-auto px-4 py-4 space-y-5" style={{ height: 'calc(100vh - 56px)' }}>
-            {/* Preview card */}
+            {/* Preview */}
             <div className="flex items-center gap-3 p-4 rounded-2xl bg-gray-50 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700/50">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
                 style={{ background: `linear-gradient(135deg, ${color}25, ${color}10)`, color }}>
@@ -316,14 +336,12 @@ export function HabitsSwipePage() {
               </div>
             </div>
 
-            {/* Name */}
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">{t('Название', 'Title')}</label>
               <input autoFocus className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-2xl bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                 placeholder={t('Например: Медитация', 'E.g.: Meditation')} value={title} onChange={e => setTitle(e.target.value)} />
             </div>
 
-            {/* Icon picker */}
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">{t('Иконка', 'Icon')}</label>
               <div className="grid grid-cols-5 gap-2">
@@ -340,7 +358,6 @@ export function HabitsSwipePage() {
               </div>
             </div>
 
-            {/* Color picker */}
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">{t('Цвет', 'Color')}</label>
               <div className="flex gap-3">
@@ -352,7 +369,6 @@ export function HabitsSwipePage() {
               </div>
             </div>
 
-            {/* Frequency */}
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">{t('Частота', 'Frequency')}</label>
               <div className="grid grid-cols-2 gap-2">
@@ -367,7 +383,6 @@ export function HabitsSwipePage() {
               </div>
             </div>
 
-            {/* Reminder */}
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
                 <Clock size={12} /> {t('Напоминание в Telegram', 'Telegram reminder')}
@@ -379,7 +394,6 @@ export function HabitsSwipePage() {
               </div>
             </div>
 
-            {/* Delete button for edit */}
             {modal === 'edit' && (
               <button onClick={remove}
                 className="w-full py-3 rounded-2xl text-red-500 text-sm font-medium border border-red-200 dark:border-red-800/50 flex items-center justify-center gap-2 active:scale-95 transition-all">
@@ -387,7 +401,6 @@ export function HabitsSwipePage() {
               </button>
             )}
 
-            {/* Bottom padding */}
             <div className="h-8" />
           </div>
         </div>
