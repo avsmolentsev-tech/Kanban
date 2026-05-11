@@ -22,7 +22,7 @@ export class TelegramService {
   private pendingEmails = new Map<number, string>(); // tg_id → email entered
   private recentActions = new Map<number, Array<{ type: string; title: string; id: number; table: string; date: string; savedAt: number }>>();
   private proMode = new Set<number>(); // tg_id → next audio uses OpenAI Whisper API
-  private lastCreatedPerson = new Map<number, { name: string; id: number }>(); // tg_id → last created contact
+  private lastCreatedPerson = new Map<number, { name: string; id: number; ts: number }>(); // tg_id → last created contact
   private pendingPhotoData = new Map<number, { data: Record<string, string>; ts: number }>(); // tg_id → buffered photo data waiting for name
   private drafts = new DraftSession({
     timeoutMs: 30 * 60_000,
@@ -287,7 +287,7 @@ export class TelegramService {
   }
 
   /** Execute a command via AI — same as web voice commands */
-  private async executeCommand(text: string, tgUserId?: number): Promise<{ text: string; files?: Array<{ path: string; filename: string }> }> {
+  private async executeCommand(text: string, tgUserId?: number, lastContact?: { id: number; name: string }): Promise<{ text: string; files?: Array<{ path: string; filename: string }> }> {
     const db = getDb();
     const userId = tgUserId ? this.resolveUserId(tgUserId) : null;
     const userFilter = userId != null ? ' AND user_id = ?' : '';
@@ -343,7 +343,7 @@ export class TelegramService {
 Задачи: ${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id, due_date: t.due_date })))}
 ${overdueTasks.length > 0 ? `\n⚠️ ПРОСРОЧЕННЫЕ ЗАДАЧИ (${overdueTasks.length}): ${JSON.stringify(overdueTasks.map(t => ({ id: t.id, title: t.title, due_date: t.due_date, project_id: t.project_id })))}\nОбязательно напоминай пользователю о просроченных задачах если он спрашивает о статусе, задачах или прогрессе!\n` : ''}Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, people: m.people, preview: (m.preview || '').slice(0, 200) })))}${recentContext}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
-Цели и ключевые результаты (OKR):
+${lastContact ? `\n🧑 ПОСЛЕДНИЙ КОНТАКТ (только что создан): id=${lastContact.id}, name="${lastContact.name}". Команды "к проекту", "добавь телефон/email", "привяжи" — относятся к ЭТОМУ человеку. Используй update_person!\n` : ''}Цели и ключевые результаты (OKR):
 ${goals.map(g => `  ${g.type === 'goal' ? '🎯' : '  📊'} #${g.id} ${g.title} (${g.current_value}/${g.target_value} ${g.unit})${g.parent_id ? ` [KR цели #${g.parent_id}]` : ''}`).join('\n')}
 
 🚨 КРИТИЧЕСКИ ВАЖНО про цели и KR:
@@ -1450,7 +1450,8 @@ BHAG (Большая Дерзкая Цель на год):
       try {
         const intent = await this.classifyMessage(text, ctx.from?.id);
         if (intent === 'command' || intent === 'chat') {
-          const response = await this.executeCommand(text, ctx.from?.id);
+          const lc = this.lastCreatedPerson.get(tgId);
+          const response = await this.executeCommand(text, ctx.from?.id, lc && Date.now() - (lc as any).ts < 120000 ? lc : undefined);
           await sendCommandResult(ctx, response);
         } else {
           const ingestService = new IngestService();
@@ -1666,7 +1667,7 @@ BHAG (Большая Дерзкая Цель на год):
         } else {
           const result = db.prepare('INSERT INTO people (name, phone, user_id) VALUES (?, ?, ?)').run(name, phone, userId);
           const newId = Number(result.lastInsertRowid);
-          this.lastCreatedPerson.set(ctx.from!.id, { name, id: newId });
+          this.lastCreatedPerson.set(ctx.from!.id, { name, id: newId, ts: Date.now() });
           ctx.reply(`✅ Контакт создан: ${name}\n${phone ? `📱 ${phone}\n` : ''}\nПривязать к проекту? Напишите название.`);
         }
       } catch (err) {
@@ -1779,7 +1780,7 @@ BHAG (Большая Дерзкая Цель на год):
               parsed.name, parsed.company || '', parsed.role || '', parsed.phone || '', parsed.email || '', parsed.telegram || '', parsed.notes || '', userId
             );
             const newPersonId = Number(result.lastInsertRowid);
-            this.lastCreatedPerson.set(ctx.from!.id, { name: parsed.name, id: newPersonId });
+            this.lastCreatedPerson.set(ctx.from!.id, { name: parsed.name, id: newPersonId, ts: Date.now() });
             ctx.reply(`✅ Контакт создан: ${parsed.name}\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.email ? `📧 ${parsed.email}\n` : ''}${parsed.company ? `🏢 ${parsed.company}\n` : ''}${parsed.role ? `💼 ${parsed.role}\n` : ''}${parsed.notes ? `📝 ${parsed.notes}` : ''}\n\nПривязать к проекту? Напишите название проекта.`);
           }
         } else {

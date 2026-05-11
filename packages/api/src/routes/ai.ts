@@ -101,6 +101,7 @@ const VoiceCommandSchema = z.object({
   text: z.string().min(1),
   history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).optional().default([]),
   meeting_id: z.number().int().optional(),
+  last_contact: z.object({ id: z.number(), name: z.string() }).optional(),
 });
 
 aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
@@ -177,6 +178,7 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
 Всего задач: ${tasks.length} (показаны приоритетные)
 ${overdueTasks.length > 0 ? `\n⚠️ ПРОСРОЧЕННЫЕ (${overdueTasks.length}): ${JSON.stringify(overdueTasks.map(t => ({ id: t.id, title: t.title, due_date: t.due_date, project_id: t.project_id })))}\n` : ''}Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
+${parsed.data.last_contact ? `\n🧑 LAST_CONTACT (только что создан/обновлён): id=${parsed.data.last_contact.id}, name="${parsed.data.last_contact.name}". Любые команды про "к проекту", "добавь телефон/email", "привяжи" — относятся к ЭТОМУ контакту!\n` : ''}
 ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕДНИХ ВСТРЕЧ ===\n${fullMeetingContent}\n=== КОНЕЦ ===\n\nОтвечай конкретно на основе содержимого транскрипций выше. Цитируй фрагменты когда уместно.` : ''}
 
 Статусы задач: backlog, todo, in_progress, done, someday
@@ -190,6 +192,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
 5. НИКОГДА не говори "добавляю" или "делаю" в response если actions массив пустой! Либо делай, либо объясни почему не можешь.
 5. Контекст предыдущих сообщений — для "её", "эту", "ту"
 6. "Привяжи X к проекту Y" = найди person_id по имени X и project_id по имени Y → update_person с project_id. ОБЯЗАТЕЛЬНО используй action!
+7. Если указан LAST_CONTACT — любые упоминания "к проекту", "добавь email/телефон", "привяжи" относятся к этому контакту. Используй update_person с его person_id.
 
 Верни ТОЛЬКО JSON (без markdown, без \`\`\`):
 {
