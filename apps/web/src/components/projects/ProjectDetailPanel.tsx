@@ -184,16 +184,22 @@ export function ProjectDetailPanel({ project, onClose, onUpdated, onDeleted }: P
           {detail?.tasks && detail.tasks.length > 0 && (
             <div>
               <div className="text-xs text-gray-500 mb-2">📋 {t('Задачи', 'Tasks')} ({detail.tasks.length})</div>
-              <div className="space-y-1 max-h-40 overflow-auto">
-                {detail.tasks.slice(0, 15).map(task => (
+              <div className="space-y-1 max-h-64 overflow-auto">
+                {[...detail.tasks].sort((a, b) => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  const aOver = (a as any).due_date && (a as any).due_date < today && a.status !== 'done' ? 0 : 1;
+                  const bOver = (b as any).due_date && (b as any).due_date < today && b.status !== 'done' ? 0 : 1;
+                  if (aOver !== bOver) return aOver - bOver;
+                  return b.priority - a.priority;
+                }).slice(0, 20).map(task => (
                   <button key={task.id} onClick={async () => {
                     const full = await apiGet<Task>(`/tasks/${task.id}`);
                     setSelectedTask(full);
                     if (!allProjects.length) projectsApi.list().then(setAllProjects);
                     if (!allPeople.length) peopleApi.list().then(setAllPeople);
                   }}
-                    className={`w-full text-xs flex items-start gap-2 py-0.5 text-left cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors ${task.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-600 dark:text-gray-300'}`}>
-                    <span className="flex-shrink-0">{task.status === 'done' ? '✅' : task.status === 'in_progress' ? '🔄' : '📋'}</span>
+                    className={`w-full text-xs flex items-start gap-2 py-0.5 text-left cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors ${task.status === 'done' ? 'text-gray-400 line-through' : (task as any).due_date && (task as any).due_date < new Date().toISOString().slice(0, 10) && task.status !== 'done' ? 'text-red-500' : 'text-gray-600 dark:text-gray-300'}`}>
+                    <span className="flex-shrink-0">{task.status === 'done' ? '✅' : task.status === 'in_progress' ? '🔄' : (task as any).due_date && (task as any).due_date < new Date().toISOString().slice(0, 10) ? '⚠️' : '📋'}</span>
                     <span>{task.title}</span>
                     <span className="ml-auto text-gray-300">{'⭐'.repeat(task.priority)}</span>
                   </button>
