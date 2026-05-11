@@ -82,8 +82,8 @@ projectsRouter.get('/:id', (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   const project = getDb().prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
   if (!project) { res.status(404).json(fail('Project not found')); return; }
-  const tasks = getDb().prepare('SELECT * FROM tasks WHERE project_id = ? AND archived = 0').all(Number(req.params['id']));
-  const meetings = getDb().prepare('SELECT * FROM meetings WHERE project_id = ?').all(Number(req.params['id']));
+  const tasks = getDb().prepare('SELECT * FROM tasks WHERE project_id = ? AND user_id = ? AND archived = 0').all(Number(req.params['id']), userId);
+  const meetings = getDb().prepare('SELECT * FROM meetings WHERE project_id = ? AND user_id = ?').all(Number(req.params['id']), userId);
   res.json(ok({ ...project as object, tasks, meetings }));
 });
 
