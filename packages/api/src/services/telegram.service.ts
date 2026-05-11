@@ -1673,8 +1673,22 @@ BHAG (Большая Дерзкая Цель на год):
 
         const raw = visionResult.choices[0]?.message?.content ?? '{}';
         const parsed = JSON.parse(raw);
+        console.log('[photo] GPT result:', JSON.stringify(parsed).slice(0, 300));
 
-        if (parsed.is_contact && parsed.name) {
+        if (parsed.is_contact && (parsed.name || parsed.phone || parsed.telegram)) {
+          // If no name but have phone/telegram, try to find by phone or tg
+          if (!parsed.name && (parsed.phone || parsed.telegram)) {
+            const db2 = getDb();
+            let found: { id: number; name: string } | undefined;
+            if (parsed.phone) found = db2.prepare("SELECT id, name FROM people WHERE user_id = ? AND phone = ?").get(userId, parsed.phone) as any;
+            if (!found && parsed.telegram) found = db2.prepare("SELECT id, name FROM people WHERE user_id = ? AND telegram = ?").get(userId, parsed.telegram) as any;
+            if (found) {
+              parsed.name = found.name;
+            } else {
+              ctx.reply(`📇 Распознаны контакты:\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.telegram ? `📱 ${parsed.telegram}\n` : ''}${parsed.company ? `🏢 ${parsed.company}\n` : ''}\nНо имя не определено. Напишите: "добавь телефон ${parsed.phone || ''} к <Имя Фамилия>"`);
+              return;
+            }
+          }
           // Create contact
           const db = getDb();
           const existing = db.prepare('SELECT id FROM people WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(userId, parsed.name.trim()) as { id: number } | undefined;
