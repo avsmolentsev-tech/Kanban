@@ -467,6 +467,7 @@ BHAG (Большая Дерзкая Цель на год):
       }
     }
     if (!command.response) command.response = '';
+    if (!Array.isArray(command.actions)) command.actions = [];
     const results: string[] = [];
 
     for (const action of command.actions) {
@@ -648,6 +649,63 @@ BHAG (Большая Дерзкая Цель на год):
                 db.prepare('INSERT INTO journal (date, focus, user_id) VALUES (?, ?, ?)').run(date, focus, userId);
               }
               results.push(`🎯 Фокус на ${date}: ${focus}`);
+            }
+            break;
+          }
+          case 'create_person': {
+            const name = action['name'] as string;
+            if (!name) { results.push('❌ Не указано имя'); break; }
+            const existingP = db.prepare('SELECT id FROM people WHERE LOWER(name) = LOWER(?) AND user_id = ?').get(name, userId) as { id: number } | undefined;
+            let personId: number;
+            if (existingP) {
+              personId = existingP.id;
+              // Update fields if provided
+              for (const key of ['phone', 'email', 'telegram', 'company', 'role', 'notes']) {
+                if (action[key]) db.prepare(`UPDATE people SET ${key} = ? WHERE id = ?`).run(action[key], personId);
+              }
+            } else {
+              const r = db.prepare('INSERT INTO people (name, company, role, phone, email, telegram, notes, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+                name, (action['company'] as string) ?? '', (action['role'] as string) ?? '', (action['phone'] as string) ?? '',
+                (action['email'] as string) ?? '', (action['telegram'] as string) ?? '', (action['notes'] as string) ?? '', userId
+              );
+              personId = Number(r.lastInsertRowid);
+            }
+            if (action['project_id']) {
+              try { db.prepare('INSERT OR IGNORE INTO people_projects (person_id, project_id) VALUES (?, ?)').run(personId, action['project_id']); } catch {}
+            }
+            this.lastCreatedPerson.set(String(userId), { id: personId, name });
+            results.push(`✅ Контакт "${name}" ${existingP ? 'обновлён' : 'создан'}${action['project_id'] ? ' + привязан к проекту' : ''}`);
+            break;
+          }
+          case 'update_person': {
+            const pid = action['person_id'] as number;
+            if (!pid) { results.push('❌ Не указан person_id'); break; }
+            const fields: string[] = [];
+            const values: unknown[] = [];
+            for (const f of ['name', 'company', 'role', 'phone', 'email', 'telegram', 'notes']) {
+              if (action[f] !== undefined && action[f] !== '') { fields.push(`${f} = ?`); values.push(action[f]); }
+            }
+            if (fields.length > 0) {
+              db.prepare(`UPDATE people SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, pid, userId);
+            }
+            if (action['project_id']) {
+              try { db.prepare('INSERT OR IGNORE INTO people_projects (person_id, project_id) VALUES (?, ?)').run(pid, action['project_id']); } catch {}
+            }
+            const pName = (db.prepare('SELECT name FROM people WHERE id = ?').get(pid) as { name: string } | undefined)?.name ?? `#${pid}`;
+            results.push(`✅ Контакт "${pName}" обновлён`);
+            break;
+          }
+          case 'delete_person': {
+            const pid = action['person_id'] as number;
+            const personCheck = db.prepare('SELECT id FROM people WHERE id = ? AND user_id = ?').get(pid, userId);
+            if (personCheck) {
+              db.prepare('DELETE FROM task_people WHERE person_id = ?').run(pid);
+              db.prepare('DELETE FROM meeting_people WHERE person_id = ?').run(pid);
+              db.prepare('DELETE FROM people_projects WHERE person_id = ?').run(pid);
+              db.prepare('DELETE FROM people WHERE id = ? AND user_id = ?').run(pid, userId);
+              results.push(`🗑 Контакт #${pid} удалён`);
+            } else {
+              results.push(`❌ Контакт #${pid} не найден`);
             }
             break;
           }
