@@ -1873,7 +1873,7 @@ BHAG (Большая Дерзкая Цель на год):
     ]).catch(() => {});
 
     const tryLaunch = (attempt = 0): void => {
-      this.bot!.launch().then(() => {
+      this.bot!.launch({ dropPendingUpdates: true }).then(() => {
         console.log('[telegram] bot started');
       }).catch((err) => {
         const is409 = /409|Conflict|getUpdates/.test(err.message);
