@@ -32,12 +32,11 @@ interface HabitStat {
 
 /* ── Large Ring — Streaks style ── */
 function HabitRing({
-  habit, isLogged, onToggle, onEdit,
+  habit, isLogged, onToggle, onEdit, size = 130,
 }: {
-  habit: Habit; isLogged: boolean; onToggle: () => void; onEdit: () => void;
+  habit: Habit; isLogged: boolean; onToggle: () => void; onEdit: () => void; size?: number;
 }) {
   const [pulse, setPulse] = useState(false);
-  const size = 130;
   const stroke = 7;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -97,7 +96,7 @@ function HabitRing({
           <motion.span
             animate={pulse ? { scale: [1, 1.4, 1] } : {}}
             transition={{ duration: 0.35 }}
-            className="text-4xl select-none"
+            className={`select-none ${size > 100 ? 'text-4xl' : 'text-2xl'}`}
           >
             {isLogged ? '✓' : habit.icon}
           </motion.span>
@@ -121,7 +120,7 @@ function HabitRing({
       </div>
 
       {/* Label */}
-      <div className="text-center max-w-[130px]">
+      <div className="text-center" style={{ maxWidth: size }}>
         <div className={`text-xs font-bold uppercase tracking-wider leading-tight transition-all duration-300 ${
           isLogged ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-300'
         }`}>
@@ -133,9 +132,8 @@ function HabitRing({
 }
 
 /* ── Add Button Cell ── */
-function AddHabitCell({ onClick }: { onClick: () => void }) {
+function AddHabitCell({ onClick, size = 130 }: { onClick: () => void; size?: number }) {
   const { t } = useLangStore();
-  const size = 130;
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.8 }}
@@ -145,7 +143,7 @@ function AddHabitCell({ onClick }: { onClick: () => void }) {
     >
       <div className="relative flex items-center justify-center rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500 transition-all"
         style={{ width: size, height: size }}>
-        <Plus size={36} className="text-gray-300 dark:text-gray-600" />
+        <Plus size={size > 100 ? 36 : 28} className="text-gray-300 dark:text-gray-600" />
       </div>
       <div className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
         {t('Добавить', 'Add')}
@@ -288,7 +286,7 @@ export function HabitsPage() {
   }
 
   return (
-    <div className="relative overflow-hidden p-4 max-w-5xl mx-auto pb-24">
+    <div className="relative overflow-hidden p-4 pb-24">
       {/* Background decorations — same as rest of app */}
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -332,8 +330,8 @@ export function HabitsPage() {
       ) : (
         <div className="relative z-10 space-y-6">
           {/* ── Ring Grid — Streaks style ── */}
-          <div className={`grid gap-6 justify-items-center ${
-            habits.length <= 2 ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'
+          <div className={`grid gap-4 sm:gap-6 justify-items-center ${
+            habits.length <= 2 ? 'grid-cols-2 sm:grid-cols-2' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'
           }`}>
             {habits.map((habit) => (
               <HabitRing
@@ -342,9 +340,10 @@ export function HabitsPage() {
                 isLogged={!!logMap[habit.id]?.has(today)}
                 onToggle={() => toggleLog(habit.id, today)}
                 onEdit={() => openEdit(habit)}
+                size={isMobile ? 100 : 130}
               />
             ))}
-            <AddHabitCell onClick={openCreate} />
+            <AddHabitCell onClick={openCreate} size={isMobile ? 100 : 130} />
           </div>
 
           {/* All done banner */}
