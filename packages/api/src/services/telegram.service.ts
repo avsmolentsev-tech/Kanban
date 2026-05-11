@@ -22,6 +22,7 @@ export class TelegramService {
   private pendingEmails = new Map<number, string>(); // tg_id → email entered
   private recentActions = new Map<number, Array<{ type: string; title: string; id: number; table: string; date: string; savedAt: number }>>();
   private proMode = new Set<number>(); // tg_id → next audio uses OpenAI Whisper API
+  private lastCreatedPerson = new Map<number, { name: string; id: number }>(); // tg_id → last created contact
   private drafts = new DraftSession({
     timeoutMs: 30 * 60_000,
     onTimeout: (c) => { this.saveDraftAsIs(c).catch((e) => console.error('[draft] timeout save failed:', e)); },
@@ -1344,6 +1345,23 @@ BHAG (Большая Дерзкая Цель на год):
       // userId auto-created by resolveUserId
 
       // If there's an open draft — ANY text is treated as correction (no need to press ✏️ first)
+      // Check if user just created a contact and replies with project name
+      const lastPerson = this.lastCreatedPerson.get(tgId);
+      if (lastPerson && text.length < 100) {
+        const db = getDb();
+        const allProjects = db.prepare('SELECT id, name FROM projects WHERE user_id = ? AND archived = 0').all(userId) as Array<{ id: number; name: string }>;
+        const hint = text.toLowerCase().replace(/^(к проекту|проект|привяжи к)\s*/i, '').trim();
+        const match = allProjects.find(p => p.name.toLowerCase() === hint || p.name.toLowerCase().includes(hint) || hint.includes(p.name.toLowerCase()));
+        if (match) {
+          db.prepare('UPDATE people SET project_id = ? WHERE id = ?').run(match.id, lastPerson.id);
+          try { db.prepare('INSERT OR IGNORE INTO people_projects (person_id, project_id) VALUES (?, ?)').run(lastPerson.id, match.id); } catch {}
+          this.lastCreatedPerson.delete(tgId);
+          ctx.reply(`✅ ${lastPerson.name} привязан(а) к проекту ${match.name}`);
+          return;
+        }
+        this.lastCreatedPerson.delete(tgId);
+      }
+
       const draft = this.drafts.get(tgId);
       console.log(`[bot] text from tgId=${tgId}, draft=${draft ? `exists (${draft.title})` : 'none'}, text="${text.slice(0, 50)}"`);
       if (draft) {
@@ -1701,10 +1719,12 @@ BHAG (Большая Дерзкая Цель на год):
             if (parsed.role) db.prepare("UPDATE people SET role = ? WHERE id = ? AND (role = '' OR role IS NULL)").run(parsed.role, existing.id);
             ctx.reply(`✅ Контакт "${parsed.name}" обновлён\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.email ? `📧 ${parsed.email}\n` : ''}${parsed.company ? `🏢 ${parsed.company}\n` : ''}${parsed.notes || ''}`);
           } else {
-            db.prepare('INSERT INTO people (name, company, role, phone, email, telegram, notes, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+            const result = db.prepare('INSERT INTO people (name, company, role, phone, email, telegram, notes, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
               parsed.name, parsed.company || '', parsed.role || '', parsed.phone || '', parsed.email || '', parsed.telegram || '', parsed.notes || '', userId
             );
-            ctx.reply(`✅ Контакт создан: ${parsed.name}\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.email ? `📧 ${parsed.email}\n` : ''}${parsed.company ? `🏢 ${parsed.company}\n` : ''}${parsed.role ? `💼 ${parsed.role}\n` : ''}${parsed.notes ? `📝 ${parsed.notes}` : ''}\n\nЧтобы привязать к проекту — напишите: "привяжи ${parsed.name} к проекту <название>"`);
+            const newPersonId = Number(result.lastInsertRowid);
+            this.lastCreatedPerson.set(ctx.from!.id, { name: parsed.name, id: newPersonId });
+            ctx.reply(`✅ Контакт создан: ${parsed.name}\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.email ? `📧 ${parsed.email}\n` : ''}${parsed.company ? `🏢 ${parsed.company}\n` : ''}${parsed.role ? `💼 ${parsed.role}\n` : ''}${parsed.notes ? `📝 ${parsed.notes}` : ''}\n\nПривязать к проекту? Напишите название проекта.`);
           }
         } else {
           // Not a contact — process as regular image
