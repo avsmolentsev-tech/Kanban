@@ -1694,8 +1694,18 @@ BHAG (Большая Дерзкая Цель на год):
         console.log('[photo] GPT result:', JSON.stringify(parsed).slice(0, 300));
 
         if (parsed.is_contact && (parsed.name || parsed.phone || parsed.telegram)) {
-          // If no name but have phone/telegram, try to find by phone or tg
+          // If no name but have phone/telegram, try: 1) lastCreatedPerson 2) find by phone/tg
           if (!parsed.name && (parsed.phone || parsed.telegram)) {
+            const lastPerson = this.lastCreatedPerson.get(ctx.from!.id);
+            if (lastPerson) {
+              // Update the last created contact with new data
+              const db2 = getDb();
+              if (parsed.phone) db2.prepare("UPDATE people SET phone = ? WHERE id = ?").run(parsed.phone, lastPerson.id);
+              if (parsed.telegram) db2.prepare("UPDATE people SET telegram = ? WHERE id = ?").run(parsed.telegram, lastPerson.id);
+              if (parsed.email) db2.prepare("UPDATE people SET email = ? WHERE id = ?").run(parsed.email, lastPerson.id);
+              ctx.reply(`✅ Контакт "${lastPerson.name}" дополнен\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.telegram ? `📱 ${parsed.telegram}\n` : ''}${parsed.email ? `📧 ${parsed.email}` : ''}`);
+              return;
+            }
             const db2 = getDb();
             let found: { id: number; name: string } | undefined;
             if (parsed.phone) found = db2.prepare("SELECT id, name FROM people WHERE user_id = ? AND phone = ?").get(userId, parsed.phone) as any;

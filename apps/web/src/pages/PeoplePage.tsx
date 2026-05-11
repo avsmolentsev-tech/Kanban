@@ -152,10 +152,10 @@ export function PeoplePage() {
     });
   }
 
-  // Sort: projects first (by order_index), unassigned last
+  // Sort: unassigned FIRST, then projects by order_index
   grouped.sort((a, b) => {
-    if (a.project === null) return 1;
-    if (b.project === null) return -1;
+    if (a.project === null) return -1;
+    if (b.project === null) return 1;
     return (a.project.order_index ?? 0) - (b.project.order_index ?? 0);
   });
 
