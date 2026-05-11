@@ -160,9 +160,10 @@ export function PeoplePage() {
   });
 
   // Apply project filter
+  // Always show "Без проекта" group + filtered projects
   const filteredGrouped = filterProjectIds === null
     ? grouped
-    : grouped.filter((g) => g.project !== null && filterProjectIds.has(g.project.id));
+    : grouped.filter((g) => g.project === null || filterProjectIds.has(g.project!.id));
 
   const activeProjects = projects.filter(p => !p.archived);
 
