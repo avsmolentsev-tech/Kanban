@@ -3,6 +3,8 @@ import { apiGet, apiPost, apiPatch } from '../api/client';
 import { useLangStore } from '../store/lang.store';
 import { ChevronLeft, ChevronRight, Flame, Check, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
+import type { Task, Project, Person } from '@pis/shared';
 
 interface JournalEntry {
   id: number;
@@ -133,8 +135,11 @@ export function JournalPage() {
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ focus: '', gratitude: '', notes: '', results: '', mood: 3 });
-  const [completedTasks, setCompletedTasks] = useState<Array<{ title: string }>>([]);
+  const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
   const [moodJustChanged, setMoodJustChanged] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const recentDates = getRecentDates(14);
   const today = getToday();
@@ -145,6 +150,8 @@ export function JournalPage() {
 
   useEffect(() => {
     apiGet<JournalEntry[]>('/journal').then(setEntries).catch(() => {});
+    apiGet<Project[]>('/projects').then(setProjects).catch(() => {});
+    apiGet<Person[]>('/people').then(setPeople).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -156,7 +163,7 @@ export function JournalPage() {
       setEntry(null);
       setForm({ focus: '', gratitude: '', notes: '', results: '', mood: 3 });
     }
-    apiGet<Array<{ title: string; status: string; updated_at: string }>>('/tasks')
+    apiGet<Task[]>('/tasks')
       .then(tasks => {
         const done = tasks.filter(tk => tk.status === 'done' && tk.updated_at?.startsWith(selectedDate));
         setCompletedTasks(done.slice(0, 10));
@@ -387,19 +394,51 @@ export function JournalPage() {
                 </span>
               </div>
               <div className="space-y-1.5">
-                {completedTasks.map((tk, i) => (
-                  <div key={i} className="flex items-center gap-2.5 text-sm text-green-700 dark:text-green-300">
+                {completedTasks.map((tk) => (
+                  <button
+                    key={tk.id}
+                    onClick={() => setSelectedTask(tk)}
+                    className="w-full flex items-center gap-2.5 text-sm text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/20 rounded-lg px-2 py-1 -mx-2 transition-colors cursor-pointer text-left"
+                  >
                     <div className="w-5 h-5 rounded-lg bg-green-500/20 flex items-center justify-center flex-shrink-0">
                       <Check size={12} className="text-green-600 dark:text-green-400" />
                     </div>
-                    <span>{tk.title}</span>
-                  </div>
+                    <span className="flex-1 truncate">{tk.title}</span>
+                    <ChevronRight size={14} className="text-green-400 flex-shrink-0" />
+                  </button>
                 ))}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {/* Task detail panel */}
+      {selectedTask && (
+        <TaskDetailPanel
+          task={selectedTask}
+          projects={projects}
+          people={people}
+          onClose={() => setSelectedTask(null)}
+          onUpdated={() => {
+            setSelectedTask(null);
+            // Refresh completed tasks
+            apiGet<Task[]>('/tasks')
+              .then(tasks => {
+                const done = tasks.filter(tk => tk.status === 'done' && tk.updated_at?.startsWith(selectedDate));
+                setCompletedTasks(done.slice(0, 10));
+              }).catch(() => {});
+          }}
+          onDeleted={() => {
+            setSelectedTask(null);
+            apiGet<Task[]>('/tasks')
+              .then(tasks => {
+                const done = tasks.filter(tk => tk.status === 'done' && tk.updated_at?.startsWith(selectedDate));
+                setCompletedTasks(done.slice(0, 10));
+              }).catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }
