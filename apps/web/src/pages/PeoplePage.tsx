@@ -160,10 +160,13 @@ export function PeoplePage() {
   });
 
   // Apply project filter
-  // Always show "Без проекта" group + filtered projects
+  // Filter by selected projects; -1 means "Без проекта"
   const filteredGrouped = filterProjectIds === null
     ? grouped
-    : grouped.filter((g) => g.project === null || filterProjectIds.has(g.project!.id));
+    : grouped.filter((g) => {
+        if (g.project === null) return filterProjectIds.has(-1);
+        return filterProjectIds.has(g.project.id);
+      });
 
   const activeProjects = projects.filter(p => !p.archived);
 
@@ -227,7 +230,7 @@ export function PeoplePage() {
           <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Люди', 'People')}</h1>
         </div>
         <div className="flex items-center gap-3">
-          <ProjectFilter projects={projects} />
+          <ProjectFilter projects={projects} showNoProject />
           {!adding && (
             <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 flex-shrink-0">
             {t('+ Контакт', '+ Contact')}

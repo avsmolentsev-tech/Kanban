@@ -6,9 +6,10 @@ import { Filter, Check, X } from 'lucide-react';
 
 interface Props {
   projects: Project[];
+  showNoProject?: boolean;
 }
 
-export function ProjectFilter({ projects }: Props) {
+export function ProjectFilter({ projects, showNoProject }: Props) {
   const { selectedProjectIds, selectAll, toggleProject } = useFiltersStore();
   const { t } = useLangStore();
   const [open, setOpen] = useState(false);
@@ -57,12 +58,30 @@ export function ProjectFilter({ projects }: Props) {
 
           {/* Project list */}
           <div className="max-h-[280px] overflow-auto py-1">
+            {/* "Без проекта" option */}
+            {showNoProject && (() => {
+              const active = selectedProjectIds !== null && selectedProjectIds.has(-1);
+              return (
+                <button
+                  onClick={() => toggleProject(-1, projects.length + 1)}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                >
+                  <div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center transition-colors ${
+                    active ? 'border-transparent bg-gray-500' : 'border-gray-300 dark:border-gray-500'
+                  }`}>
+                    {active && <Check size={10} className="text-white" strokeWidth={3} />}
+                  </div>
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-gray-400" />
+                  <span className="truncate">{t('Без проекта', 'No project')}</span>
+                </button>
+              );
+            })()}
             {projects.map(p => {
               const active = selectedProjectIds !== null && selectedProjectIds.has(p.id);
               return (
                 <button
                   key={p.id}
-                  onClick={() => toggleProject(p.id, projects.length)}
+                  onClick={() => toggleProject(p.id, projects.length + (showNoProject ? 1 : 0))}
                   className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                 >
                   <div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center transition-colors ${
