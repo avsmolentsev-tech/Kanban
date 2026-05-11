@@ -36,7 +36,6 @@ function HabitRing({
 }: {
   habit: Habit; isLogged: boolean; onToggle: () => void; onEdit: () => void;
 }) {
-  const { t } = useLangStore();
   const [pulse, setPulse] = useState(false);
   const size = 130;
   const stroke = 7;
@@ -59,26 +58,25 @@ function HabitRing({
       className="flex flex-col items-center gap-2 cursor-pointer group"
       onClick={handleTap}
     >
-      {/* Ring */}
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="transform -rotate-90">
           {/* Track */}
           <circle
             cx={size / 2} cy={size / 2} r={radius}
             fill="none" strokeWidth={stroke}
-            className="stroke-white/20"
+            className="stroke-gray-200 dark:stroke-gray-700"
           />
           {/* Progress */}
           <circle
             cx={size / 2} cy={size / 2} r={radius}
             fill="none" strokeWidth={stroke}
             strokeLinecap="round"
-            className="stroke-white"
+            stroke={isLogged ? '#10b981' : habit.color}
             strokeDasharray={circumference}
             strokeDashoffset={offset}
             style={{
               transition: 'stroke-dashoffset 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              filter: isLogged ? 'drop-shadow(0 0 8px rgba(255,255,255,0.5))' : 'none',
+              filter: isLogged ? `drop-shadow(0 0 8px ${habit.color}40)` : 'none',
             }}
           />
         </svg>
@@ -92,14 +90,14 @@ function HabitRing({
                 animate={{ scale: 2.5, opacity: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.5 }}
-                className="absolute w-16 h-16 rounded-full bg-white/30"
+                className="absolute w-16 h-16 rounded-full bg-green-400/30"
               />
             )}
           </AnimatePresence>
           <motion.span
             animate={pulse ? { scale: [1, 1.4, 1] } : {}}
             transition={{ duration: 0.35 }}
-            className={`text-4xl select-none transition-all duration-300 ${isLogged ? 'grayscale-0' : 'grayscale-0'}`}
+            className="text-4xl select-none"
           >
             {isLogged ? '✓' : habit.icon}
           </motion.span>
@@ -107,16 +105,16 @@ function HabitRing({
 
         {/* Streak badge */}
         {habit.streak > 0 && (
-          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-sm">
-            <Flame size={10} className="text-orange-300" />
-            <span className="text-[11px] font-bold text-white">{habit.streak}</span>
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30">
+            <Flame size={10} className="text-orange-500" />
+            <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400">{habit.streak}</span>
           </div>
         )}
 
-        {/* Edit button (on hover/long-press) */}
+        {/* Edit button */}
         <button
           onClick={(e) => { e.stopPropagation(); onEdit(); }}
-          className="absolute top-0 right-0 p-1.5 rounded-full bg-white/10 text-white/50 hover:text-white hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+          className="absolute top-0 right-0 p-1.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 hover:text-indigo-500 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
         >
           <Pencil size={12} />
         </button>
@@ -125,7 +123,7 @@ function HabitRing({
       {/* Label */}
       <div className="text-center max-w-[130px]">
         <div className={`text-xs font-bold uppercase tracking-wider leading-tight transition-all duration-300 ${
-          isLogged ? 'text-white' : 'text-white/70'
+          isLogged ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-300'
         }`}>
           {habit.title}
         </div>
@@ -145,11 +143,11 @@ function AddHabitCell({ onClick }: { onClick: () => void }) {
       className="flex flex-col items-center gap-2 cursor-pointer"
       onClick={onClick}
     >
-      <div className="relative flex items-center justify-center rounded-full border-2 border-dashed border-white/30 hover:border-white/50 transition-all"
+      <div className="relative flex items-center justify-center rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500 transition-all"
         style={{ width: size, height: size }}>
-        <Plus size={36} className="text-white/40" />
+        <Plus size={36} className="text-gray-300 dark:text-gray-600" />
       </div>
-      <div className="text-xs font-bold uppercase tracking-wider text-white/40">
+      <div className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
         {t('Добавить', 'Add')}
       </div>
     </motion.div>
@@ -284,156 +282,170 @@ export function HabitsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden pb-24">
-      {/* Vibrant gradient background — full page */}
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-purple-600 to-fuchsia-500" />
-      {/* Subtle animated orbs */}
-      <div className="pointer-events-none absolute top-20 -left-20 w-[300px] h-[300px] rounded-full bg-blue-400/20 blur-[80px]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="pointer-events-none absolute bottom-40 -right-20 w-[350px] h-[350px] rounded-full bg-pink-400/20 blur-[80px]" style={{ animation: 'circleRight 28s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+    <div className="relative overflow-hidden p-4 max-w-5xl mx-auto pb-24">
+      {/* Background decorations — same as rest of app */}
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
 
       {/* Header */}
-      <div className="relative z-10 px-5 pt-5 pb-2 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-black text-white">{t('Привычки', 'Habits')}</h1>
-          <p className="text-sm text-white/60 font-medium">
-            {todayDone}/{habits.length} {t('сегодня', 'today')}
-            {todayDone === habits.length && habits.length > 0 && ' ✨'}
-          </p>
+      <div className="relative z-10 flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/25">
+            <Flame size={20} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Привычки', 'Habits')}</h1>
+            <p className="text-[10px] text-gray-400">
+              {todayDone}/{habits.length} {t('сегодня', 'today')}
+              {todayDone === habits.length && habits.length > 0 && ' ✨'}
+            </p>
+          </div>
         </div>
-        {/* Overall streak summary */}
         {habits.some(h => h.streak > 0) && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-white/10 backdrop-blur-sm">
-            <Flame size={16} className="text-orange-300 animate-pulse" />
-            <span className="text-sm font-bold text-white">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-200/50 dark:border-orange-800/30">
+            <Flame size={14} className="text-orange-500 animate-pulse" />
+            <span className="text-sm font-bold text-orange-600 dark:text-orange-400">
               {Math.max(...habits.map(h => h.streak))}
             </span>
-            <span className="text-[10px] text-white/50">{t('макс', 'best')}</span>
+            <span className="text-[10px] text-orange-400">{t('макс', 'best')}</span>
           </div>
         )}
       </div>
 
-      {/* ── Ring Grid — Streaks style ── */}
-      <div className="relative z-10 px-4 py-6">
-        <div className={`grid gap-6 justify-items-center ${
-          habits.length <= 2 ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'
-        }`}>
-          {habits.map((habit) => (
-            <HabitRing
-              key={habit.id}
-              habit={habit}
-              isLogged={!!logMap[habit.id]?.has(today)}
-              onToggle={() => toggleLog(habit.id, today)}
-              onEdit={() => openEdit(habit)}
-            />
-          ))}
-          <AddHabitCell onClick={openCreate} />
+      {habits.length === 0 ? (
+        <div className="text-center py-16 text-gray-400 dark:text-gray-500">
+          <div className="text-4xl mb-3">🔥</div>
+          <p className="text-lg">{t('Нет привычек', 'No habits yet')}</p>
+          <p className="text-sm mt-1">{t('Добавьте первую привычку', 'Add your first habit')}</p>
+          <button onClick={openCreate}
+            className="mt-4 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors text-sm font-semibold cursor-pointer">
+            + {t('Привычка', 'Habit')}
+          </button>
         </div>
-      </div>
+      ) : (
+        <div className="relative z-10 space-y-6">
+          {/* ── Ring Grid — Streaks style ── */}
+          <div className={`grid gap-6 justify-items-center ${
+            habits.length <= 2 ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'
+          }`}>
+            {habits.map((habit) => (
+              <HabitRing
+                key={habit.id}
+                habit={habit}
+                isLogged={!!logMap[habit.id]?.has(today)}
+                onToggle={() => toggleLog(habit.id, today)}
+                onEdit={() => openEdit(habit)}
+              />
+            ))}
+            <AddHabitCell onClick={openCreate} />
+          </div>
 
-      {/* All done banner */}
-      <AnimatePresence>
-        {todayDone === habits.length && habits.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="relative z-10 mx-5 mb-4 p-4 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/10 text-center"
+          {/* All done banner */}
+          <AnimatePresence>
+            {todayDone === habits.length && habits.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="p-4 rounded-2xl bg-green-50 dark:bg-green-900/15 border border-green-200/50 dark:border-green-800/30 text-center"
+              >
+                <span className="text-2xl">🏆</span>
+                <p className="text-sm font-bold text-green-600 dark:text-green-400 mt-1">{t('Все привычки выполнены!', 'All habits completed!')}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Toggle contribution grids */}
+          <button
+            onClick={() => setShowGrids(!showGrids)}
+            className="text-xs font-semibold text-gray-400 hover:text-indigo-500 transition-colors uppercase tracking-wider cursor-pointer"
           >
-            <span className="text-2xl">🏆</span>
-            <p className="text-sm font-bold text-white mt-1">{t('Все привычки выполнены!', 'All habits completed!')}</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            {showGrids ? t('Скрыть историю ↑', 'Hide history ↑') : t('Показать историю ↓', 'Show history ↓')}
+          </button>
 
-      {/* Toggle contribution grids */}
-      <div className="relative z-10 px-5 mb-3">
-        <button
-          onClick={() => setShowGrids(!showGrids)}
-          className="text-xs font-semibold text-white/40 hover:text-white/70 transition-colors uppercase tracking-wider cursor-pointer"
-        >
-          {showGrids ? t('Скрыть историю', 'Hide history') : t('Показать историю', 'Show history')} ↓
-        </button>
-      </div>
+          {/* Contribution grids */}
+          <AnimatePresence>
+            {showGrids && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="space-y-4"
+              >
+                {habits.map((habit) => {
+                  const logged = logMap[habit.id] || new Set();
+                  const completedInGrid = grid.flat().filter(d => d <= today && logged.has(d)).length;
+                  const totalInGrid = grid.flat().filter(d => d <= today).length;
+                  const rate = totalInGrid > 0 ? Math.round(completedInGrid / totalInGrid * 100) : 0;
 
-      {/* Contribution grids */}
-      <AnimatePresence>
-        {showGrids && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="relative z-10 px-4 space-y-4 pb-8"
-          >
-            {habits.map((habit) => {
-              const logged = logMap[habit.id] || new Set();
-              const completedInGrid = grid.flat().filter(d => d <= today && logged.has(d)).length;
-              const totalInGrid = grid.flat().filter(d => d <= today).length;
-              const rate = totalInGrid > 0 ? Math.round(completedInGrid / totalInGrid * 100) : 0;
-
-              return (
-                <div key={habit.id} className="rounded-2xl bg-white/10 backdrop-blur-sm border border-white/10 p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">{habit.icon}</span>
-                      <span className="text-sm font-bold text-white">{habit.title}</span>
-                      {habit.streak > 0 && (
-                        <span className="flex items-center gap-0.5 text-xs text-orange-300 font-semibold">
-                          <Flame size={10} /> {habit.streak}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-xs text-white/40 font-medium">{rate}%</span>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <div className="inline-flex gap-[3px]">
-                      <div className="flex flex-col gap-[3px] mr-1">
-                        {DAY_LABELS.map((label, i) => (
-                          <div key={i} className="w-5 h-3.5 md:h-[13px] text-[9px] text-white/30 flex items-center justify-end pr-0.5 font-medium">
-                            {i % 2 === 0 ? label : ''}
-                          </div>
-                        ))}
-                      </div>
-                      {Array.from({ length: weeksCount }, (_, col) => (
-                        <div key={col} className="flex flex-col gap-[3px]">
-                          {grid.map((row, rowIdx) => {
-                            const date = row[col] ?? '';
-                            const isFuture = date > today;
-                            const isL = date ? logged.has(date) : false;
-                            const isToday = date === today;
-                            return (
-                              <button
-                                key={date || `${col}-${rowIdx}`}
-                                onClick={() => date && toggleLog(habit.id, date)}
-                                disabled={isFuture}
-                                className={`w-3.5 h-3.5 md:w-[13px] md:h-[13px] rounded-[3px] transition-all duration-200 ${
-                                  isFuture
-                                    ? 'bg-white/5'
-                                    : isL
-                                      ? 'bg-white cursor-pointer hover:opacity-80 shadow-sm shadow-white/20'
-                                      : isToday
-                                        ? 'bg-white/20 ring-1 ring-white/50 cursor-pointer'
-                                        : 'bg-white/10 cursor-pointer hover:bg-white/20'
-                                }`}
-                              />
-                            );
-                          })}
+                  return (
+                    <div key={habit.id} className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{habit.icon}</span>
+                          <span className="text-sm font-bold text-gray-800 dark:text-gray-100">{habit.title}</span>
+                          {habit.streak > 0 && (
+                            <span className="flex items-center gap-0.5 text-xs text-orange-500 font-semibold">
+                              <Flame size={10} /> {habit.streak}
+                            </span>
+                          )}
                         </div>
-                      ))}
+                        <span className="text-xs text-gray-400 font-medium">{rate}%</span>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <div className="inline-flex gap-[3px]">
+                          <div className="flex flex-col gap-[3px] mr-1">
+                            {DAY_LABELS.map((label, i) => (
+                              <div key={i} className="w-5 h-3.5 md:h-[13px] text-[9px] text-gray-400 dark:text-gray-500 flex items-center justify-end pr-0.5 font-medium">
+                                {i % 2 === 0 ? label : ''}
+                              </div>
+                            ))}
+                          </div>
+                          {Array.from({ length: weeksCount }, (_, col) => (
+                            <div key={col} className="flex flex-col gap-[3px]">
+                              {grid.map((row, rowIdx) => {
+                                const date = row[col] ?? '';
+                                const isFuture = date > today;
+                                const isL = date ? logged.has(date) : false;
+                                const isToday = date === today;
+                                return (
+                                  <button
+                                    key={date || `${col}-${rowIdx}`}
+                                    onClick={() => date && toggleLog(habit.id, date)}
+                                    disabled={isFuture}
+                                    className={`w-3.5 h-3.5 md:w-[13px] md:h-[13px] rounded-[3px] transition-all duration-200 ${
+                                      isFuture
+                                        ? 'bg-gray-100 dark:bg-gray-700/30'
+                                        : isL
+                                          ? 'cursor-pointer hover:opacity-80 shadow-sm'
+                                          : isToday
+                                            ? 'bg-gray-200 dark:bg-gray-600 ring-1 ring-indigo-400 dark:ring-indigo-500 cursor-pointer'
+                                            : 'bg-gray-100 dark:bg-gray-700/50 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600'
+                                    }`}
+                                    style={isL && !isFuture ? { backgroundColor: habit.color } : undefined}
+                                  />
+                                );
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
-          </motion.div>
-        )}
-      </AnimatePresence>
+                  );
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       {/* ── Add/Edit Modal ── */}
       <AnimatePresence>
@@ -450,7 +462,7 @@ export function HabitsPage() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="bg-white dark:bg-gray-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 w-full max-w-md sm:mx-4 border-t border-gray-200/50 dark:border-gray-700/50"
+              className="bg-white dark:bg-gray-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 w-full max-w-md sm:mx-4"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-gray-600 mx-auto mb-5 sm:hidden" />
