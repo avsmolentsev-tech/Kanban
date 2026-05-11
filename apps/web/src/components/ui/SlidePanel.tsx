@@ -102,7 +102,7 @@ export function SlidePanel({ open, onClose, title, children, expandable }: Slide
             <button onClick={() => { setFullscreen(false); onClose(); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl px-1">×</button>
           </div>
         </div>
-        <div className="p-4 overflow-y-auto text-gray-800 dark:text-gray-100" style={{ height: 'calc(100% - 57px)', paddingBottom: '2rem' }}>{children}</div>
+        <div className="p-4 overflow-y-auto text-gray-800 dark:text-gray-100" style={{ height: 'calc(100% - 57px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 6rem)' }}>{children}</div>
       </div>
     </>
   );
