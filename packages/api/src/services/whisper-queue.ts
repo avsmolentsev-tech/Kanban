@@ -83,22 +83,52 @@ async function processJob(job: TranscribeJob): Promise<void> {
   }
 }
 
+/** Boost quiet audio with ffmpeg before transcription */
+async function boostAudio(buffer: Buffer, filename: string): Promise<Buffer> {
+  const { execFile } = require('child_process');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const tmpIn = path.join(os.tmpdir(), `whisper-in-${Date.now()}${path.extname(filename) || '.mp3'}`);
+  const tmpOut = path.join(os.tmpdir(), `whisper-out-${Date.now()}.mp3`);
+  fs.writeFileSync(tmpIn, buffer);
+  return new Promise<Buffer>((resolve) => {
+    execFile('ffmpeg', [
+      '-y', '-i', tmpIn,
+      '-af', 'volume=12dB,highpass=f=100,lowpass=f=8000,compand=attacks=0.3:decays=0.8:points=-80/-80|-45/-15|-27/-9|0/-3:gain=3',
+      '-ar', '16000', '-ac', '1', '-b:a', '64k',
+      tmpOut,
+    ], { timeout: 120000 }, (err: Error | null) => {
+      try { fs.unlinkSync(tmpIn); } catch {}
+      if (err || !fs.existsSync(tmpOut)) {
+        console.warn('[whisper-queue] audio boost failed, using original');
+        resolve(buffer);
+        return;
+      }
+      const boosted = fs.readFileSync(tmpOut);
+      try { fs.unlinkSync(tmpOut); } catch {}
+      console.log(`[whisper-queue] audio boosted: ${Math.round(buffer.length/1024)}KB → ${Math.round(boosted.length/1024)}KB`);
+      resolve(boosted);
+    });
+  });
+}
+
 export async function transcribeWithOpenAI(buffer: Buffer, filename: string): Promise<string> {
   const OpenAI = require('openai').default;
   const { config } = require('../config');
   console.log('[whisper-queue] using OpenAI API');
   const openai = new OpenAI({ apiKey: config.openaiApiKey });
 
-  // Soft compress only if over 24 MB (OpenAI limit 25 MB)
-  // Uses 128 kbps stereo — much better quality than local whisper's 32 kbps mono
-  let audioBuffer = buffer;
-  let audioFilename = filename;
-  const sizeMb = buffer.length / (1024 * 1024);
+  // Always boost audio for better recognition of quiet recordings
+  let audioBuffer = await boostAudio(buffer, filename);
+  let audioFilename = filename.replace(/\.[^.]+$/, '.mp3');
+
+  // Compress if over 24 MB (OpenAI limit 25 MB)
+  const sizeMb = audioBuffer.length / (1024 * 1024);
   if (sizeMb > 24) {
     try {
       const { compressForOpenAI } = require('./whisper-local.service');
-      audioBuffer = await compressForOpenAI(buffer, filename);
-      audioFilename = filename.replace(/\.[^.]+$/, '.mp3');
+      audioBuffer = await compressForOpenAI(audioBuffer, audioFilename);
       console.log(`[whisper-queue] compressed ${Math.round(sizeMb)}MB → ${Math.round(audioBuffer.length / (1024 * 1024))}MB for OpenAI`);
     } catch {}
   }
