@@ -23,6 +23,7 @@ export class TelegramService {
   private recentActions = new Map<number, Array<{ type: string; title: string; id: number; table: string; date: string; savedAt: number }>>();
   private proMode = new Set<number>(); // tg_id → next audio uses OpenAI Whisper API
   private lastCreatedPerson = new Map<number, { name: string; id: number }>(); // tg_id → last created contact
+  private pendingPhotoData = new Map<number, { data: Record<string, string>; ts: number }>(); // tg_id → buffered photo data waiting for name
   private drafts = new DraftSession({
     timeoutMs: 30 * 60_000,
     onTimeout: (c) => { this.saveDraftAsIs(c).catch((e) => console.error('[draft] timeout save failed:', e)); },
@@ -1694,11 +1695,24 @@ BHAG (Большая Дерзкая Цель на год):
         console.log('[photo] GPT result:', JSON.stringify(parsed).slice(0, 300));
 
         if (parsed.is_contact && (parsed.name || parsed.phone || parsed.telegram)) {
-          // If no name but have phone/telegram, try: 1) lastCreatedPerson 2) find by phone/tg
+          const tgId = ctx.from!.id;
+
+          // Check if there's buffered data from a previous photo (within 30s)
+          const pending = this.pendingPhotoData.get(tgId);
+          if (pending && Date.now() - pending.ts < 30000) {
+            // Merge: fill missing fields from buffered data
+            for (const key of ['phone', 'email', 'telegram', 'company', 'role', 'notes']) {
+              if (!parsed[key] && pending.data[key]) parsed[key] = pending.data[key];
+            }
+            if (!parsed.name && pending.data.name) parsed.name = pending.data.name;
+            this.pendingPhotoData.delete(tgId);
+          }
+
+          // If no name — buffer data and wait for next photo/message
           if (!parsed.name && (parsed.phone || parsed.telegram)) {
-            const lastPerson = this.lastCreatedPerson.get(ctx.from!.id);
+            // Check lastCreatedPerson first
+            const lastPerson = this.lastCreatedPerson.get(tgId);
             if (lastPerson) {
-              // Update the last created contact with new data
               const db2 = getDb();
               if (parsed.phone) db2.prepare("UPDATE people SET phone = ? WHERE id = ?").run(parsed.phone, lastPerson.id);
               if (parsed.telegram) db2.prepare("UPDATE people SET telegram = ? WHERE id = ?").run(parsed.telegram, lastPerson.id);
@@ -1706,15 +1720,21 @@ BHAG (Большая Дерзкая Цель на год):
               ctx.reply(`✅ Контакт "${lastPerson.name}" дополнен\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.telegram ? `📱 ${parsed.telegram}\n` : ''}${parsed.email ? `📧 ${parsed.email}` : ''}`);
               return;
             }
-            const db2 = getDb();
-            let found: { id: number; name: string } | undefined;
-            if (parsed.phone) found = db2.prepare("SELECT id, name FROM people WHERE user_id = ? AND phone = ?").get(userId, parsed.phone) as any;
-            if (!found && parsed.telegram) found = db2.prepare("SELECT id, name FROM people WHERE user_id = ? AND telegram = ?").get(userId, parsed.telegram) as any;
-            if (found) {
-              parsed.name = found.name;
-            } else {
-              ctx.reply(`📇 Распознаны контакты:\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.telegram ? `📱 ${parsed.telegram}\n` : ''}${parsed.company ? `🏢 ${parsed.company}\n` : ''}\nНо имя не определено. Напишите: "добавь телефон ${parsed.phone || ''} к <Имя Фамилия>"`);
-              return;
+            // Buffer and wait for second photo with name
+            this.pendingPhotoData.set(tgId, { data: parsed, ts: Date.now() });
+            console.log('[photo] buffered contact data (no name), waiting for next photo');
+            return;
+          }
+
+          // If has name — also check pending buffer to merge phone/tg
+          if (parsed.name) {
+            const pending2 = this.pendingPhotoData.get(tgId);
+            if (pending2 && Date.now() - pending2.ts < 30000) {
+              for (const key of ['phone', 'email', 'telegram']) {
+                if (!parsed[key] && pending2.data[key]) parsed[key] = pending2.data[key];
+              }
+              this.pendingPhotoData.delete(tgId);
+              console.log('[photo] merged buffered phone/tg with named contact');
             }
           }
           // Create contact
