@@ -39,6 +39,9 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
   const [extractedTasks, setExtractedTasks] = useState<string[]>([]);
   const [selectedTasks, setSelectedTasks] = useState<Set<number>>(new Set());
   const [creatingTasks, setCreatingTasks] = useState(false);
+  const [allPeople, setAllPeople] = useState<Array<{ id: number; name: string }>>([]);
+  const [meetingPersonIds, setMeetingPersonIds] = useState<number[]>([]);
+  const [peopleSearch, setPeopleSearch] = useState('');
 
   useEffect(() => {
     if (meeting) {
@@ -47,7 +50,13 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
       setProjectIds(ids ?? (meeting.project_id != null ? [meeting.project_id] : []));
       setChatMessages([]);
       setTab('details');
+      setPeopleSearch('');
       useActiveMeetingStore.getState().setMeetingId(meeting.id);
+      // Load people
+      apiGet<Array<{ id: number; name: string }>>('/people').then(setAllPeople).catch(() => {});
+      apiGet<{ people: Array<{ id: number; name: string }> }>(`/meetings/${meeting.id}`).then((data) => {
+        setMeetingPersonIds((data.people || []).map((p: { id: number }) => p.id));
+      }).catch(() => setMeetingPersonIds([]));
       // Load tasks from pro summaries
       apiGet<{ summary_structured: string }>(`/meetings/${meeting.id}`).then((data) => {
         try {
@@ -229,6 +238,66 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                     );
                   })}
                 </div>
+              </div>
+
+              {/* People / Participants */}
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">{t('Участники', 'Participants')}</div>
+                {meetingPersonIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {meetingPersonIds.map((pid) => {
+                      const person = allPeople.find(p => p.id === pid);
+                      if (!person) return null;
+                      return (
+                        <span key={pid} className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">
+                          {person.name}
+                          <button
+                            onClick={async () => {
+                              const next = meetingPersonIds.filter(x => x !== pid);
+                              setMeetingPersonIds(next);
+                              try {
+                                await meetingsApi.update(meeting.id, { person_ids: next } as any);
+                                onUpdated();
+                              } catch { setMeetingPersonIds(meetingPersonIds); }
+                            }}
+                            className="text-indigo-400 hover:text-red-500 ml-0.5 cursor-pointer"
+                          >×</button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                <input
+                  type="text"
+                  placeholder={t('Поиск людей...', 'Search people...')}
+                  value={peopleSearch}
+                  onChange={(e) => setPeopleSearch(e.target.value)}
+                  className="w-full text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
+                />
+                {peopleSearch.trim() && (
+                  <div className="mt-1 max-h-32 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800">
+                    {allPeople
+                      .filter(p => !meetingPersonIds.includes(p.id) && p.name.toLowerCase().includes(peopleSearch.toLowerCase()))
+                      .slice(0, 8)
+                      .map(p => (
+                        <button
+                          key={p.id}
+                          onClick={async () => {
+                            const next = [...meetingPersonIds, p.id];
+                            setMeetingPersonIds(next);
+                            setPeopleSearch('');
+                            try {
+                              await meetingsApi.update(meeting.id, { person_ids: next } as any);
+                              onUpdated();
+                            } catch { setMeetingPersonIds(meetingPersonIds); }
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-pointer"
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                  </div>
+                )}
               </div>
 
               {onTranscribe && (

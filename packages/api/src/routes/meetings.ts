@@ -36,6 +36,7 @@ const UpdateSchema = z.object({
   date: z.string().optional(),
   project_id: z.number().int().nullable().optional(),
   project_ids: z.array(z.number().int()).optional(),
+  person_ids: z.array(z.number().int()).optional(),
   sync_vault: z.boolean().optional(),
   summary_raw: z.string().optional(),
 });
@@ -119,11 +120,18 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   if (!existing) { res.status(404).json(fail('Meeting not found')); return; }
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const { project_ids, ...rest } = parsed.data;
+  const { project_ids, person_ids, ...rest } = parsed.data;
 
   // Handle project_ids separately (junction table)
   if (project_ids !== undefined) {
     setMeetingProjects(id, project_ids);
+  }
+
+  // Handle person_ids separately (junction table)
+  if (person_ids !== undefined) {
+    getDb().prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(id);
+    const insertMP = getDb().prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)');
+    for (const pid of person_ids) insertMP.run(id, pid);
   }
 
   const keys = Object.keys(rest).filter(k => (rest as Record<string, unknown>)[k] !== undefined);
