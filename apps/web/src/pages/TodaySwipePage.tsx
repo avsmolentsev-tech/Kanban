@@ -25,9 +25,18 @@ export function TodaySwipePage() {
     .filter((t) => !t.archived && (t.status === 'in_progress' || t.status === 'todo'))
     .filter((t) => !t.due_date || t.due_date <= today || t.status === 'in_progress')
     .sort((a, b) => {
-      // in_progress first, then by priority
+      // 1. in_progress first
       if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
       if (a.status !== 'in_progress' && b.status === 'in_progress') return 1;
+      // 2. Due today before others
+      const aDueToday = a.due_date === today ? 1 : 0;
+      const bDueToday = b.due_date === today ? 1 : 0;
+      if (aDueToday !== bDueToday) return bDueToday - aDueToday;
+      // 3. Overdue before non-overdue
+      const aOverdue = a.due_date && a.due_date < today ? 1 : 0;
+      const bOverdue = b.due_date && b.due_date < today ? 1 : 0;
+      if (aOverdue !== bOverdue) return bOverdue - aOverdue;
+      // 4. By priority
       return b.priority - a.priority;
     });
 
