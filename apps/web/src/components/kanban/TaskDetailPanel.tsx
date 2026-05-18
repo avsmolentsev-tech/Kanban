@@ -586,12 +586,14 @@ function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: stri
       <div className="flex items-center gap-2">
         {/* Checkbox */}
         <button
-          onClick={async () => {
+          type="button"
+          onClick={async (e) => {
+            e.stopPropagation();
             const next = sub.status === 'done' ? 'todo' : 'done';
             await tasksApi.update(sub.id, { status: next });
             onUpdated();
           }}
-          className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center text-xs ${sub.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 dark:border-gray-600 hover:border-indigo-400'}`}
+          className={`w-6 h-6 min-w-[24px] rounded border-2 flex-shrink-0 flex items-center justify-center text-xs cursor-pointer ${sub.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 dark:border-gray-600 hover:border-indigo-400 active:border-indigo-500'}`}
         >
           {sub.status === 'done' ? '✓' : ''}
         </button>
@@ -626,10 +628,11 @@ function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: stri
             : '👤'}
         </button>
 
-        {/* Delete button — visible on hover */}
+        {/* Delete button */}
         <button
-          onClick={handleDelete}
-          className="text-xs text-red-400 opacity-0 group-hover/sub:opacity-100 hover:text-red-600 flex-shrink-0 transition-opacity"
+          type="button"
+          onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+          className="w-6 h-6 min-w-[24px] flex items-center justify-center text-sm text-red-400 hover:text-red-600 active:text-red-700 flex-shrink-0 rounded hover:bg-red-50 dark:hover:bg-red-900/20 cursor-pointer"
           title={t('Удалить', 'Delete')}
         >
           ✕
