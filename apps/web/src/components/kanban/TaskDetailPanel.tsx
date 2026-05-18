@@ -242,6 +242,15 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             </div>
           </div>
 
+          {/* Subtasks — right under status */}
+          <div>
+            <div className="text-xs text-gray-500 mb-2">{t('Подзадачи', 'Subtasks')}</div>
+            {((task as unknown as Record<string, unknown>)['subtasks'] as Array<{ id: number; title: string; status: string; people?: Array<{ id: number; name: string }> }> ?? []).map(sub => (
+              <SubtaskRow key={sub.id} sub={sub} people={people} onUpdated={onUpdated} />
+            ))}
+            <SubtaskInput taskId={task.id} projectId={task.project_id} onCreated={onUpdated} />
+          </div>
+
           {/* Due date */}
           <div>
             <div className="text-xs text-gray-500 mb-1">{t('Дата', 'Due date')}</div>
@@ -523,15 +532,6 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
             </div>
           </div>
 
-          {/* Subtasks */}
-          <div>
-            <div className="text-xs text-gray-500 mb-2">{t('Подзадачи', 'Subtasks')}</div>
-            {((task as unknown as Record<string, unknown>)['subtasks'] as Array<{ id: number; title: string; status: string; people?: Array<{ id: number; name: string }> }> ?? []).map(sub => (
-              <SubtaskRow key={sub.id} sub={sub} people={people} onUpdated={onUpdated} />
-            ))}
-            <SubtaskInput taskId={task.id} projectId={task.project_id} onCreated={onUpdated} />
-          </div>
-
           <div className="text-xs text-gray-400 pt-2">{t('Создано: ', 'Created: ')}{task.created_at}</div>
 
           {(
@@ -558,6 +558,8 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
 function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: string; status: string; people?: Array<{ id: number; name: string }> }; people: Person[]; onUpdated: () => void }) {
   const { t } = useLangStore();
   const [showPicker, setShowPicker] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(sub.title);
 
   const togglePerson = async (personId: number) => {
     const currentIds = (sub.people ?? []).map(p => p.id);
@@ -566,20 +568,54 @@ function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: stri
     onUpdated();
   };
 
+  const saveTitle = async () => {
+    if (editTitle.trim() && editTitle.trim() !== sub.title) {
+      await tasksApi.update(sub.id, { title: editTitle.trim() });
+      onUpdated();
+    }
+    setEditing(false);
+  };
+
+  const handleDelete = async () => {
+    await tasksApi.delete(sub.id);
+    onUpdated();
+  };
+
   return (
-    <div className="py-1.5">
+    <div className="py-1 group/sub">
       <div className="flex items-center gap-2">
+        {/* Checkbox */}
         <button
           onClick={async () => {
             const next = sub.status === 'done' ? 'todo' : 'done';
             await tasksApi.update(sub.id, { status: next });
             onUpdated();
           }}
-          className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[10px] ${sub.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 dark:border-gray-600'}`}
+          className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center text-xs ${sub.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 dark:border-gray-600 hover:border-indigo-400'}`}
         >
           {sub.status === 'done' ? '✓' : ''}
         </button>
-        <span className={`text-sm flex-1 ${sub.status === 'done' ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-200'}`}>{sub.title}</span>
+
+        {/* Title — click to edit */}
+        {editing ? (
+          <input
+            autoFocus
+            className="flex-1 text-sm border border-indigo-300 dark:border-indigo-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-0.5 focus:outline-none"
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            onBlur={saveTitle}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') { setEditTitle(sub.title); setEditing(false); } }}
+          />
+        ) : (
+          <span
+            onClick={() => { setEditTitle(sub.title); setEditing(true); }}
+            className={`text-sm flex-1 cursor-text ${sub.status === 'done' ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400'}`}
+          >
+            {sub.title}
+          </span>
+        )}
+
+        {/* Assignee button */}
         <button
           onClick={() => setShowPicker(!showPicker)}
           className="text-[10px] text-gray-400 hover:text-indigo-500 flex-shrink-0 px-1"
@@ -589,18 +625,29 @@ function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: stri
             ? sub.people.map(p => p.name.split(' ')[0]).join(', ')
             : '👤'}
         </button>
+
+        {/* Delete button — visible on hover */}
+        <button
+          onClick={handleDelete}
+          className="text-xs text-red-400 opacity-0 group-hover/sub:opacity-100 hover:text-red-600 flex-shrink-0 transition-opacity"
+          title={t('Удалить', 'Delete')}
+        >
+          ✕
+        </button>
       </div>
-      {/* Assigned people */}
+
+      {/* Assigned people badges */}
       {sub.people && sub.people.length > 0 && !showPicker && (
-        <div className="flex gap-1 ml-6 mt-0.5">
+        <div className="flex gap-1 ml-7 mt-0.5">
           {sub.people.map(p => (
             <span key={p.id} className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300">{p.name.split(' ')[0]}</span>
           ))}
         </div>
       )}
+
       {/* Person picker */}
       {showPicker && (
-        <div className="ml-6 mt-1 flex flex-wrap gap-1">
+        <div className="ml-7 mt-1 flex flex-wrap gap-1">
           {people.map(p => {
             const assigned = (sub.people ?? []).some(sp => sp.id === p.id);
             return (
