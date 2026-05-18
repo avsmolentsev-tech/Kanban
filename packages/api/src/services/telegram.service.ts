@@ -1157,28 +1157,67 @@ BHAG (Большая Дерзкая Цель на год):
       await ctx.reply(`🎯 Фокус на ${today}: ${text}`);
     });
 
-    // /brief — daily brief
+    // /brief — daily brief (achievements first!)
     this.bot.command('brief', async (ctx) => {
       const db = getDb();
       const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
-      // userId auto-created by resolveUserId
       const today = moscowDateString();
       const tasks = db.prepare(
         "SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND user_id = ? ORDER BY priority DESC LIMIT 10"
-      ).all(userId);
+      ).all(userId) as Array<{ title: string; priority: number; due_date: string | null }>;
       const meetings = db.prepare(
         'SELECT title, date FROM meetings WHERE date >= ? AND user_id = ? ORDER BY date ASC LIMIT 5'
-      ).all(today, userId);
+      ).all(today, userId) as Array<{ title: string; date: string }>;
 
-      let brief = '🌅 Дневной брифинг\n\n';
-      brief += `📋 Активных задач: ${(tasks as Array<unknown>).length}\n`;
-      brief += `📅 Предстоящих встреч: ${(meetings as Array<unknown>).length}\n\n`;
+      // Achievements
+      const doneRecently = db.prepare(
+        "SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= date('now', '-1 day') AND user_id = ?"
+      ).get(userId) as { c: number };
+      const habitsDoneToday = db.prepare(`
+        SELECT h.title, h.icon FROM habits h
+        WHERE h.archived = 0 AND h.user_id = ? AND h.id IN (
+          SELECT habit_id FROM habit_logs WHERE date = ? AND completed = 1
+        )
+      `).all(userId, today) as Array<{ title: string; icon: string }>;
+      const topStreaks = db.prepare(`
+        SELECT h.title, h.icon,
+          (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= date('now', '-30 days')) as cnt
+        FROM habits h WHERE h.archived = 0 AND h.user_id = ? ORDER BY cnt DESC LIMIT 3
+      `).all(userId) as Array<{ title: string; icon: string; cnt: number }>;
+      const overdue = tasks.filter(t => t.due_date && t.due_date < today);
 
-      if ((tasks as Array<{ title: string }>).length > 0) {
+      let brief = '🌅 Доброе утро!\n\n';
+
+      // Achievements first
+      const wins: string[] = [];
+      if (doneRecently.c > 0) wins.push(`✅ Закрыто задач за последние сутки: ${doneRecently.c}`);
+      if (habitsDoneToday.length > 0) wins.push(`🔥 Привычки сегодня: ${habitsDoneToday.map(h => `${h.icon || '✓'} ${h.title}`).join(', ')}`);
+      for (const s of topStreaks.filter(s => s.cnt >= 5)) {
+        wins.push(`🏆 ${s.icon || '✓'} ${s.title} — ${s.cnt} дней за месяц!`);
+      }
+
+      if (wins.length > 0) {
+        brief += '💪 Твои успехи:\n';
+        brief += wins.map(w => `  ${w}`).join('\n') + '\n\n';
+      }
+
+      // Then status
+      brief += `📋 Активных задач: ${tasks.length}\n`;
+      brief += `📅 Предстоящих встреч: ${meetings.length}\n`;
+      if (overdue.length > 0) brief += `⏰ Просроченных: ${overdue.length}\n`;
+      brief += '\n';
+
+      if (tasks.length > 0) {
         brief += 'Приоритетные задачи:\n';
-        for (const t of tasks as Array<{ title: string; priority: number }>) {
+        for (const t of tasks.slice(0, 7)) {
           brief += `  • ${t.title} ${'⭐'.repeat(t.priority)}\n`;
         }
+      }
+
+      if (tasks.length === 0 && meetings.length === 0) {
+        brief += '\n🎉 Свободный день! Хочешь закинуть задачу или встречу?';
+      } else {
+        brief += '\nПродуктивного дня! 🚀';
       }
 
       ctx.reply(brief);

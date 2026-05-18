@@ -134,6 +134,22 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
     const today = moscowDateString();
     const overdueTasks = tasks.filter(t => t.due_date && t.due_date < today && t.status !== 'done' && t.status !== 'someday');
 
+    // Achievements data for motivation
+    const doneToday = tasks.filter(t => t.status === 'done' && t.due_date === today).length;
+    const doneRecently = db.prepare(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= date('now', '-1 day')${userFilter}`).get(...userParams) as { c: number };
+    const todayMeetings = db.prepare(`SELECT COUNT(*) as c FROM meetings WHERE date = ?${userFilter}`).get(today, ...userParams) as { c: number };
+    const habitStreaks = db.prepare(`
+      SELECT h.title, h.icon FROM habits h
+      WHERE h.archived = 0${userFilter} AND h.id IN (
+        SELECT habit_id FROM habit_logs WHERE date = ? AND completed = 1
+      )
+    `).all(...userParams, today) as Array<{ title: string; icon: string }>;
+    const streakCounts = db.prepare(`
+      SELECT h.id, h.title, h.icon,
+        (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= date('now', '-30 days')) as recent_count
+      FROM habits h WHERE h.archived = 0${userFilter} ORDER BY recent_count DESC LIMIT 5
+    `).all(...userParams) as Array<{ id: number; title: string; icon: string; recent_count: number }>;
+
     // Auto-detect if question is about meetings → include full content
     const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
     const needsFullMeetings = meetingKeywords.test(parsed.data.text);
@@ -167,16 +183,31 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
       meetings = db.prepare(`SELECT id, title, date, project_id FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 20`).all(...userParams) as Array<MeetingWithContent>;
     }
 
-    const systemPrompt = `Ты — персональный ассистент. Умный, дружелюбный, вдумчивый собеседник. Можешь разговаривать на любые темы, советовать, обсуждать идеи.
+    const systemPrompt = `Ты — персональный ассистент и коуч. Умный, дружелюбный, вдумчивый, мотивирующий. Можешь разговаривать на любые темы, советовать, обсуждать идеи.
 
 Подключён к таск-трекеру пользователя.
+
+СТИЛЬ ОБЩЕНИЯ — МОТИВАЦИЯ ПРЕЖДЕ ВСЕГО:
+1. ВСЕГДА начинай ответ с позитива: отметь что уже сделано, похвали за прогресс
+2. Если пользователь завершил задачи — "Отлично! Ты уже закрыл X задач сегодня 💪"
+3. Если стрик привычки — "Уже N дней подряд [привычка] — так держать! 🔥"
+4. Если провёл встречи — "Продуктивный день: N встреч уже за плечами"
+5. ПОСЛЕ позитива — мягко напомни что осталось, без давления
+6. Если пользователь просто пишет привет/ничего конкретного — подбодри и предложи: "Хочешь закинуть задачу или встречу? Или обсудим что-нибудь?"
+7. НЕ начинай с просрочек! Сначала успехи, потом остальное.
+
+УСПЕХИ ПОЛЬЗОВАТЕЛЯ СЕГОДНЯ:
+✅ Завершено задач сегодня: ${doneRecently.c}
+📅 Встреч сегодня: ${todayMeetings.c}
+${habitStreaks.length > 0 ? `🔥 Привычки выполнены сегодня: ${habitStreaks.map(h => `${h.icon || '✓'} ${h.title}`).join(', ')}` : ''}
+${streakCounts.filter(h => h.recent_count >= 5).map(h => `🏆 ${h.icon || '✓'} ${h.title}: ${h.recent_count} дней за последний месяц`).join('\n')}
 
 ДАННЫЕ СИСТЕМЫ:
 Сегодня: ${today}
 Проекты: ${JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })))}
 Задачи (последние 30 + в работе): ${JSON.stringify([...overdueTasks, ...tasks.filter(t => t.status === 'in_progress'), ...tasks.filter(t => !overdueTasks.includes(t) && t.status !== 'in_progress' && t.status !== 'done' && t.status !== 'someday')].slice(0, 30).map(t => ({ id: t.id, title: t.title, status: t.status, project_id: t.project_id, due_date: t.due_date })))}
 Всего задач: ${tasks.length} (показаны приоритетные)
-${overdueTasks.length > 0 ? `\n⚠️ ПРОСРОЧЕННЫЕ (${overdueTasks.length}): ${JSON.stringify(overdueTasks.map(t => ({ id: t.id, title: t.title, due_date: t.due_date, project_id: t.project_id })))}\n` : ''}Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
+${overdueTasks.length > 0 ? `\n⚠️ Просроченные (${overdueTasks.length}): ${JSON.stringify(overdueTasks.map(t => ({ id: t.id, title: t.title, due_date: t.due_date, project_id: t.project_id })))}\n` : ''}Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 ${parsed.data.last_contact ? `\n🧑 LAST_CONTACT (только что создан/обновлён): id=${parsed.data.last_contact.id}, name="${parsed.data.last_contact.name}". Любые команды про "к проекту", "добавь телефон/email", "привяжи" — относятся к ЭТОМУ контакту!\n` : ''}
 ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕДНИХ ВСТРЕЧ ===\n${fullMeetingContent}\n=== КОНЕЦ ===\n\nОтвечай конкретно на основе содержимого транскрипций выше. Цитируй фрагменты когда уместно.` : ''}
