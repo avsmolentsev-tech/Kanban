@@ -560,6 +560,7 @@ function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: stri
   const [showPicker, setShowPicker] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(sub.title);
+  const [deleted, setDeleted] = useState(false);
 
   const togglePerson = async (personId: number) => {
     const currentIds = (sub.people ?? []).map(p => p.id);
@@ -577,9 +578,16 @@ function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: stri
   };
 
   const handleDelete = async () => {
-    await tasksApi.delete(sub.id);
-    onUpdated();
+    setDeleted(true);
+    try {
+      await tasksApi.delete(sub.id);
+      onUpdated();
+    } catch {
+      setDeleted(false);
+    }
   };
+
+  if (deleted) return null;
 
   return (
     <div className="py-1 group/sub">
@@ -669,42 +677,43 @@ function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: stri
 function SubtaskInput({ taskId, projectId, onCreated }: { taskId: number; projectId: number | null; onCreated: () => void }) {
   const { t } = useLangStore();
   const [title, setTitle] = useState('');
-  const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
-    if (!title.trim() || saving) return;
+    const text = title.trim();
+    if (!text || saving) return;
     setSaving(true);
+    setTitle('');
     try {
-      await tasksApi.create({ title: title.trim(), parent_id: taskId, project_id: projectId ?? undefined, status: 'todo', priority: 3 });
-      setTitle('');
+      await tasksApi.create({ title: text, parent_id: taskId, project_id: projectId ?? undefined, status: 'todo', priority: 3 });
       onCreated();
     } catch (err) {
+      setTitle(text);
       alert(t('Ошибка: ', 'Error: ') + (err instanceof Error ? err.message : 'unknown'));
     } finally {
       setSaving(false);
     }
   };
 
-  if (!adding) {
-    return (
-      <button onClick={() => setAdding(true)} className="text-xs text-indigo-500 hover:text-indigo-700 mt-1">
-        + {t('Подзадача', 'Subtask')}
-      </button>
-    );
-  }
-
   return (
-    <div className="flex gap-2 mt-1">
-      <input
-        autoFocus
-        className="flex-1 text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2 py-1 focus:outline-none focus:border-indigo-300"
-        placeholder={t('Название подзадачи', 'Subtask title')}
+    <div className="flex gap-2 mt-2 items-end">
+      <textarea
+        className="flex-1 text-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded px-2.5 py-1.5 focus:outline-none focus:border-indigo-400 resize-none overflow-hidden placeholder-gray-400 dark:placeholder-gray-500"
+        placeholder={t('+ Добавить подзадачу...', '+ Add subtask...')}
+        rows={1}
         value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false); }}
+        onChange={(e) => { setTitle(e.target.value); const el = e.target; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }}
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
+        disabled={saving}
       />
-      <button onClick={submit} disabled={!title.trim()} className="text-xs bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 disabled:opacity-50">+</button>
+      <button
+        type="button"
+        onClick={submit}
+        disabled={!title.trim() || saving}
+        className="h-8 w-8 min-w-[32px] flex items-center justify-center text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 cursor-pointer"
+      >
+        +
+      </button>
     </div>
   );
 }
