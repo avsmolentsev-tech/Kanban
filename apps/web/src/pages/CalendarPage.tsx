@@ -17,7 +17,7 @@ interface GCalEvent {
   end: { date?: string; dateTime?: string };
 }
 
-type ViewMode = 'day' | 'week' | 'month';
+type ViewMode = 'day' | '3day' | 'week' | 'month';
 
 function fmt(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -28,6 +28,14 @@ function getDaysInMonth(year: number, month: number): Date[] {
   const d = new Date(year, month, 1);
   while (d.getMonth() === month) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
   return days;
+}
+
+function getWeekNumber(date: Date): number {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 }
 
 function getWeekDays(date: Date): Date[] {
@@ -51,9 +59,9 @@ export function CalendarPage() {
   const [view, setView] = useState<ViewMode>('month');
   const [gcalEvents, setGcalEvents] = useState<GCalEvent[]>([]);
 
-  // Reset to month view when navigating to calendar
+  // Reset to 3day view when navigating to calendar
   const location = useLocation();
-  useEffect(() => { setView('month'); setCurrentDate(new Date()); }, [location.key]);
+  useEffect(() => { setView('3day'); setCurrentDate(new Date()); }, [location.key]);
 
   useEffect(() => { fetchTasks(); fetchProjects(); peopleApi.list().then(setPeople).catch(() => {}); }, [fetchTasks, fetchProjects]);
   useEffect(() => { apiGet<GCalEvent[]>('/google-calendar/events').then(setGcalEvents).catch(() => {}); }, []);
@@ -78,34 +86,51 @@ export function CalendarPage() {
     if (d) { if (!gcalByDate.has(d)) gcalByDate.set(d, []); gcalByDate.get(d)!.push(ev); }
   }
 
+  const stepMap: Record<ViewMode, number> = { day: 1, '3day': 3, week: 7, month: 0 };
   const prev = () => {
     const d = new Date(currentDate);
-    if (view === 'day') d.setDate(d.getDate() - 1);
-    else if (view === 'week') d.setDate(d.getDate() - 7);
-    else d.setMonth(d.getMonth() - 1);
+    if (view === 'month') d.setMonth(d.getMonth() - 1);
+    else d.setDate(d.getDate() - stepMap[view]);
     setCurrentDate(d);
   };
   const next = () => {
     const d = new Date(currentDate);
-    if (view === 'day') d.setDate(d.getDate() + 1);
-    else if (view === 'week') d.setDate(d.getDate() + 7);
-    else d.setMonth(d.getMonth() + 1);
+    if (view === 'month') d.setMonth(d.getMonth() + 1);
+    else d.setDate(d.getDate() + stepMap[view]);
     setCurrentDate(d);
   };
   const goToday = () => setCurrentDate(new Date());
 
   const headerLabel = view === 'day'
     ? currentDate.toLocaleDateString(t('ru-RU','en-US'), { weekday: 'long', day: 'numeric', month: 'long' })
+    : view === '3day'
+      ? (() => { const end = new Date(currentDate); end.setDate(end.getDate() + 2); return `${currentDate.getDate()} – ${end.getDate()} ${currentDate.toLocaleDateString(t('ru-RU','en-US'), { month: 'short', year: 'numeric' })}`; })()
     : view === 'week'
       ? (() => { const w = getWeekDays(currentDate); return `${w[0]!.getDate()} – ${w[6]!.getDate()} ${w[0]!.toLocaleDateString(t('ru-RU','en-US'), { month: 'short', year: 'numeric' })}`; })()
       : currentDate.toLocaleDateString(t('ru-RU','en-US'), { month: 'long', year: 'numeric' });
+
+  // Get N consecutive days starting from a date
+  const getNDays = (start: Date, n: number): Date[] =>
+    Array.from({ length: n }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+
+  // Parse hour from GCal dateTime (e.g. "2026-05-14T09:00:00+03:00")
+  const getHour = (dt?: string): number => {
+    if (!dt) return 0;
+    const m = dt.match(/T(\d{2}):(\d{2})/);
+    return m ? Number(m[1]) + Number(m[2]) / 60 : 0;
+  };
+  const getDurationHours = (ev: GCalEvent): number => {
+    const s = ev.start.dateTime ? getHour(ev.start.dateTime) : 0;
+    const e = ev.end.dateTime ? getHour(ev.end.dateTime) : s + 1;
+    return Math.max(e - s, 0.5);
+  };
 
   // Render task item
   const TaskItem = ({ tk }: { tk: Task }) => {
     const proj = tk.project_id ? projectMap.get(tk.project_id) : null;
     return (
-      <div onClick={() => setSelected(tk)}
-        className={`text-[11px] px-1.5 py-0.5 rounded-md cursor-pointer truncate ${tk.status === 'done' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 line-through' : 'hover:opacity-80'}`}
+      <div onClick={(e) => { e.stopPropagation(); setSelected(tk); }}
+        className={`text-xs px-1.5 py-1 rounded-md cursor-pointer truncate ${tk.status === 'done' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 line-through' : 'hover:opacity-80'}`}
         style={tk.status !== 'done' && proj ? { backgroundColor: proj.color + '18', color: proj.color } : undefined}>
         {tk.title}
       </div>
@@ -113,7 +138,7 @@ export function CalendarPage() {
   };
 
   const GCalItem = ({ ev }: { ev: GCalEvent }) => (
-    <div className="text-[11px] px-1.5 py-0.5 rounded-md truncate bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300">
+    <div className="text-xs px-1.5 py-1 rounded-md truncate bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300">
       {ev.summary}
     </div>
   );
@@ -125,32 +150,32 @@ export function CalendarPage() {
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-10 -left-24 w-[400px] h-[400px] rounded-full bg-purple-400/10 dark:bg-purple-400/[0.08]" style={{ animation: 'circleRightSlow 28s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       {/* Header */}
-      <div className="flex items-center justify-between px-4 pt-3 pb-2 bg-white dark:bg-gray-900 border-b dark:border-gray-700 gap-2 relative z-10">
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-cyan-500/25">
-            <CalendarDays size={18} className="text-white" />
+      <div className="bg-white dark:bg-gray-900 border-b dark:border-gray-700 relative z-10">
+        {/* Row 1: navigation */}
+        <div className="flex items-center justify-between px-3 md:px-4 pt-2 pb-1">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-cyan-500/25">
+              <CalendarDays size={18} className="text-white" />
+            </div>
+            <button onClick={prev} className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center"><ChevronLeft size={18} className="text-gray-500" /></button>
+            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 capitalize text-center">{headerLabel}</span>
+            <button onClick={next} className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center"><ChevronRight size={18} className="text-gray-500" /></button>
           </div>
-          <div className="flex items-center gap-1">
-            <button onClick={prev} className="w-7 h-7 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center"><ChevronLeft size={16} className="text-gray-500" /></button>
-            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 capitalize min-w-[140px] text-center">{headerLabel}</span>
-            <button onClick={next} className="w-7 h-7 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center"><ChevronRight size={16} className="text-gray-500" /></button>
-            <button onClick={goToday} className="text-[11px] text-indigo-600 font-medium ml-1">{t('Сегодня','Today')}</button>
-          </div>
+          <ProjectFilter projects={projects} />
         </div>
-
-        <div className="flex items-center gap-2">
-          {/* View switcher */}
+        {/* Row 2: view switcher */}
+        <div className="flex items-center gap-2 px-3 md:px-4 pb-2">
           <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
-            {(['day','week','month'] as ViewMode[]).map(v => (
+            {(['day','3day','week','month'] as ViewMode[]).map(v => (
               <button key={v} onClick={() => setView(v)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
                   view === v ? 'bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400'
                 }`}>
-                {v === 'day' ? t('День','Day') : v === 'week' ? t('Неделя','Week') : t('Месяц','Month')}
+                {v === 'day' ? t('День','Day') : v === '3day' ? '3' : v === 'week' ? t('Нед','Wk') : t('Мес','Mo')}
               </button>
             ))}
           </div>
-          <ProjectFilter projects={projects} />
+          <button onClick={goToday} className="text-xs text-indigo-600 font-medium px-2 py-1.5">{t('Сегодня','Today')}</button>
         </div>
       </div>
 
@@ -163,73 +188,168 @@ export function CalendarPage() {
           const dayGcal = gcalByDate.get(dateStr) ?? [];
           const isToday = dateStr === today;
           return (
-            <div className="p-4 max-w-lg mx-auto">
-              <div className={`text-center mb-4 ${isToday ? 'text-indigo-600' : 'text-gray-500'}`}>
+            <div className="flex flex-col h-full">
+              {/* Day header */}
+              <div className={`text-center py-4 border-b dark:border-gray-700 ${isToday ? 'text-indigo-600' : 'text-gray-500 dark:text-gray-400'}`}>
                 <div className="text-4xl font-bold">{currentDate.getDate()}</div>
-                <div className="text-sm capitalize">{currentDate.toLocaleDateString(t('ru-RU','en-US'), { weekday: 'long' })}</div>
+                <div className="text-base capitalize">{currentDate.toLocaleDateString(t('ru-RU','en-US'), { weekday: 'long', month: 'long' })}</div>
               </div>
-              {dayGcal.length === 0 && dayTasks.length === 0 && (
-                <div className="text-center text-gray-400 py-8 text-sm">{t('Нет событий','No events')}</div>
-              )}
-              <div className="space-y-2">
-                {dayGcal.map(ev => (
-                  <div key={ev.id} className="p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30">
-                    <div className="text-sm font-medium text-blue-700 dark:text-blue-300">{ev.summary}</div>
-                    <div className="text-[11px] text-blue-500 mt-0.5">Google Calendar</div>
-                  </div>
-                ))}
-                {dayTasks.map(tk => {
-                  const proj = tk.project_id ? projectMap.get(tk.project_id) : null;
-                  return (
-                    <div key={tk.id} onClick={() => setSelected(tk)}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all active:scale-[0.98] ${
-                        tk.status === 'done'
-                          ? 'bg-green-50 dark:bg-green-900/15 border-green-200 dark:border-green-800/40'
-                          : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700/50 hover:border-indigo-300'
-                      }`}>
-                      <div className={`text-sm font-medium ${tk.status === 'done' ? 'line-through text-green-700 dark:text-green-400' : 'text-gray-800 dark:text-gray-100'}`}>{tk.title}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        {proj && <div className="flex items-center gap-1 text-[11px] text-gray-400"><span className="w-2 h-2 rounded-full" style={{backgroundColor: proj.color}} />{proj.name}</div>}
-                        <div className="text-[11px] text-gray-400">{'⭐'.repeat(Math.min(tk.priority, 5))}</div>
-                      </div>
+              {/* Events list — full width */}
+              <div className="flex-1 overflow-auto px-3 md:px-6 py-3">
+                {dayGcal.length === 0 && dayTasks.length === 0 && (
+                  <div className="text-center text-gray-400 py-12 text-base">{t('Нет событий','No events')}</div>
+                )}
+                <div className="space-y-2 max-w-2xl mx-auto">
+                  {dayGcal.map(ev => (
+                    <div key={ev.id} className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30">
+                      <div className="text-base font-medium text-blue-700 dark:text-blue-300">{ev.summary}</div>
+                      <div className="text-xs text-blue-500 mt-1">Google Calendar</div>
                     </div>
-                  );
-                })}
+                  ))}
+                  {dayTasks.map(tk => {
+                    const proj = tk.project_id ? projectMap.get(tk.project_id) : null;
+                    return (
+                      <div key={tk.id} onClick={() => setSelected(tk)}
+                        className={`p-4 rounded-xl border cursor-pointer transition-all active:scale-[0.98] ${
+                          tk.status === 'done'
+                            ? 'bg-green-50 dark:bg-green-900/15 border-green-200 dark:border-green-800/40'
+                            : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700/50 hover:border-indigo-300 dark:hover:border-indigo-600'
+                        }`}>
+                        <div className={`text-base font-medium ${tk.status === 'done' ? 'line-through text-green-700 dark:text-green-400' : 'text-gray-800 dark:text-gray-100'}`}>{tk.title}</div>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          {proj && <div className="flex items-center gap-1.5 text-xs text-gray-400"><span className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: proj.color}} />{proj.name}</div>}
+                          {tk.priority > 0 && <div className="text-xs text-gray-400">{'⭐'.repeat(Math.min(tk.priority, 5))}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           );
         })()}
 
-        {/* === WEEK VIEW === */}
-        {view === 'week' && (() => {
-          const weekDays = getWeekDays(currentDate);
+        {/* === TIMELINE VIEW (3-day & week) === */}
+        {(view === '3day' || view === 'week') && (() => {
+          const timelineDays = view === 'week' ? getWeekDays(currentDate) : getNDays(currentDate, 3);
+          const HOUR_H = 60; // px per hour
+          const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 06:00–23:00
+          const SHORT_WEEKDAYS = [t('Вс','Su'),t('Пн','Mo'),t('Вт','Tu'),t('Ср','We'),t('Чт','Th'),t('Пт','Fr'),t('Сб','Sa')];
+
           return (
-            <div className="p-2">
-              <div className="grid grid-cols-7 gap-1">
-                {weekDays.map((day, i) => {
+            <div className="flex flex-col h-full">
+              {/* Day headers */}
+              <div className="flex border-b dark:border-gray-700 bg-white dark:bg-gray-900 sticky top-0 z-10">
+                <div className="w-12 flex-shrink-0" />
+                {timelineDays.map(day => {
                   const dateStr = fmt(day);
-                  const dayTasks = tasksByDate.get(dateStr) ?? [];
-                  const dayGcal = gcalByDate.get(dateStr) ?? [];
                   const isToday = dateStr === today;
-                  const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                  const dayTasks = tasksByDate.get(dateStr) ?? [];
                   return (
-                    <div key={dateStr} className={`rounded-xl p-1.5 min-h-[120px] ${
-                      isToday ? 'bg-indigo-50 dark:bg-indigo-900/20 ring-1 ring-indigo-300 dark:ring-indigo-600' : isWeekend ? 'bg-gray-50 dark:bg-gray-800/50' : 'bg-white dark:bg-gray-800/80'
-                    }`}>
-                      <div className="text-center mb-1">
-                        <div className="text-[10px] text-gray-400 uppercase">{WEEKDAYS[i]}</div>
-                        <div className={`text-lg font-bold ${isToday ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-200'}`}>{day.getDate()}</div>
+                    <div key={dateStr} className={`flex-1 text-center py-2 border-l dark:border-gray-700 ${isToday ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}>
+                      <div className="text-[10px] text-gray-400 uppercase">{SHORT_WEEKDAYS[day.getDay()]}</div>
+                      <div className={`text-lg font-bold ${isToday ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-200'}`}>
+                        {isToday ? (
+                          <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 text-white">{day.getDate()}</span>
+                        ) : day.getDate()}
                       </div>
-                      <div className="space-y-0.5">
-                        {dayGcal.slice(0, 3).map(ev => <GCalItem key={ev.id} ev={ev} />)}
-                        {dayTasks.slice(0, 4).map(tk => <TaskItem key={tk.id} tk={tk} />)}
-                        {dayTasks.length + dayGcal.length > 4 && (
-                          <div className="text-[9px] text-gray-400 text-center">+{dayTasks.length + dayGcal.length - 4}</div>
-                        )}
-                      </div>
+                      {/* All-day tasks as dots */}
+                      {dayTasks.length > 0 && (
+                        <div className="flex gap-0.5 justify-center mt-1">
+                          {dayTasks.slice(0, 5).map(tk => {
+                            const proj = tk.project_id ? projectMap.get(tk.project_id) : null;
+                            return <div key={tk.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tk.status === 'done' ? '#22c55e' : (proj?.color ?? '#6366f1') }} />;
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
+              </div>
+
+              {/* All-day tasks row */}
+              {timelineDays.some(day => (tasksByDate.get(fmt(day)) ?? []).length > 0) && (
+                <div className="flex border-b dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+                  <div className="w-12 flex-shrink-0 text-[10px] text-gray-400 text-right pr-1.5 pt-1">{t('Весь','All')}</div>
+                  {timelineDays.map(day => {
+                    const dateStr = fmt(day);
+                    const dayTasks = tasksByDate.get(dateStr) ?? [];
+                    return (
+                      <div key={dateStr} className="flex-1 border-l dark:border-gray-700 p-0.5 space-y-0.5 min-h-[28px]">
+                        {dayTasks.slice(0, 3).map(tk => {
+                          const proj = tk.project_id ? projectMap.get(tk.project_id) : null;
+                          return (
+                            <div key={tk.id} onClick={() => setSelected(tk)}
+                              className={`text-[10px] px-1 py-0.5 rounded cursor-pointer truncate ${tk.status === 'done' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 line-through' : ''}`}
+                              style={tk.status !== 'done' && proj ? { backgroundColor: proj.color + '18', color: proj.color } : undefined}>
+                              {tk.title}
+                            </div>
+                          );
+                        })}
+                        {dayTasks.length > 3 && <div className="text-[9px] text-gray-400 px-1">+{dayTasks.length - 3}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Time grid */}
+              <div className="flex-1 overflow-auto">
+                <div className="relative flex" style={{ height: HOURS.length * HOUR_H }}>
+                  {/* Hour labels */}
+                  <div className="w-12 flex-shrink-0 relative">
+                    {HOURS.map(h => (
+                      <div key={h} className="absolute w-full text-right pr-1.5 text-[10px] text-gray-400 -translate-y-1/2"
+                        style={{ top: (h - 6) * HOUR_H }}>
+                        {String(h).padStart(2, '0')}:00
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Day columns */}
+                  {timelineDays.map(day => {
+                    const dateStr = fmt(day);
+                    const isToday = dateStr === today;
+                    const dayGcal = (gcalByDate.get(dateStr) ?? []).filter(ev => ev.start.dateTime);
+
+                    return (
+                      <div key={dateStr} className={`flex-1 relative border-l dark:border-gray-700 ${isToday ? 'bg-indigo-50/30 dark:bg-indigo-900/5' : ''}`}
+                        onClick={() => { setCurrentDate(new Date(day)); setView('day'); }}>
+                        {/* Hour grid lines */}
+                        {HOURS.map(h => (
+                          <div key={h} className="absolute w-full border-t border-gray-100 dark:border-gray-700/50"
+                            style={{ top: (h - 6) * HOUR_H }} />
+                        ))}
+
+                        {/* Current time indicator */}
+                        {isToday && (() => {
+                          const now = new Date();
+                          const nowH = now.getHours() + now.getMinutes() / 60;
+                          if (nowH < 6 || nowH > 24) return null;
+                          return <div className="absolute w-full border-t-2 border-red-500 z-10" style={{ top: (nowH - 6) * HOUR_H }}>
+                            <div className="absolute -left-1 -top-1.5 w-3 h-3 rounded-full bg-red-500" />
+                          </div>;
+                        })()}
+
+                        {/* GCal events positioned by time */}
+                        {dayGcal.map(ev => {
+                          const startH = getHour(ev.start.dateTime);
+                          const dur = getDurationHours(ev);
+                          if (startH < 6) return null;
+                          return (
+                            <div key={ev.id}
+                              className="absolute left-0.5 right-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 border-l-3 border-blue-500 px-1.5 py-0.5 overflow-hidden cursor-default z-[5]"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ top: (startH - 6) * HOUR_H + 1, height: Math.max(dur * HOUR_H - 2, 20) }}>
+                              <div className="text-[11px] font-medium text-blue-700 dark:text-blue-300 truncate">{ev.summary}</div>
+                              <div className="text-[9px] text-blue-500">{ev.start.dateTime?.slice(11, 16)}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           );
@@ -241,40 +361,91 @@ export function CalendarPage() {
           const month = currentDate.getMonth();
           const days = getDaysInMonth(year, month);
           const firstDayOfWeek = (days[0]!.getDay() + 6) % 7;
-          const paddingBefore = Array.from({ length: firstDayOfWeek }, () => null);
+          const paddingBefore: Array<Date | null> = Array.from({ length: firstDayOfWeek }, () => null);
+          const allCells = [...paddingBefore, ...days];
+          // Split into weeks (rows of 7)
+          const weeks: Array<Array<Date | null>> = [];
+          for (let i = 0; i < allCells.length; i += 7) {
+            weeks.push(allCells.slice(i, i + 7));
+          }
+          // Pad last week
+          const lastWeek = weeks[weeks.length - 1]!;
+          while (lastWeek.length < 7) lastWeek.push(null);
+
           return (
-            <div className="p-2 md:p-4">
-              <div className="grid grid-cols-7 mb-1">
+            <div className="p-1 md:p-4">
+              {/* Weekday headers with week number column */}
+              <div className="grid gap-px" style={{ gridTemplateColumns: '24px repeat(7, 1fr)' }}>
+                <div />
                 {WEEKDAYS.map(d => (
-                  <div key={d} className="text-[10px] font-semibold text-gray-400 text-center py-1">{d}</div>
+                  <div key={d} className="text-xs font-semibold text-gray-400 text-center py-1.5">{d}</div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-px bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden">
-                {paddingBefore.map((_, i) => <div key={`p-${i}`} className="bg-gray-50 dark:bg-gray-800/30 min-h-[80px] md:min-h-[100px]" />)}
-                {days.map(day => {
-                  const dateStr = fmt(day);
-                  const dayTasks = tasksByDate.get(dateStr) ?? [];
-                  const dayGcal = gcalByDate.get(dateStr) ?? [];
-                  const isToday = dateStr === today;
-                  const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                  const maxItems = 3;
-                  const totalItems = dayTasks.length + dayGcal.length;
+              {/* Calendar grid */}
+              <div className="rounded-lg overflow-hidden">
+                {weeks.map((week, wi) => {
+                  const firstDayInWeek = week.find(d => d !== null);
+                  const weekNum = firstDayInWeek ? getWeekNumber(firstDayInWeek) : '';
                   return (
-                    <div key={dateStr}
-                      onClick={() => { setCurrentDate(new Date(day)); setView('day'); }}
-                      className={`min-h-[80px] md:min-h-[100px] p-1 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors ${
-                        isToday ? 'bg-indigo-50 dark:bg-indigo-900/20' : isWeekend ? 'bg-gray-50 dark:bg-gray-800/50' : 'bg-white dark:bg-gray-800'
-                      }`}>
-                      <div className={`text-xs font-medium mb-0.5 px-0.5 ${isToday ? 'text-indigo-600 font-bold' : 'text-gray-500 dark:text-gray-400'}`}>
-                        {day.getDate()}
+                    <div key={wi} className="grid gap-px bg-gray-200 dark:bg-gray-700" style={{ gridTemplateColumns: '24px repeat(7, 1fr)' }}>
+                      {/* Week number */}
+                      <div className="bg-gray-50 dark:bg-gray-800/50 flex items-start justify-center pt-1.5">
+                        <span className="text-[10px] text-gray-400 font-medium">{weekNum}</span>
                       </div>
-                      <div className="space-y-0.5">
-                        {dayGcal.slice(0, 1).map(ev => <GCalItem key={ev.id} ev={ev} />)}
-                        {dayTasks.slice(0, maxItems - Math.min(dayGcal.length, 1)).map(tk => <TaskItem key={tk.id} tk={tk} />)}
-                        {totalItems > maxItems && (
-                          <div className="text-[9px] text-gray-400 px-0.5">+{totalItems - maxItems}</div>
-                        )}
-                      </div>
+                      {week.map((day, di) => {
+                        if (!day) return <div key={`p-${wi}-${di}`} className="bg-gray-50 dark:bg-gray-800/30 aspect-square md:aspect-auto md:min-h-[110px]" />;
+                        const dateStr = fmt(day);
+                        const dayTasks = tasksByDate.get(dateStr) ?? [];
+                        const dayGcal = gcalByDate.get(dateStr) ?? [];
+                        const isToday = dateStr === today;
+                        const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                        const totalItems = dayTasks.length + dayGcal.length;
+                        const maxDesktopItems = 3;
+                        return (
+                          <div key={dateStr}
+                            onClick={() => { setCurrentDate(new Date(day)); setView('day'); }}
+                            className={`aspect-square md:aspect-auto md:min-h-[110px] p-1 md:p-1.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 active:bg-gray-100 dark:active:bg-gray-700/50 transition-colors ${
+                              isToday ? 'bg-indigo-50 dark:bg-indigo-900/20' : isWeekend ? 'bg-gray-50 dark:bg-gray-800/50' : 'bg-white dark:bg-gray-800'
+                            }`}>
+                            {/* Day number */}
+                            <div className={`text-sm font-semibold text-center md:text-left md:px-0.5 md:mb-1 ${
+                              isToday ? 'text-indigo-600' : 'text-gray-600 dark:text-gray-300'
+                            }`}>
+                              {isToday ? (
+                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold">{day.getDate()}</span>
+                              ) : (
+                                day.getDate()
+                              )}
+                            </div>
+
+                            {/* Mobile: colored dots */}
+                            {totalItems > 0 && (
+                              <div className="flex flex-wrap gap-0.5 justify-center mt-0.5 md:hidden">
+                                {dayGcal.slice(0, 3).map(ev => (
+                                  <div key={ev.id} className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                ))}
+                                {dayTasks.slice(0, 4).map(tk => {
+                                  const proj = tk.project_id ? projectMap.get(tk.project_id) : null;
+                                  return (
+                                    <div key={tk.id} className="w-1.5 h-1.5 rounded-full"
+                                      style={{ backgroundColor: tk.status === 'done' ? '#22c55e' : (proj?.color ?? '#6366f1') }} />
+                                  );
+                                })}
+                                {totalItems > 5 && <div className="text-[8px] text-gray-400 leading-none">+{totalItems - 5}</div>}
+                              </div>
+                            )}
+
+                            {/* Desktop: text items */}
+                            <div className="hidden md:block space-y-0.5">
+                              {dayGcal.slice(0, 1).map(ev => <GCalItem key={ev.id} ev={ev} />)}
+                              {dayTasks.slice(0, maxDesktopItems - Math.min(dayGcal.length, 1)).map(tk => <TaskItem key={tk.id} tk={tk} />)}
+                              {totalItems > maxDesktopItems && (
+                                <div className="text-[10px] text-gray-400 px-0.5">+{totalItems - maxDesktopItems}</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}

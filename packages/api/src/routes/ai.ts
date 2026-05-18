@@ -501,7 +501,20 @@ aiRouter.post('/daily-plan', async (req: AuthRequest, res: Response) => {
       `SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active'${userFilter}`
     ).all(...userParams);
 
-    const prompt = `Создай оптимальный план на день на русском. Учитывай приоритеты, дедлайны, встречи. Группируй задачи по энергии: утро=сложные, день=средние, вечер=лёгкие. Формат:
+    // Priority project context
+    const priorityProjectId = req.body?.priority_project_id ? Number(req.body.priority_project_id) : null;
+    let priorityLine = '';
+    if (priorityProjectId) {
+      const proj = db.prepare('SELECT name FROM projects WHERE id = ?').get(priorityProjectId) as { name: string } | undefined;
+      if (proj) {
+        const projTasks = db.prepare(
+          `SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND project_id = ?${userFilter} ORDER BY priority DESC`
+        ).all(priorityProjectId, ...userParams);
+        priorityLine = `\n\n⭐ ПРИОРИТЕТНЫЙ ПРОЕКТ НА СЕГОДНЯ: "${proj.name}". Его задачи должны быть в фокусе и занимать основную часть дня.\nЗадачи приоритетного проекта: ${JSON.stringify(projTasks)}`;
+      }
+    }
+
+    const prompt = `Создай оптимальный план на день на русском. Учитывай приоритеты, дедлайны, встречи.${priorityProjectId ? ' Особое внимание удели приоритетному проекту — его задачи должны стоять первыми и занимать большую часть дня.' : ''} Группируй задачи по энергии: утро=сложные, день=средние, вечер=лёгкие. Формат:
 🌅 Утро (8:00-12:00)
 - [ ] Задача 1
 - [ ] Задача 2
@@ -517,7 +530,7 @@ aiRouter.post('/daily-plan', async (req: AuthRequest, res: Response) => {
 Все активные задачи: ${JSON.stringify(activeTasks)}
 Встречи сегодня: ${JSON.stringify(meetings)}
 Привычки (не выполнены сегодня): ${JSON.stringify(habits)}
-Цели и прогресс: ${JSON.stringify(goals)}
+Цели и прогресс: ${JSON.stringify(goals)}${priorityLine}
 Дата: ${today}`;
 
     const plan = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1');

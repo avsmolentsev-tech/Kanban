@@ -65,15 +65,25 @@ function enrichTasksWithPeople(tasks: Record<string, unknown>[]): Record<string,
     if (!byTask.has(r.task_id)) byTask.set(r.task_id, []);
     byTask.get(r.task_id)!.push({ id: r.id, name: r.name });
   }
-  // Fetch subtasks
+  // Fetch subtasks with their assigned people
   const subtasks = getDb()
-    .prepare(`SELECT id, title, status, priority FROM tasks WHERE parent_id IN (${taskIds.map(() => '?').join(',')}) AND archived = 0 ORDER BY created_at`)
-    .all(...taskIds) as Array<{ id: number; title: string; status: string; priority: number; parent_id?: number }>;
-  const subByParent = new Map<number, Array<{ id: number; title: string; status: string }>>();
+    .prepare(`SELECT id, title, status, priority, parent_id FROM tasks WHERE parent_id IN (${taskIds.map(() => '?').join(',')}) AND archived = 0 ORDER BY created_at`)
+    .all(...taskIds) as Array<{ id: number; title: string; status: string; priority: number; parent_id: number }>;
+  const subIds = subtasks.map(s => s.id);
+  const subPeopleMap = new Map<number, Array<{ id: number; name: string }>>();
+  if (subIds.length > 0) {
+    const subPeopleRows = getDb()
+      .prepare(`SELECT tp.task_id, p.id, p.name FROM task_people tp JOIN people p ON p.id = tp.person_id WHERE tp.task_id IN (${subIds.map(() => '?').join(',')})`)
+      .all(...subIds) as Array<{ task_id: number; id: number; name: string }>;
+    for (const r of subPeopleRows) {
+      if (!subPeopleMap.has(r.task_id)) subPeopleMap.set(r.task_id, []);
+      subPeopleMap.get(r.task_id)!.push({ id: r.id, name: r.name });
+    }
+  }
+  const subByParent = new Map<number, Array<{ id: number; title: string; status: string; people: Array<{ id: number; name: string }> }>>();
   for (const s of subtasks) {
-    const pid = (s as Record<string, unknown>)['parent_id'] as number;
-    if (!subByParent.has(pid)) subByParent.set(pid, []);
-    subByParent.get(pid)!.push({ id: s.id, title: s.title, status: s.status });
+    if (!subByParent.has(s.parent_id)) subByParent.set(s.parent_id, []);
+    subByParent.get(s.parent_id)!.push({ id: s.id, title: s.title, status: s.status, people: subPeopleMap.get(s.id) ?? [] });
   }
   // Fetch tags
   const tagRows = getDb()

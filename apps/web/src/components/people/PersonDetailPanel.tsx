@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SlidePanel } from '../ui/SlidePanel';
 import { Avatar } from '../ui/Avatar';
 import { peopleApi } from '../../api/people.api';
-import type { Person, Project } from '@pis/shared';
+import type { Person, Project, PersonHistory } from '@pis/shared';
+import { CheckCircle2, Circle, Clock, Calendar, Handshake } from 'lucide-react';
 
 interface Props {
   person: Person | null;
@@ -15,11 +17,16 @@ interface Props {
 export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDeleted }: Props) {
   const [form, setForm] = useState<Partial<Person>>({});
   const [projectIds, setProjectIds] = useState<number[]>([]);
+  const [history, setHistory] = useState<PersonHistory | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (person) {
       setForm({ ...person });
       setProjectIds(person.project_ids ?? (person.project_id != null ? [person.project_id] : []));
+      peopleApi.history(person.id).then(setHistory).catch(() => setHistory(null));
+    } else {
+      setHistory(null);
     }
   }, [person]);
 
@@ -99,6 +106,67 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDele
             <textarea className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-300 resize-none"
               rows={4} value={form.notes ?? ''} onChange={(e) => handleChange('notes', e.target.value)} onBlur={() => handleBlur('notes')} />
           </div>
+
+          {/* Linked entities */}
+          {history && (history.tasks.length > 0 || history.meetings.length > 0 || history.agreements.length > 0) && (
+            <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+              {history.tasks.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Задачи ({history.tasks.length})
+                  </div>
+                  <div className="space-y-1">
+                    {history.tasks.map(t => (
+                      <button key={t.id} onClick={() => { onClose(); navigate(`/?open=task-${t.id}`); }}
+                        className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors group">
+                        {t.status === 'done' ? <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" /> :
+                         t.status === 'in_progress' ? <Clock size={14} className="text-blue-500 flex-shrink-0" /> :
+                         <Circle size={14} className="text-gray-300 flex-shrink-0" />}
+                        <span className={`text-sm truncate ${t.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-200'}`}>{t.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {history.meetings.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1">
+                    <Calendar size={12} /> Встречи ({history.meetings.length})
+                  </div>
+                  <div className="space-y-1">
+                    {history.meetings.map(m => (
+                      <button key={m.id} onClick={() => { onClose(); navigate(`/meetings?open=meeting-${m.id}`); }}
+                        className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                        <span className="text-xs text-gray-400 flex-shrink-0 w-20">{m.date}</span>
+                        <span className="text-sm text-gray-700 dark:text-gray-200 truncate">{m.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {history.agreements.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1">
+                    <Handshake size={12} /> Договорённости ({history.agreements.length})
+                  </div>
+                  <div className="space-y-1">
+                    {history.agreements.map(a => (
+                      <div key={a.id} className="flex items-start gap-2 px-2 py-1.5">
+                        {a.status === 'done' ? <CheckCircle2 size={14} className="text-green-500 flex-shrink-0 mt-0.5" /> :
+                         <Circle size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />}
+                        <div className="min-w-0">
+                          <span className={`text-sm ${a.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-200'}`}>{a.description}</span>
+                          {a.due_date && <span className="text-xs text-gray-400 ml-2">до {a.due_date}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="text-xs text-gray-400 pt-2">Создан: {person.created_at}</div>
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { DndContext, rectIntersection, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable, useDraggable, DragOverlay } from '@dnd-kit/core';
 import { peopleApi } from '../api/people.api';
 import { projectsApi } from '../api/projects.api';
@@ -8,7 +9,7 @@ import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { useFiltersStore } from '../store';
 import type { Person, Project } from '@pis/shared';
 import { useLangStore } from '../store/lang.store';
-import { Users } from 'lucide-react';
+import { Users, Search } from 'lucide-react';
 
 function DraggablePersonCard({ person, project, onClick }: { person: Person; project: Project | null; onClick: () => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: person.id });
@@ -102,12 +103,28 @@ export function PeoplePage() {
   const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [selected, setSelected] = useState<Person | null>(null);
+  const [search, setSearch] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const load = () => {
     peopleApi.list().then(setPeople);
     projectsApi.list().then(setProjects);
   };
   useEffect(load, []);
+
+  // Open person from search bar deep link (?open=person-123)
+  useEffect(() => {
+    const openParam = searchParams.get('open');
+    if (!openParam || !people.length) return;
+    const match = openParam.match(/^person-(\d+)$/);
+    if (match) {
+      const person = people.find(p => p.id === Number(match[1]));
+      if (person) {
+        setSelected(person);
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [searchParams, people]);
 
   const toggleAddProject = (id: number) => {
     setSelectedProjectIds(prev =>
@@ -126,6 +143,18 @@ export function PeoplePage() {
     } finally { setSubmitting(false); }
   };
 
+  // Filter people by search query
+  const searchLower = search.toLowerCase().trim();
+  const filteredPeople = searchLower
+    ? people.filter(p =>
+        p.name.toLowerCase().includes(searchLower) ||
+        (p.company ?? '').toLowerCase().includes(searchLower) ||
+        (p.role ?? '').toLowerCase().includes(searchLower) ||
+        (p.email ?? '').toLowerCase().includes(searchLower) ||
+        (p.telegram ?? '').toLowerCase().includes(searchLower) ||
+        (p.phone ?? '').toLowerCase().includes(searchLower))
+    : people;
+
   // Group people by project: a person with multiple projects appears in each group
   const projectMap = new Map<number, Project>(projects.map(p => [p.id, p]));
   const grouped: Array<{ project: Project | null; people: Person[] }> = [];
@@ -133,7 +162,7 @@ export function PeoplePage() {
   // Build group map — normalise unknown project IDs to null so that
   // all people without a valid project end up in a single "Без проекта" group.
   const groupMap = new Map<number | null, Person[]>();
-  for (const person of people) {
+  for (const person of filteredPeople) {
     const ids = person.project_ids && person.project_ids.length > 0
       ? person.project_ids
       : [null];
@@ -230,6 +259,16 @@ export function PeoplePage() {
           <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Люди', 'People')}</h1>
         </div>
         <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('Поиск...', 'Search...')}
+              className="pl-8 pr-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 w-48 placeholder-gray-400 dark:placeholder-gray-500 text-gray-800 dark:text-gray-100"
+            />
+          </div>
           <ProjectFilter projects={projects} showNoProject />
           {!adding && (
             <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 flex-shrink-0">

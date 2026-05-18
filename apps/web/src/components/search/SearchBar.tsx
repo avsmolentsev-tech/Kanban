@@ -66,18 +66,23 @@ export function SearchBar() {
 
   const handleClick = (hit: SearchHit) => {
     const route = TYPE_ROUTES[hit.type] ?? '/';
-    navigate(route);
+    navigate(`${route}?open=${hit.type}-${hit.ref_id}`);
     setOpen(false);
     setQuery('');
     setResults([]);
   };
 
-  // Group results by type
+  // Group results by type, people first
+  const TYPE_ORDER = ['person', 'task', 'meeting', 'idea', 'document', 'vault'];
   const grouped = new Map<string, SearchHit[]>();
   for (const hit of results) {
     if (!grouped.has(hit.type)) grouped.set(hit.type, []);
     grouped.get(hit.type)!.push(hit);
   }
+  const sortedGroups = [...grouped.entries()].sort((a, b) =>
+    (TYPE_ORDER.indexOf(a[0]) === -1 ? 99 : TYPE_ORDER.indexOf(a[0])) -
+    (TYPE_ORDER.indexOf(b[0]) === -1 ? 99 : TYPE_ORDER.indexOf(b[0]))
+  );
 
   if (!open) {
     return (
@@ -118,7 +123,7 @@ export function SearchBar() {
           {/* Results */}
           {results.length > 0 && (
             <div className="max-h-80 overflow-y-auto py-2">
-              {[...grouped.entries()].map(([type, hits]) => (
+              {sortedGroups.map(([type, hits]) => (
                 <div key={type}>
                   <div className="px-4 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                     {TYPE_LABELS[type] ?? type}

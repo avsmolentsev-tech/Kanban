@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Columns3, Plus } from 'lucide-react';
 import { useTasksStore, useProjectsStore, useFiltersStore } from '../store';
 import { KanbanBoard } from '../components/kanban/KanbanBoard';
@@ -28,6 +29,21 @@ function MobileKanbanView({ tasks, projects, people, onToggleDone, onRefresh }: 
   const { t } = useLangStore();
   const [activeTab, setActiveTab] = useState<TaskStatus>('in_progress');
   const [selected, setSelected] = useState<Task | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Deep link: ?open=task-{id}
+  useEffect(() => {
+    const openParam = searchParams.get('open');
+    if (!openParam || !tasks.length) return;
+    const match = openParam.match(/^task-(\d+)$/);
+    if (match) {
+      const task = tasks.find(tk => tk.id === Number(match[1]));
+      if (task) {
+        setSelected(task);
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [searchParams, tasks]);
   const pMap = new Map(projects.map(p => [p.id, p]));
 
   // Group ALL tasks by status

@@ -22,6 +22,7 @@ interface WriteMeetingParams {
   company?: string;
   people?: string[];
   summary: string;
+  structured?: { notes?: string; qa?: string; actions?: string };
   agreements?: number;
   tags?: string[];
   source?: string;
@@ -168,7 +169,12 @@ export class ObsidianService {
     ].join('\n');
     const companyLine = params.company ? `**Компания:** ${this.wikiLink(params.company)}\n` : '';
     const projectLine = params.project ? `**Проект:** ${this.wikiLink(params.project)}\n` : '';
-    fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.title}\n\n${companyLine}${projectLine}\n${params.summary}\n`, 'utf-8');
+    const structuredSections: string[] = [];
+    if (params.structured?.notes) structuredSections.push(`## Заметки\n\n${params.structured.notes}`);
+    if (params.structured?.qa) structuredSections.push(`## Вопросы и ответы\n\n${params.structured.qa}`);
+    if (params.structured?.actions) structuredSections.push(`## Действия\n\n${params.structured.actions}`);
+    const structuredBlock = structuredSections.length ? `\n\n${structuredSections.join('\n\n')}\n` : '';
+    fs.writeFileSync(path.join(dir, filename), `${frontmatter}\n\n# ${params.title}\n\n${companyLine}${projectLine}\n${params.summary}${structuredBlock}\n`, 'utf-8');
     return this.userRelative('Meetings', filename);
   }
 

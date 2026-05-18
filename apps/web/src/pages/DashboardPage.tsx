@@ -69,6 +69,8 @@ export function DashboardPage() {
   const [progress, setProgress] = useState<ProjectProgress[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const [priorityProjectId, setPriorityProjectId] = useState<string>('');
   const [dailyPlan, setDailyPlan] = useState('');
   const [dailyPlanLoading, setDailyPlanLoading] = useState(false);
   const [productivityAnalysis, setProductivityAnalysis] = useState('');
@@ -83,6 +85,7 @@ export function DashboardPage() {
       apiGet<Idea[]>('/ideas').catch(() => [] as Idea[]),
       apiGet<Project[]>('/projects').catch(() => [] as Project[]),
     ]).then(([tasks, mtgs, ideasData, projects]) => {
+      setAllProjects(projects);
       // Today tasks: due today or in_progress
       const filtered = tasks
         .filter((t) => t.due_date?.slice(0, 10) === today || t.status === 'in_progress')
@@ -122,7 +125,9 @@ export function DashboardPage() {
   const handleGeneratePlan = async () => {
     setDailyPlanLoading(true);
     try {
-      const data = await apiPost<{ plan: string }>('/ai/daily-plan');
+      const body: Record<string, string> = {};
+      if (priorityProjectId) body.priority_project_id = priorityProjectId;
+      const data = await apiPost<{ plan: string }>('/ai/daily-plan', body);
       setDailyPlan(data.plan);
     } catch (err) {
       setDailyPlan(t('Ошибка генерации плана', 'Failed to generate plan'));
@@ -167,14 +172,32 @@ export function DashboardPage() {
           <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3">
             {'\uD83D\uDCC5'} {t('План на день', 'Daily Plan')}
           </h2>
-          <div className="space-y-2">
-            {!dailyPlan && !dailyPlanLoading && (
-              <button
-                onClick={handleGeneratePlan}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
-              >
-                {t('Сгенерировать', 'Generate')}
-              </button>
+          <div className="space-y-3">
+            {!dailyPlanLoading && (
+              <div className="space-y-2">
+                <label className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('Приоритетный проект на сегодня', 'Priority project for today')}
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={priorityProjectId}
+                    onChange={(e) => setPriorityProjectId(e.target.value)}
+                    className="flex-1 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 text-gray-700 dark:text-gray-200"
+                  >
+                    <option value="">{t('— Без приоритета —', '— No priority —')}</option>
+                    {allProjects.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleGeneratePlan}
+                    disabled={dailyPlanLoading}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors flex-shrink-0 disabled:opacity-50"
+                  >
+                    {dailyPlan ? t('Обновить', 'Refresh') : t('Сгенерировать', 'Generate')}
+                  </button>
+                </div>
+              </div>
             )}
             {dailyPlanLoading && (
               <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">
@@ -182,18 +205,9 @@ export function DashboardPage() {
               </p>
             )}
             {dailyPlan && (
-              <>
-                <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-80 overflow-y-auto">
-                  {dailyPlan}
-                </div>
-                <button
-                  onClick={handleGeneratePlan}
-                  disabled={dailyPlanLoading}
-                  className="mt-2 px-3 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                >
-                  {t('Обновить', 'Refresh')}
-                </button>
-              </>
+              <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-80 overflow-y-auto">
+                {dailyPlan}
+              </div>
             )}
           </div>
         </div>

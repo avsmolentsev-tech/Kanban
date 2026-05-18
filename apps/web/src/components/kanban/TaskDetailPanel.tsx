@@ -526,20 +526,8 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
           {/* Subtasks */}
           <div>
             <div className="text-xs text-gray-500 mb-2">{t('Подзадачи', 'Subtasks')}</div>
-            {((task as unknown as Record<string, unknown>)['subtasks'] as Array<{ id: number; title: string; status: string }> ?? []).map(sub => (
-              <div key={sub.id} className="flex items-center gap-2 py-1">
-                <button
-                  onClick={async () => {
-                    const next = sub.status === 'done' ? 'todo' : 'done';
-                    await tasksApi.update(sub.id, { status: next });
-                    onUpdated();
-                  }}
-                  className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[10px] ${sub.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 dark:border-gray-600'}`}
-                >
-                  {sub.status === 'done' ? '✓' : ''}
-                </button>
-                <span className={`text-sm ${sub.status === 'done' ? 'line-through text-gray-400' : 'text-gray-700'}`}>{sub.title}</span>
-              </div>
+            {((task as unknown as Record<string, unknown>)['subtasks'] as Array<{ id: number; title: string; status: string; people?: Array<{ id: number; name: string }> }> ?? []).map(sub => (
+              <SubtaskRow key={sub.id} sub={sub} people={people} onUpdated={onUpdated} />
             ))}
             <SubtaskInput taskId={task.id} projectId={task.project_id} onCreated={onUpdated} />
           </div>
@@ -564,6 +552,67 @@ export function TaskDetailPanel({ task, projects, people, onClose, onUpdated, on
         </div>
       )}
     </SlidePanel>
+  );
+}
+
+function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: string; status: string; people?: Array<{ id: number; name: string }> }; people: Person[]; onUpdated: () => void }) {
+  const { t } = useLangStore();
+  const [showPicker, setShowPicker] = useState(false);
+
+  const togglePerson = async (personId: number) => {
+    const currentIds = (sub.people ?? []).map(p => p.id);
+    const next = currentIds.includes(personId) ? currentIds.filter(id => id !== personId) : [...currentIds, personId];
+    await tasksApi.update(sub.id, { person_ids: next });
+    onUpdated();
+  };
+
+  return (
+    <div className="py-1.5">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={async () => {
+            const next = sub.status === 'done' ? 'todo' : 'done';
+            await tasksApi.update(sub.id, { status: next });
+            onUpdated();
+          }}
+          className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[10px] ${sub.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 dark:border-gray-600'}`}
+        >
+          {sub.status === 'done' ? '✓' : ''}
+        </button>
+        <span className={`text-sm flex-1 ${sub.status === 'done' ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-200'}`}>{sub.title}</span>
+        <button
+          onClick={() => setShowPicker(!showPicker)}
+          className="text-[10px] text-gray-400 hover:text-indigo-500 flex-shrink-0 px-1"
+          title={t('Ответственный', 'Assignee')}
+        >
+          {sub.people && sub.people.length > 0
+            ? sub.people.map(p => p.name.split(' ')[0]).join(', ')
+            : '👤'}
+        </button>
+      </div>
+      {/* Assigned people */}
+      {sub.people && sub.people.length > 0 && !showPicker && (
+        <div className="flex gap-1 ml-6 mt-0.5">
+          {sub.people.map(p => (
+            <span key={p.id} className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300">{p.name.split(' ')[0]}</span>
+          ))}
+        </div>
+      )}
+      {/* Person picker */}
+      {showPicker && (
+        <div className="ml-6 mt-1 flex flex-wrap gap-1">
+          {people.map(p => {
+            const assigned = (sub.people ?? []).some(sp => sp.id === p.id);
+            return (
+              <button key={p.id} onClick={() => togglePerson(p.id)}
+                className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${assigned ? 'bg-indigo-100 dark:bg-indigo-900/40 border-indigo-300 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300' : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-300'}`}>
+                {p.name.split(' ')[0]}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

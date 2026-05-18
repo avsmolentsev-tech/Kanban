@@ -144,7 +144,7 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   const updated = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id) as Record<string, unknown>;
   if (updated) searchService.indexRecord('meeting', updated['id'] as number, updated['title'] as string, (updated['summary_raw'] as string) ?? '');
 
-  // Sync to Obsidian vault (async, non-blocking) — only if sync_vault flag is on
+  // Sync to Obsidian vault (async, non-blocking)
   if (updated && (updated['sync_vault'] as number | null | undefined) !== 0) {
     void (async () => {
       try {
@@ -158,12 +158,18 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
         const tags = tagsRaw ? JSON.parse(tagsRaw) as string[] : undefined;
         const source = (updated['source'] as string | null) ?? undefined;
         const agreementsCount = (getDb().prepare('SELECT COUNT(*) as c FROM agreements WHERE meeting_id = ?').get(id) as { c: number }).c;
+        let structured: { notes?: string; qa?: string; actions?: string } | undefined;
+        try {
+          const s = JSON.parse((updated['summary_structured'] as string) || '{}');
+          if (s.notes || s.qa || s.actions) structured = { notes: s.notes, qa: s.qa, actions: s.actions };
+        } catch {}
         const vaultPath = await obsidian.forUser(userId).writeMeeting({
           title: updated['title'] as string,
           date: updated['date'] as string,
           project: projectName,
           company,
           summary: (updated['summary_raw'] as string) ?? '',
+          structured,
           people: peopleNames,
           tags,
           source,
@@ -177,6 +183,13 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
         console.error('[meetings.patch] vault sync failed:', err instanceof Error ? err.message : err);
       }
     })();
+  } else if (updated && (updated['sync_vault'] as number | null | undefined) === 0) {
+    // Sync turned off — delete file from Obsidian vault
+    const vaultPath = updated['vault_path'] as string | null;
+    if (vaultPath) {
+      try { obsidian.forUser(userId).deleteFile(vaultPath); } catch {}
+      getDb().prepare('UPDATE meetings SET vault_path = NULL WHERE id = ?').run(id);
+    }
   }
 
   res.json(ok(attachProjects([updated])[0]));
@@ -301,11 +314,17 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
       if (syncOn) {
         const projectName = fresh['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(fresh['project_id'] as number) as { name: string } | undefined)?.name : undefined;
         const peopleNames = (db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map(x => x.name);
+        let structured: { notes?: string; qa?: string; actions?: string } | undefined;
+        try {
+          const s = JSON.parse((fresh['summary_structured'] as string) || '{}');
+          if (s.notes || s.qa || s.actions) structured = { notes: s.notes, qa: s.qa, actions: s.actions };
+        } catch {}
         const vp = await obsidian.forUser(userId).writeMeeting({
           title: fresh['title'] as string,
           date: fresh['date'] as string,
           project: projectName,
           summary: (fresh['summary_raw'] as string) ?? '',
+          structured,
           people: peopleNames,
         });
         if (vp && vp !== fresh['vault_path']) {

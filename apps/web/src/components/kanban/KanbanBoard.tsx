@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { DndContext, rectIntersection, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -160,10 +161,25 @@ export function KanbanBoard({ tasks, projects, people, onMoveTask, onToggleDone,
   const COL_LABELS = getColLabels(t);
   const [selected, setSelected] = useState<Task | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [searchParams, setSearchParams] = useSearchParams();
   const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 8 } });
   const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } });
   const sensors = useSensors(mouseSensor, touchSensor);
   const pMap = new Map(projects.map((p) => [p.id, p]));
+
+  // Deep link: ?open=task-{id}
+  useEffect(() => {
+    const openParam = searchParams.get('open');
+    if (!openParam || !tasks.length) return;
+    const match = openParam.match(/^task-(\d+)$/);
+    if (match) {
+      const task = tasks.find(tk => tk.id === Number(match[1]));
+      if (task) {
+        setSelected(task);
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [searchParams, tasks]);
 
   const handleCardClick = (task: Task, e: React.MouseEvent) => {
     if (e.ctrlKey || e.metaKey) {

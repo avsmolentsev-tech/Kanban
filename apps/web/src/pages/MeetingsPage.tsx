@@ -250,9 +250,10 @@ export function MeetingsPage() {
   const load = () => {
     meetingsApi.list().then((m) => {
       setMeetings(m);
-      // Auto-open meeting from URL ?open=ID
+      // Auto-open meeting from URL ?open=ID or ?open=meeting-ID
       const params = new URLSearchParams(window.location.search);
-      const openId = params.get('open');
+      const openParam = params.get('open');
+      const openId = openParam?.startsWith('meeting-') ? openParam.replace('meeting-', '') : openParam;
       if (openId && !selected) {
         const found = m.find((mt: Meeting) => mt.id === Number(openId));
         if (found) setSelected(found);
