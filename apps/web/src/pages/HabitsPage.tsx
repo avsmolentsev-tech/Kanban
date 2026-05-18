@@ -1,7 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../api/client';
 import { useLangStore } from '../store/lang.store';
-import { Plus, Pencil, Trash2, Flame } from 'lucide-react';
+import {
+  Plus, Pencil, Trash2, Flame,
+  Brain, Dumbbell, PersonStanding, Bike, Waves, Mountain,
+  Droplets, Salad, Moon, Pill, Footprints, Sparkles,
+  BookOpen, PenLine, GraduationCap, Target, NotebookPen, Headphones,
+  AlarmClock, SmartphoneNfc, Brush, Wallet, Palette, Heart
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Habit {
@@ -98,7 +105,7 @@ function HabitRing({
             transition={{ duration: 0.35 }}
             className={`select-none ${size > 100 ? 'text-4xl' : 'text-2xl'}`}
           >
-            {isLogged ? '✓' : resolveIcon(habit.icon)}
+            {isLogged ? '✓' : <HIcon icon={habit.icon} size={size > 100 ? 40 : 24} />}
           </motion.span>
         </div>
 
@@ -152,37 +159,45 @@ function AddHabitCell({ onClick, size = 130 }: { onClick: () => void; size?: num
   );
 }
 
-const EMOJI_OPTIONS = ['✅', '💪', '📚', '🏃', '💧', '🧘', '💊', '🎯', '🌅', '✍️', '🎵', '🍎', '😴', '🚶', '🧠', '🧹', '💰', '🎨', '🌿', '☀️'];
-
-// Map text icon names (from bot/API) to emoji
-const ICON_TEXT_TO_EMOJI: Record<string, string> = {
-  walk: '🚶', walking: '🚶', run: '🏃', running: '🏃',
-  pill: '💊', pills: '💊', vitamin: '💊', vitamins: '💊', medicine: '💊',
-  dumbbell: '💪', gym: '💪', workout: '💪', exercise: '💪', fitness: '💪',
-  meditation: '🧘', meditate: '🧘', yoga: '🧘',
-  book: '📚', read: '📚', reading: '📚', study: '📚',
-  water: '💧', drink: '💧',
-  sleep: '😴', rest: '😴',
-  write: '✍️', writing: '✍️', journal: '✍️',
-  music: '🎵', piano: '🎵', guitar: '🎵',
-  apple: '🍎', food: '🍎', eat: '🍎', diet: '🍎',
-  brain: '🧠', think: '🧠', learn: '🧠',
-  clean: '🧹', cleaning: '🧹',
-  money: '💰', save: '💰', finance: '💰',
-  art: '🎨', draw: '🎨', paint: '🎨',
-  plant: '🌿', nature: '🌿', garden: '🌿',
-  sun: '☀️', morning: '🌅', sunrise: '🌅',
-  target: '🎯', goal: '🎯', focus: '🎯',
-  check: '✅', done: '✅', ok: '✅',
+const LUCIDE_MAP: Record<string, LucideIcon> = {
+  brain: Brain, dumbbell: Dumbbell, running: PersonStanding, bike: Bike,
+  swim: Waves, climb: Mountain, water: Droplets, salad: Salad,
+  sleep: Moon, pill: Pill, walk: Footprints, sparkles: Sparkles,
+  book: BookOpen, pen: PenLine, study: GraduationCap, target: Target,
+  journal: NotebookPen, headphones: Headphones, alarm: AlarmClock,
+  'phone-off': SmartphoneNfc, brush: Brush, wallet: Wallet,
+  palette: Palette, heart: Heart, flame: Flame,
 };
 
-function resolveIcon(icon: string): string {
-  if (!icon) return '✅';
-  // Already an emoji (contains non-ASCII)
-  if (/[^\x00-\x7F]/.test(icon)) return icon;
-  // Text name → emoji lookup
-  return ICON_TEXT_TO_EMOJI[icon.toLowerCase()] ?? '✅';
+function HIcon({ icon, size = 20, className = '' }: { icon: string; size?: number; className?: string }) {
+  const C = LUCIDE_MAP[icon];
+  if (C) return <C size={size} className={className} strokeWidth={1.8} />;
+  // Fallback: emoji or text → render as text
+  return <span style={{ fontSize: size * 0.9 }} className={className}>{icon || '✅'}</span>;
 }
+
+const ICON_OPTIONS: Array<{ icon: string; label: [string, string] }> = [
+  { icon: 'brain', label: ['Медитация', 'Meditation'] },
+  { icon: 'dumbbell', label: ['Спорт', 'Sport'] },
+  { icon: 'running', label: ['Бег', 'Running'] },
+  { icon: 'bike', label: ['Велосипед', 'Cycling'] },
+  { icon: 'swim', label: ['Плавание', 'Swimming'] },
+  { icon: 'water', label: ['Вода', 'Water'] },
+  { icon: 'salad', label: ['Питание', 'Nutrition'] },
+  { icon: 'sleep', label: ['Сон', 'Sleep'] },
+  { icon: 'pill', label: ['Витамины', 'Vitamins'] },
+  { icon: 'walk', label: ['Прогулка', 'Walk'] },
+  { icon: 'sparkles', label: ['Уход', 'Self-care'] },
+  { icon: 'book', label: ['Чтение', 'Reading'] },
+  { icon: 'pen', label: ['Письмо', 'Writing'] },
+  { icon: 'study', label: ['Учёба', 'Study'] },
+  { icon: 'target', label: ['Фокус', 'Focus'] },
+  { icon: 'headphones', label: ['Подкасты', 'Podcasts'] },
+  { icon: 'alarm', label: ['Ранний подъём', 'Early rise'] },
+  { icon: 'wallet', label: ['Финансы', 'Finance'] },
+  { icon: 'palette', label: ['Творчество', 'Creativity'] },
+  { icon: 'heart', label: ['Благодарность', 'Gratitude'] },
+];
 const COLOR_OPTIONS = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4'];
 
 function getWeeksGrid(weeksCount: number): string[][] {
@@ -221,7 +236,7 @@ export function HabitsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
   const [title, setTitle] = useState('');
-  const [icon, setIcon] = useState('✅');
+  const [icon, setIcon] = useState('brain');
   const [color, setColor] = useState('#6366f1');
   const [loading, setLoading] = useState(true);
   const [showGrids, setShowGrids] = useState(false);
@@ -295,7 +310,7 @@ export function HabitsPage() {
 
   const openEdit = (habit: Habit) => {
     setEditingHabit(habit);
-    setTitle(habit.title); setIcon(resolveIcon(habit.icon)); setColor(habit.color);
+    setTitle(habit.title); setIcon(habit.icon); setColor(habit.color);
     setShowModal(true);
   };
 
@@ -418,7 +433,7 @@ export function HabitsPage() {
                     <div key={habit.id} className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-lg">{resolveIcon(habit.icon)}</span>
+                          <HIcon icon={habit.icon} size={20} />
                           <span className="text-sm font-bold text-gray-800 dark:text-gray-100">{habit.title}</span>
                           {habit.streak > 0 && (
                             <span className="flex items-center gap-0.5 text-xs text-orange-500 font-semibold">
@@ -516,14 +531,15 @@ export function HabitsPage() {
                 {t('Иконка', 'Icon')}
               </label>
               <div className="flex flex-wrap gap-1.5 mb-5">
-                {EMOJI_OPTIONS.map((em) => (
-                  <button key={em} onClick={() => setIcon(em)}
-                    className={`w-10 h-10 text-lg rounded-xl flex items-center justify-center transition-all cursor-pointer ${
-                      icon === em
+                {ICON_OPTIONS.map((opt) => (
+                  <button key={opt.icon} onClick={() => setIcon(opt.icon)}
+                    title={t(opt.label[0], opt.label[1])}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                      icon === opt.icon
                         ? 'bg-indigo-100 dark:bg-indigo-900/50 ring-2 ring-indigo-500 scale-110'
                         : 'bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-600'
                     }`}>
-                    {em}
+                    <HIcon icon={opt.icon} size={20} className={icon === opt.icon ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'} />
                   </button>
                 ))}
               </div>
