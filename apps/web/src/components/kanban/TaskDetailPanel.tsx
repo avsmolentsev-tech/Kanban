@@ -561,6 +561,7 @@ function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: stri
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(sub.title);
   const [deleted, setDeleted] = useState(false);
+  const [localStatus, setLocalStatus] = useState(sub.status);
 
   const togglePerson = async (personId: number) => {
     const currentIds = (sub.people ?? []).map(p => p.id);
@@ -597,13 +598,18 @@ function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: stri
           type="button"
           onClick={async (e) => {
             e.stopPropagation();
-            const next = sub.status === 'done' ? 'todo' : 'done';
-            await tasksApi.update(sub.id, { status: next });
-            onUpdated();
+            const next = localStatus === 'done' ? 'todo' : 'done';
+            setLocalStatus(next);
+            try {
+              await tasksApi.update(sub.id, { status: next });
+              onUpdated();
+            } catch {
+              setLocalStatus(localStatus);
+            }
           }}
-          className={`w-6 h-6 min-w-[24px] rounded border-2 flex-shrink-0 flex items-center justify-center text-xs cursor-pointer ${sub.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 dark:border-gray-600 hover:border-indigo-400 active:border-indigo-500'}`}
+          className={`w-6 h-6 min-w-[24px] rounded border-2 flex-shrink-0 flex items-center justify-center text-xs cursor-pointer ${localStatus === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 dark:border-gray-600 hover:border-indigo-400 active:border-indigo-500'}`}
         >
-          {sub.status === 'done' ? '✓' : ''}
+          {localStatus === 'done' ? '✓' : ''}
         </button>
 
         {/* Title — click to edit */}
@@ -619,7 +625,7 @@ function SubtaskRow({ sub, people, onUpdated }: { sub: { id: number; title: stri
         ) : (
           <span
             onClick={() => { setEditTitle(sub.title); setEditing(true); }}
-            className={`text-sm flex-1 cursor-text ${sub.status === 'done' ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400'}`}
+            className={`text-sm flex-1 cursor-text ${localStatus === 'done' ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400'}`}
           >
             {sub.title}
           </span>
