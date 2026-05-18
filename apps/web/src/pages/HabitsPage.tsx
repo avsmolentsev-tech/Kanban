@@ -98,7 +98,7 @@ function HabitRing({
             transition={{ duration: 0.35 }}
             className={`select-none ${size > 100 ? 'text-4xl' : 'text-2xl'}`}
           >
-            {isLogged ? '✓' : habit.icon}
+            {isLogged ? '✓' : resolveIcon(habit.icon)}
           </motion.span>
         </div>
 
@@ -153,6 +153,36 @@ function AddHabitCell({ onClick, size = 130 }: { onClick: () => void; size?: num
 }
 
 const EMOJI_OPTIONS = ['✅', '💪', '📚', '🏃', '💧', '🧘', '💊', '🎯', '🌅', '✍️', '🎵', '🍎', '😴', '🚶', '🧠', '🧹', '💰', '🎨', '🌿', '☀️'];
+
+// Map text icon names (from bot/API) to emoji
+const ICON_TEXT_TO_EMOJI: Record<string, string> = {
+  walk: '🚶', walking: '🚶', run: '🏃', running: '🏃',
+  pill: '💊', pills: '💊', vitamin: '💊', vitamins: '💊', medicine: '💊',
+  dumbbell: '💪', gym: '💪', workout: '💪', exercise: '💪', fitness: '💪',
+  meditation: '🧘', meditate: '🧘', yoga: '🧘',
+  book: '📚', read: '📚', reading: '📚', study: '📚',
+  water: '💧', drink: '💧',
+  sleep: '😴', rest: '😴',
+  write: '✍️', writing: '✍️', journal: '✍️',
+  music: '🎵', piano: '🎵', guitar: '🎵',
+  apple: '🍎', food: '🍎', eat: '🍎', diet: '🍎',
+  brain: '🧠', think: '🧠', learn: '🧠',
+  clean: '🧹', cleaning: '🧹',
+  money: '💰', save: '💰', finance: '💰',
+  art: '🎨', draw: '🎨', paint: '🎨',
+  plant: '🌿', nature: '🌿', garden: '🌿',
+  sun: '☀️', morning: '🌅', sunrise: '🌅',
+  target: '🎯', goal: '🎯', focus: '🎯',
+  check: '✅', done: '✅', ok: '✅',
+};
+
+function resolveIcon(icon: string): string {
+  if (!icon) return '✅';
+  // Already an emoji (contains non-ASCII)
+  if (/[^\x00-\x7F]/.test(icon)) return icon;
+  // Text name → emoji lookup
+  return ICON_TEXT_TO_EMOJI[icon.toLowerCase()] ?? '✅';
+}
 const COLOR_OPTIONS = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4'];
 
 function getWeeksGrid(weeksCount: number): string[][] {
@@ -265,7 +295,7 @@ export function HabitsPage() {
 
   const openEdit = (habit: Habit) => {
     setEditingHabit(habit);
-    setTitle(habit.title); setIcon(habit.icon); setColor(habit.color);
+    setTitle(habit.title); setIcon(resolveIcon(habit.icon)); setColor(habit.color);
     setShowModal(true);
   };
 
@@ -388,7 +418,7 @@ export function HabitsPage() {
                     <div key={habit.id} className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-lg">{habit.icon}</span>
+                          <span className="text-lg">{resolveIcon(habit.icon)}</span>
                           <span className="text-sm font-bold text-gray-800 dark:text-gray-100">{habit.title}</span>
                           {habit.streak > 0 && (
                             <span className="flex items-center gap-0.5 text-xs text-orange-500 font-semibold">
