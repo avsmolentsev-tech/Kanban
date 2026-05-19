@@ -226,6 +226,8 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
 8. "Привяжи X к проекту Y" = найди person_id по имени → update_person с project_id. ОБЯЗАТЕЛЬНО action!
 9. Если указан LAST_CONTACT → "к проекту", "добавь email/телефон", "привяжи" = update_person с его person_id.
 10. RESPONSE должен ЧЁТКО сообщать что СДЕЛАНО, а не что планируется. "✅ Создан контакт X" а не "Создаю контакт X".
+11. ЗАМЕТКИ ВСТРЕЧИ → ВСТРЕЧА + ЗАДАЧИ В КАРТОЧКЕ! Если пользователь скидывает длинный текст с заметками/конспектом встречи (ключевые слова: "встреча с", "литература", "что важно", имена людей, тезисы) → создай ОДНУ create_meeting с: summary_raw = весь текст заметок, tasks = массив конкретных задач/действий из заметок. Задачи попадут в backlog карточки встречи. В response напиши краткое резюме встречи и список задач, которые создал.
+12. Если пользователь указал проект ("проект Образование") → ОБЯЗАТЕЛЬНО найди его project_id и привяжи встречу/задачу к нему!
 
 Верни ТОЛЬКО JSON (без markdown, без \`\`\`):
 {
@@ -241,7 +243,7 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
     {"type": "update_goal", "goal_id": number, "current_value": number?, "status": "active|completed?"},
     {"type": "update_project", "project_id": number, "name": "string?", "color": "#hex?", "status": "string?"},
     {"type": "delete_project", "project_id": number},
-    {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number]},
+    {"type": "create_meeting", "title": "string", "date": "YYYY-MM-DD", "project_id": number|null, "person_ids": [number], "summary_raw": "полный текст заметок встречи", "tasks": ["задача 1", "задача 2"]},
     {"type": "update_meeting", "meeting_id": number, "title": "string?", "date": "YYYY-MM-DD?", "project_id": number?},
     {"type": "delete_meeting", "meeting_id": number},
     {"type": "create_person", "name": "string", "company": "string?", "role": "string?", "phone": "string?", "email": "string?", "telegram": "string?", "notes": "string?", "project_id": number|null},
@@ -385,12 +387,31 @@ ${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕД
             break;
           }
           case 'create_meeting': {
-            const r = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES (?, ?, ?, ?, ?)').run(action['title'], action['date'], action['project_id'] ?? null, '', userId);
+            const summaryRaw = (action['summary_raw'] as string) ?? '';
+            let safeMeetingProjId = action['project_id'] ?? null;
+            if (safeMeetingProjId) {
+              const projCheck = db.prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(safeMeetingProjId, userId);
+              if (!projCheck) safeMeetingProjId = null;
+            }
+            const r = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES (?, ?, ?, ?, ?)').run(action['title'], action['date'], safeMeetingProjId, summaryRaw, userId);
             const meetingId = Number(r.lastInsertRowid);
             if (Array.isArray(action['person_ids'])) {
               for (const pid of action['person_ids'] as number[]) db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, pid);
             }
-            results.push({ type: 'create_meeting', success: true, detail: `Встреча "${action['title']}" на ${action['date']}` });
+            // Create tasks linked to meeting (as backlog, user reviews later)
+            const meetingTasks = Array.isArray(action['tasks']) ? action['tasks'] as string[] : [];
+            for (const taskTitle of meetingTasks) {
+              if (!taskTitle || typeof taskTitle !== 'string') continue;
+              const tr = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, user_id) VALUES (?, ?, ?, ?, ?, ?)').run(
+                safeMeetingProjId, taskTitle, `Из встречи: ${action['title']} (${action['date']})`, 'backlog', 3, userId
+              );
+              const taskId = Number(tr.lastInsertRowid);
+              // Link task to meeting via agreements
+              try { db.prepare('INSERT INTO agreements (meeting_id, description, status, person_id) VALUES (?, ?, ?, ?)').run(meetingId, taskTitle, 'pending', null); } catch {}
+              void taskId;
+            }
+            const taskCount = meetingTasks.length;
+            results.push({ type: 'create_meeting', success: true, detail: `Встреча "${action['title']}" на ${action['date']}${taskCount > 0 ? ` + ${taskCount} задач в backlog` : ''}` });
             break;
           }
           case 'update_meeting': {
