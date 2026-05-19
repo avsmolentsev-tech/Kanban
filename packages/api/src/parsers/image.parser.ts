@@ -8,7 +8,7 @@ export async function parseImage(buffer: Buffer, ext: string): Promise<string> {
   const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
 
   const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: 'gpt-4o-mini',
     max_tokens: 4096,
     messages: [{
       role: 'user',

@@ -151,7 +151,7 @@ ${rawText}`;
 
 Контент:
 ${text}`;
-    const result = await this.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1', false, true);
+    const result = await this.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini', false, true);
     let parsed: InboxAnalysis;
     try {
       parsed = JSON.parse(result) as InboxAnalysis;
@@ -222,7 +222,7 @@ ${text}`;
 - Если транскрипция короткая или некачественная — напиши короткие заметки по тому что ЕСТЬ, и добавь: "⚠️ Транскрипция неполная, информация может быть неточной"
 - ЛУЧШЕ написать мало но точно, чем много но выдуманного
 
-${context}` }], '', 'gpt-4.1'),
+${context}` }], '', 'gpt-4.1-mini'),
 
       // 2. Q&A — questions and answers format
       this.chat([{ role: 'user', content: `Ты — профессиональный аналитик встреч. Создай подробный разбор в формате ВОПРОСЫ И ОТВЕТЫ по встрече.
@@ -258,7 +258,7 @@ ${context}` }], '', 'gpt-4.1'),
 - Если транскрипция короткая/неполная — сделай меньше вопросов, но точных
 - ЛУЧШЕ 3 точных Q&A чем 15 выдуманных
 
-${context}` }], '', 'gpt-4.1'),
+${context}` }], '', 'gpt-4.1-mini'),
     ]);
 
     return { notes, qa };
@@ -406,7 +406,7 @@ ${meetingsContext}`;
     milestones: Array<{ title: string; due_date: string; tasks: Array<{ title: string; due_date?: string }>; meetings: Array<{ title: string; date?: string }> }>;
   }> {
     const resp = await this.openai.chat.completions.create({
-      model: 'gpt-4.1',
+      model: 'gpt-4.1-mini',
       temperature: 0.3,
       messages: [
         { role: 'system', content: `Ты декомпозируешь большую годовую цель (BHAG) на конкретные milestones и задачи.

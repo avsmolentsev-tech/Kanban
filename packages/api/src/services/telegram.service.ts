@@ -452,7 +452,7 @@ BHAG (Большая Дерзкая Цель на год):
       { role: 'user', content: text },
     ];
 
-    const model = 'gpt-4.1';
+    const model = 'gpt-4.1-mini';
 
     const result = await claude.chat(messages, systemPrompt, model, true, true);
 

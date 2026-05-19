@@ -564,7 +564,7 @@ aiRouter.post('/daily-plan', async (req: AuthRequest, res: Response) => {
 Цели и прогресс: ${JSON.stringify(goals)}${priorityLine}
 Дата: ${today}`;
 
-    const plan = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1');
+    const plan = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
     res.json(ok({ plan }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
@@ -639,7 +639,7 @@ aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) 
 5. 🎯 Прогресс по целям
 6. 💡 Рекомендации по улучшению продуктивности`;
 
-    const analysis = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1');
+    const analysis = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
     res.json(ok({ analysis }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
