@@ -296,6 +296,56 @@ export function initDb(): void {
     `);
   } catch {}
 
+  // Auth: add missing columns to users
+  try { _db.exec("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0"); } catch {}
+  try { _db.exec("ALTER TABLE users ADD COLUMN tg_id INTEGER UNIQUE"); } catch {}
+  // Make password_hash nullable (needed for TG-only users and migration)
+  // SQLite can't ALTER column, but new rows can insert NULL if we don't enforce NOT NULL at app level
+
+  // Verification codes for email confirmation and password reset
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS verification_codes (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        email      TEXT NOT NULL,
+        code       TEXT NOT NULL,
+        type       TEXT NOT NULL CHECK(type IN ('register','reset','link_tg')),
+        expires_at TEXT NOT NULL,
+        used       INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
+
+  // Refresh tokens
+  try {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS refresh_tokens (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL REFERENCES users(id),
+        token      TEXT NOT NULL UNIQUE,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      )
+    `);
+  } catch {}
+
+  // Migrate existing TG users into users table if not already there
+  try {
+    const hasTgUsers = _db.prepare("SELECT COUNT(*) as c FROM users WHERE tg_id IS NOT NULL").get() as { c: number };
+    if (hasTgUsers.c === 0) {
+      // Seed existing user IDs from tasks table (they have user_id but no users row)
+      const existingUserIds = _db.prepare("SELECT DISTINCT user_id FROM tasks WHERE user_id IS NOT NULL").all() as Array<{ user_id: number }>;
+      for (const { user_id } of existingUserIds) {
+        try {
+          _db.prepare("INSERT OR IGNORE INTO users (id, email, password_hash, name, email_verified) VALUES (?, ?, ?, ?, ?)").run(
+            user_id, `user${user_id}@placeholder.local`, '', `User ${user_id}`, 0
+          );
+        } catch {}
+      }
+    }
+  } catch {}
+
   // Add user_id to all data tables (nullable for backward compatibility)
   const tablesNeedingUserId = [
     'tasks', 'projects', 'meetings', 'people', 'ideas', 'documents',

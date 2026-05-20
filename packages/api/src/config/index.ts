@@ -18,6 +18,8 @@ export const config = {
   googleClientId: process.env['GOOGLE_CLIENT_ID'] ?? '',
   googleClientSecret: process.env['GOOGLE_CLIENT_SECRET'] ?? '',
   jwtSecret: process.env['JWT_SECRET'] ?? 'pis-default-secret-change-me',
+  resendApiKey: process.env['RESEND_API_KEY'] ?? '',
+  emailFrom: process.env['EMAIL_FROM'] ?? 'Clarity Space <noreply@clarity-space.ru>',
 } as const;
 
 if (config.jwtSecret === 'pis-default-secret-change-me') {
