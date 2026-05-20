@@ -1001,7 +1001,7 @@ BHAG (Большая Дерзкая Цель на год):
         if (isLocalWhisperAvailable()) {
           transcript = transcribeLocal(buffer, 'download.mp3');
         } else {
-          const openai = new OpenAI({ apiKey: config.openaiApiKey });
+          const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
           const file = new File([buffer], 'audio.mp3', { type: 'audio/mpeg' });
           const result = await openai.audio.transcriptions.create({ model: 'whisper-1', file, language: 'ru' });
           transcript = result.text;
@@ -1788,7 +1788,7 @@ BHAG (Большая Дерзкая Цель на год):
 
         // Use GPT-4.1-mini vision to extract contact info
         const OpenAI = require('openai').default;
-        const openai = new OpenAI({ apiKey: config.openaiApiKey });
+        const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
         const base64 = buffer.toString('base64');
         const mimeType = 'image/jpeg';
 

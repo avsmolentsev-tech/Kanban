@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { config } from '../config';
 
-const openai = new OpenAI({ apiKey: config.openaiApiKey });
+const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
 
 export async function parseImage(buffer: Buffer, ext: string): Promise<string> {
   const base64 = buffer.toString('base64');

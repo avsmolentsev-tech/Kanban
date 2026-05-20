@@ -21,7 +21,7 @@ export class ClaudeService {
   public openai: OpenAI;
 
   constructor() {
-    this.client = new OpenAI({ apiKey: config.openaiApiKey });
+    this.client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
     this.openai = this.client;
   }
 

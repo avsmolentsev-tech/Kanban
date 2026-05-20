@@ -4,7 +4,7 @@ import * as os from 'os';
 import OpenAI from 'openai';
 import { config } from '../config';
 
-const openai = new OpenAI({ apiKey: config.openaiApiKey });
+const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
 
 export async function parseAudio(buffer: Buffer, ext: string): Promise<string> {
   // Write buffer to temp file (Whisper API requires a file)

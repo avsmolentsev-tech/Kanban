@@ -2,7 +2,7 @@ import * as cheerio from 'cheerio';
 import OpenAI from 'openai';
 import { config } from '../config';
 
-const openai = new OpenAI({ apiKey: config.openaiApiKey });
+const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
 
 export async function parseUrl(url: string): Promise<string> {
   const response = await fetch(url, {

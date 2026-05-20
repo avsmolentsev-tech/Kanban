@@ -18,7 +18,7 @@ import { getUserId, userScopeWhere } from '../middleware/user-scope';
 
 const obsidian = new ObsidianService(config.vaultPath);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
-const openai = new OpenAI({ apiKey: config.openaiApiKey });
+const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
 const claude = new ClaudeService();
 
 export const meetingsRouter = Router();

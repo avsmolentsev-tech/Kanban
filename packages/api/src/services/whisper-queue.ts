@@ -118,7 +118,7 @@ export async function transcribeWithOpenAI(buffer: Buffer, filename: string): Pr
   const OpenAI = require('openai').default;
   const { config } = require('../config');
   console.log('[whisper-queue] using OpenAI API');
-  const openai = new OpenAI({ apiKey: config.openaiApiKey });
+  const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
 
   // Always boost audio for better recognition of quiet recordings
   let audioBuffer = await boostAudio(buffer, filename);
