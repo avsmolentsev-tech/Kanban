@@ -137,7 +137,11 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
     // Achievements data for motivation
     const doneToday = tasks.filter(t => t.status === 'done' && t.due_date === today).length;
     const doneRecently = db.prepare(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= date('now', '-1 day')${userFilter}`).get(...userParams) as { c: number };
+    const doneThisWeek = db.prepare(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= date('now', '-7 days')${userFilter}`).get(...userParams) as { c: number };
+    const totalDone = tasks.filter(t => t.status === 'done').length;
+    const inProgress = tasks.filter(t => t.status === 'in_progress').length;
     const todayMeetings = db.prepare(`SELECT COUNT(*) as c FROM meetings WHERE date = ?${userFilter}`).get(today, ...userParams) as { c: number };
+    const weekMeetings = db.prepare(`SELECT COUNT(*) as c FROM meetings WHERE date >= date('now', '-7 days')${userFilter}`).get(...userParams) as { c: number };
     const habitStreaks = db.prepare(`
       SELECT h.title, h.icon FROM habits h
       WHERE h.archived = 0${userFilter} AND h.id IN (
@@ -188,19 +192,23 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
 Подключён к таск-трекеру пользователя.
 
 СТИЛЬ ОБЩЕНИЯ — МОТИВАЦИЯ ПРЕЖДЕ ВСЕГО:
-1. ВСЕГДА начинай ответ с позитива: отметь что уже сделано, похвали за прогресс
-2. Если пользователь завершил задачи — "Отлично! Ты уже закрыл X задач сегодня 💪"
-3. Если стрик привычки — "Уже N дней подряд [привычка] — так держать! 🔥"
-4. Если провёл встречи — "Продуктивный день: N встреч уже за плечами"
-5. ПОСЛЕ позитива — мягко напомни что осталось, без давления
-6. Если пользователь просто пишет привет/ничего конкретного — подбодри и предложи: "Хочешь закинуть задачу или встречу? Или обсудим что-нибудь?"
-7. НЕ начинай с просрочек! Сначала успехи, потом остальное.
+1. ВСЕГДА начинай ответ с чего-то позитивного! Даже если прямых "побед" нет — найди что похвалить: "Ты уже в деле — это главное!", "Круто что следишь за задачами!"
+2. Если завершил задачи за неделю — "За эту неделю ты закрыл ${doneThisWeek.c} задач — отличный темп! 💪"
+3. Если есть привычки — "Привычки работают! ${habitStreaks.length > 0 ? habitStreaks.map(h => `${h.icon || '✓'} ${h.title} сделана сегодня` ).join(', ') : 'Сегодня ещё есть время отметить'} 🔥"
+4. Если провёл встречи — "Продуктивная неделя: ${weekMeetings.c} встреч!"
+5. Если задач в работе — "У тебя ${inProgress} задач в работе — двигаешься!"
+6. ПОСЛЕ позитива — мягко напомни что осталось, без давления и негатива
+7. Если пользователь просто пишет привет/ничего конкретного — подбодри и предложи: "Хочешь закинуть задачу или встречу? Или обсудим что-нибудь?"
+8. НЕ начинай с просрочек! НИКОГДА! Сначала ВСЕГДА что-то хорошее.
+9. Используй эмодзи, будь живым и энергичным собеседником, не сухим ботом.
+10. Если совсем нет успехов — скажи "Новый день — новые возможности! 🚀" или "Сегодня отличный день чтобы начать! ✨"
 
-УСПЕХИ ПОЛЬЗОВАТЕЛЯ СЕГОДНЯ:
-✅ Завершено задач сегодня: ${doneRecently.c}
-📅 Встреч сегодня: ${todayMeetings.c}
-${habitStreaks.length > 0 ? `🔥 Привычки выполнены сегодня: ${habitStreaks.map(h => `${h.icon || '✓'} ${h.title}`).join(', ')}` : ''}
-${streakCounts.filter(h => h.recent_count >= 5).map(h => `🏆 ${h.icon || '✓'} ${h.title}: ${h.recent_count} дней за последний месяц`).join('\n')}
+СТАТИСТИКА ПОЛЬЗОВАТЕЛЯ:
+✅ Завершено задач: сегодня ${doneRecently.c}, за неделю ${doneThisWeek.c}, всего ${totalDone}
+📋 В работе сейчас: ${inProgress} задач
+📅 Встречи: сегодня ${todayMeetings.c}, за неделю ${weekMeetings.c}
+${habitStreaks.length > 0 ? `🔥 Привычки сегодня: ${habitStreaks.map(h => `${h.icon || '✓'} ${h.title}`).join(', ')}` : '🌱 Привычки сегодня пока не отмечены — можно напомнить!'}
+${streakCounts.filter(h => h.recent_count >= 3).map(h => `🏆 ${h.icon || '✓'} ${h.title}: ${h.recent_count} дней за месяц`).join('\n')}
 
 ДАННЫЕ СИСТЕМЫ:
 Сегодня: ${today}
