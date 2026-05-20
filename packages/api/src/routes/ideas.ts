@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
@@ -70,7 +70,7 @@ ideasRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
   const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
   const values = Object.values(parsed.data).filter((v) => v !== undefined);
   if (fields.length === 0) { res.status(400).json(fail('No fields')); return; }
-  getDb().prepare(`UPDATE ideas SET ${fields.join(', ')} WHERE id = ?`).run(...values, id);
+  getDb().prepare(`UPDATE ideas SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, id, userId);
 
   const after = getDb().prepare('SELECT * FROM ideas WHERE id = ?').get(id) as Record<string, unknown>;
   searchService.indexRecord('idea', id, after['title'] as string, (after['body'] as string) ?? '');

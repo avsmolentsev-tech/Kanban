@@ -64,8 +64,9 @@ ingestRouter.get('/status/:id', (req: AuthRequest, res: Response) => {
 
 ingestRouter.delete('/:id', (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
-  const item = getDb().prepare('SELECT * FROM inbox_items WHERE id = ?').get(id);
+  const userId = getUserId(req);
+  const item = getDb().prepare('SELECT * FROM inbox_items WHERE id = ? AND user_id = ?').get(id, userId);
   if (!item) { res.status(404).json(fail('Inbox item not found')); return; }
-  getDb().prepare('DELETE FROM inbox_items WHERE id = ?').run(id);
+  getDb().prepare('DELETE FROM inbox_items WHERE id = ? AND user_id = ?').run(id, userId);
   res.json(ok({ deleted: true }));
 });

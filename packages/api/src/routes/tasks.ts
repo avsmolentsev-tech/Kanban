@@ -19,6 +19,16 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 
 
 export const tasksRouter = Router();
 
+/** Verify task belongs to user. Returns false and sends 404 if not. */
+function verifyTaskOwner(req: AuthRequest, res: Response): boolean {
+  const taskId = Number(req.params['id']);
+  const userId = getUserId(req);
+  if (userId == null) { res.status(401).json(fail('Not authenticated')); return false; }
+  const task = getDb().prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?').get(taskId, userId);
+  if (!task) { res.status(404).json(fail('Task not found')); return false; }
+  return true;
+}
+
 const CreateSchema = z.object({
   project_id: z.number().int().optional(),
   parent_id: z.number().int().nullable().optional(),
@@ -229,7 +239,8 @@ tasksRouter.patch('/:id/move', (req: AuthRequest, res: Response) => {
   const parsed = MoveSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const taskId = Number(req.params['id']);
-  getDb().prepare(`UPDATE tasks SET status = ?, order_index = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(parsed.data.status, parsed.data.order_index, taskId);
+  const userId = getUserId(req);
+  getDb().prepare(`UPDATE tasks SET status = ?, order_index = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?`).run(parsed.data.status, parsed.data.order_index, taskId, userId);
   const task = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Record<string, unknown>;
   // Sync to vault
   try {
@@ -286,11 +297,13 @@ tasksRouter.post('/process-recurring', (req: AuthRequest, res: Response) => {
 
 // Task comments
 tasksRouter.get('/:id/comments', (req: AuthRequest, res: Response) => {
+  if (!verifyTaskOwner(req, res)) return;
   const comments = getDb().prepare('SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at DESC').all(Number(req.params['id']));
   res.json(ok(comments));
 });
 
 tasksRouter.post('/:id/comments', (req: AuthRequest, res: Response) => {
+  if (!verifyTaskOwner(req, res)) return;
   const { text } = req.body;
   if (!text || typeof text !== 'string') { res.status(400).json(fail('Text required')); return; }
   const result = getDb().prepare('INSERT INTO task_comments (task_id, text) VALUES (?, ?)').run(Number(req.params['id']), text.trim());
@@ -299,12 +312,14 @@ tasksRouter.post('/:id/comments', (req: AuthRequest, res: Response) => {
 });
 
 tasksRouter.delete('/:id/comments/:commentId', (req: AuthRequest, res: Response) => {
+  if (!verifyTaskOwner(req, res)) return;
   getDb().prepare('DELETE FROM task_comments WHERE id = ? AND task_id = ?').run(Number(req.params['commentId']), Number(req.params['id']));
   res.json(ok({ deleted: true }));
 });
 
 // Task dependencies
 tasksRouter.get('/:id/dependencies', (req: AuthRequest, res: Response) => {
+  if (!verifyTaskOwner(req, res)) return;
   const taskId = Number(req.params['id']);
   const deps = getDb().prepare(
     'SELECT t.id, t.title, t.status, t.priority FROM task_dependencies td JOIN tasks t ON t.id = td.depends_on_id WHERE td.task_id = ?'
@@ -313,6 +328,7 @@ tasksRouter.get('/:id/dependencies', (req: AuthRequest, res: Response) => {
 });
 
 tasksRouter.post('/:id/dependencies', (req: AuthRequest, res: Response) => {
+  if (!verifyTaskOwner(req, res)) return;
   const taskId = Number(req.params['id']);
   const { depends_on_id } = req.body;
   if (!depends_on_id || typeof depends_on_id !== 'number') { res.status(400).json(fail('depends_on_id required')); return; }
@@ -326,6 +342,7 @@ tasksRouter.post('/:id/dependencies', (req: AuthRequest, res: Response) => {
 });
 
 tasksRouter.delete('/:id/dependencies/:depId', (req: AuthRequest, res: Response) => {
+  if (!verifyTaskOwner(req, res)) return;
   const taskId = Number(req.params['id']);
   const depId = Number(req.params['depId']);
   getDb().prepare('DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?').run(taskId, depId);
@@ -334,6 +351,7 @@ tasksRouter.delete('/:id/dependencies/:depId', (req: AuthRequest, res: Response)
 
 // Task attachments
 tasksRouter.post('/:id/attachments', upload.single('file'), (req: AuthRequest, res: Response) => {
+  if (!verifyTaskOwner(req, res)) return;
   const taskId = Number(req.params['id']);
   if (!req.file) { res.status(400).json(fail('Файл не предоставлен')); return; }
 
@@ -349,6 +367,7 @@ tasksRouter.post('/:id/attachments', upload.single('file'), (req: AuthRequest, r
 });
 
 tasksRouter.get('/:id/attachments', (req: AuthRequest, res: Response) => {
+  if (!verifyTaskOwner(req, res)) return;
   const atts = getDb().prepare('SELECT * FROM attachments WHERE task_id = ? ORDER BY created_at DESC').all(Number(req.params['id']));
   res.json(ok(atts));
 });

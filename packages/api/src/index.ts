@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { router } from './routes';
 import { initDb } from './db/db';
@@ -21,11 +22,30 @@ process.on('unhandledRejection', (reason) => {
 const app = express();
 
 app.use(cors({
-  origin: ['https://kanban.myaipro.ru', 'http://localhost:5173', 'http://localhost:3000'],
+  origin: ['https://kanban.myaipro.ru', 'https://clarity-space.ru', 'http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
 }));
 app.use(express.json({ limit: `${config.maxFileSizeMb}mb` }));
 app.use(express.urlencoded({ extended: true }));
+
+// Rate limiting — 200 requests per minute per IP
+app.use('/v1/', rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests. Please try again later.' },
+}));
+
+// Stricter rate limit for auth endpoints — 10 per minute
+app.use('/v1/auth/', rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many auth attempts. Please try again later.' },
+}));
+
 app.use(authMiddleware);
 
 app.use('/v1', router);

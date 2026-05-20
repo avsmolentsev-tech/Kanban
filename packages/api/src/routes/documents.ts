@@ -103,17 +103,21 @@ documentsRouter.get('/:id/ancestors', (req: AuthRequest, res: Response) => {
 
 // Serve attachment files — MUST be before /:id to avoid route conflict
 documentsRouter.get('/attachments/file/:filename', (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  // Verify the attachment belongs to a document owned by this user
+  const att = getDb().prepare('SELECT a.id FROM attachments a JOIN documents d ON d.id = a.document_id WHERE a.filename = ? AND d.user_id = ?').get(req.params['filename']!, userId);
+  if (!att) { res.status(404).json(fail('Файл не найден')); return; }
   const filePath = path.join(attachDir, req.params['filename']!);
   if (!fs.existsSync(filePath)) { res.status(404).json(fail('Файл не найден')); return; }
   res.sendFile(filePath);
 });
 
 documentsRouter.delete('/attachments/:attId', (req: AuthRequest, res: Response) => {
-  const att = getDb().prepare('SELECT * FROM attachments WHERE id = ?').get(Number(req.params['attId'])) as { filename: string } | undefined;
-  if (att) {
-    try { fs.unlinkSync(path.join(attachDir, att.filename)); } catch {}
-    getDb().prepare('DELETE FROM attachments WHERE id = ?').run(Number(req.params['attId']));
-  }
+  const userId = getUserId(req);
+  const att = getDb().prepare('SELECT a.id, a.filename FROM attachments a JOIN documents d ON d.id = a.document_id WHERE a.id = ? AND d.user_id = ?').get(Number(req.params['attId']), userId) as { id: number; filename: string } | undefined;
+  if (!att) { res.status(404).json(fail('Attachment not found')); return; }
+  try { fs.unlinkSync(path.join(attachDir, att.filename)); } catch {}
+  getDb().prepare('DELETE FROM attachments WHERE id = ?').run(att.id);
   res.json(ok({ deleted: true }));
 });
 
@@ -177,6 +181,9 @@ documentsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
 // Attachments
 documentsRouter.post('/:id/attachments', upload.single('file'), (req: AuthRequest, res: Response) => {
   const docId = Number(req.params['id']);
+  const userId = getUserId(req);
+  const doc = getDb().prepare('SELECT id FROM documents WHERE id = ? AND user_id = ?').get(docId, userId);
+  if (!doc) { res.status(404).json(fail('Document not found')); return; }
   if (!req.file) { res.status(400).json(fail('Файл не предоставлен')); return; }
 
   const ext = path.extname(req.file.originalname);
@@ -191,7 +198,11 @@ documentsRouter.post('/:id/attachments', upload.single('file'), (req: AuthReques
 });
 
 documentsRouter.get('/:id/attachments', (req: AuthRequest, res: Response) => {
-  const atts = getDb().prepare('SELECT * FROM attachments WHERE document_id = ? ORDER BY created_at DESC').all(Number(req.params['id']));
+  const docId = Number(req.params['id']);
+  const userId = getUserId(req);
+  const doc = getDb().prepare('SELECT id FROM documents WHERE id = ? AND user_id = ?').get(docId, userId);
+  if (!doc) { res.status(404).json(fail('Document not found')); return; }
+  const atts = getDb().prepare('SELECT * FROM attachments WHERE document_id = ? ORDER BY created_at DESC').all(docId);
   res.json(ok(atts));
 });
 

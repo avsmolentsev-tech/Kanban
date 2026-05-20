@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
@@ -162,7 +162,8 @@ peopleRouter.delete('/:id', (req: AuthRequest, res: Response) => {
 });
 
 peopleRouter.get('/:id/history', (req: AuthRequest, res: Response) => {
-  const person = getDb().prepare('SELECT * FROM people WHERE id = ?').get(Number(req.params['id']));
+  const userId = getUserId(req);
+  const person = getDb().prepare('SELECT * FROM people WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
   if (!person) { res.status(404).json(fail('Person not found')); return; }
   const meetings = getDb().prepare('SELECT m.id, m.title, m.date FROM meetings m JOIN meeting_people mp ON m.id = mp.meeting_id WHERE mp.person_id = ? ORDER BY m.date DESC').all(Number(req.params['id']));
   const agreements = getDb().prepare('SELECT * FROM agreements WHERE person_id = ? ORDER BY created_at DESC').all(Number(req.params['id']));

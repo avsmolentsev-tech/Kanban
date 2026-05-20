@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
@@ -154,6 +154,9 @@ habitsRouter.post('/:id/log', (req: AuthRequest, res: Response) => {
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const id = Number(req.params['id']);
   const { date } = parsed.data;
+
+  const habit = getDb().prepare('SELECT id FROM habits WHERE id = ? AND user_id = ?').get(id, getUserId(req));
+  if (!habit) { res.status(404).json(fail('Habit not found')); return; }
 
   const existing = getDb()
     .prepare('SELECT * FROM habit_logs WHERE habit_id = ? AND date = ?')
