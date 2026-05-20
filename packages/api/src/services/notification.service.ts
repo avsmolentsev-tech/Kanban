@@ -40,6 +40,11 @@ export function startNotificationScheduler(): void {
 }
 
 function checkOverdueTasks(): void {
+  const now = moscowNow();
+  const hour = now.getUTCHours();
+  // Don't send overdue notifications at night (22:00–08:00)
+  if (hour >= 22 || hour < 8) return;
+
   const today = moscowDateString();
   const db = getDb();
 
@@ -52,8 +57,24 @@ function checkOverdueTasks(): void {
     // Send overdue digest at most once per day per user
     if (!shouldSendNotification(user.id, 'overdue_digest', 'all')) continue;
 
-    const lines = overdue.map(t => `⚠️ <b>${t.title}</b> (срок: ${t.due_date})`);
-    telegramService.notifyUser(user.tg_id, `🔔 Просроченные задачи (${overdue.length}):\n\n${lines.join('\n')}`);
+    // Start with achievements, then overdue
+    const doneWeek = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= date('now', '-7 days') AND user_id = ?").get(user.id) as { c: number }).c;
+    const inProgress = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'in_progress' AND archived = 0 AND user_id = ?").get(user.id) as { c: number }).c;
+
+    let msg = '';
+    // Positive opening
+    if (doneWeek > 0) {
+      msg += `💪 За неделю закрыто ${doneWeek} задач — отличный темп!\n\n`;
+    } else if (inProgress > 0) {
+      msg += `🚀 У тебя ${inProgress} задач в работе — двигаешься!\n\n`;
+    }
+
+    // Then overdue — soft tone
+    msg += `📋 Есть ${overdue.length} задач с прошедшим сроком — может перенесём или закроем?\n\n`;
+    const lines = overdue.map(t => `  • ${t.title} (${t.due_date})`);
+    msg += lines.join('\n');
+
+    telegramService.notifyUser(user.tg_id, msg);
   }
 }
 
@@ -159,23 +180,35 @@ function checkDailyDigest(): void {
       const tomorrowTasks = db.prepare("SELECT title FROM tasks WHERE due_date = ? AND archived = 0 AND status != 'done' AND user_id = ?").all(tomorrow, user.id) as Array<{ title: string }>;
       const tomorrowMeetings = db.prepare("SELECT title FROM meetings WHERE date = ? AND user_id = ?").all(tomorrow, user.id) as Array<{ title: string }>;
 
+      // Habit streaks for motivation
+      const habitsDone = db.prepare(`SELECT h.title, h.icon FROM habits h WHERE h.archived = 0 AND h.user_id = ? AND h.id IN (SELECT habit_id FROM habit_logs WHERE date = ? AND completed = 1)`).all(user.id, today) as Array<{ title: string; icon: string }>;
+
       let msg = `🌙 <b>Итоги дня</b>\n\n`;
+
+      // Always start positive
       if (done.length > 0) {
-        msg += `✅ Сделано сегодня (${done.length}):\n${done.map(t => `  • ${t.title}`).join('\n')}\n\n`;
-      } else {
-        msg += `📋 Задач завершено: 0\n\n`;
+        msg += `🎉 Отлично! Сегодня закрыто ${done.length} задач:\n${done.map(t => `  ✅ ${t.title}`).join('\n')}\n\n`;
       }
+      if (habitsDone.length > 0) {
+        msg += `🔥 Привычки: ${habitsDone.map(h => `${h.icon || '✓'} ${h.title}`).join(', ')}\n\n`;
+      }
+      if (done.length === 0 && habitsDone.length === 0) {
+        msg += `💡 Сегодня был день для планирования — это тоже важно!\n\n`;
+      }
+
       if (inProgress.length > 0) {
         msg += `🔄 В работе:\n${inProgress.map(t => `  • ${t.title} ${'⭐'.repeat(t.priority)}`).join('\n')}\n\n`;
       }
       if (overdue.length > 0) {
-        msg += `⚠️ Просрочено:\n${overdue.map(t => `  • ${t.title} (${t.due_date})`).join('\n')}\n\n`;
+        msg += `📋 Есть ${overdue.length} задач с прошедшим сроком — перенесём завтра?\n${overdue.slice(0, 3).map(t => `  • ${t.title}`).join('\n')}\n\n`;
       }
       if (tomorrowTasks.length > 0 || tomorrowMeetings.length > 0) {
         msg += `📅 Завтра:\n`;
         for (const m of tomorrowMeetings) msg += `  🤝 ${m.title}\n`;
         for (const t of tomorrowTasks) msg += `  📋 ${t.title}\n`;
+        msg += '\n';
       }
+      msg += '🌟 Хорошего вечера!';
 
       telegramService.notifyUser(user.tg_id, msg);
     } catch (err) {
