@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { apiPost } from '../api/client';
 import { useAuthStore, type AuthUser } from '../store/auth.store';
 import { useLangStore } from '../store/lang.store';
@@ -230,6 +231,16 @@ export function LoginPage() {
               </button>
             )}
           </div>
+        </div>
+
+        <div className="mt-4 text-center text-xs text-gray-400 dark:text-gray-500">
+          <Link to="/terms" className="hover:text-indigo-500 transition-colors">
+            {t('Условия использования', 'Terms of Service')}
+          </Link>
+          <span className="mx-1.5">|</span>
+          <Link to="/privacy" className="hover:text-indigo-500 transition-colors">
+            {t('Политика конфиденциальности', 'Privacy Policy')}
+          </Link>
         </div>
       </div>
     </div>

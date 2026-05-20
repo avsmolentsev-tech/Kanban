@@ -38,6 +38,8 @@ import { useLangStore } from './store/lang.store';
 import { useAuthStore } from './store/auth.store';
 import { LoginPage } from './pages/LoginPage';
 import { AboutPage } from './pages/AboutPage';
+import { TermsPage } from './pages/TermsPage';
+import { PrivacyPage } from './pages/PrivacyPage';
 import {
   LayoutDashboard, Columns3, BarChart3, FolderKanban, Users, CalendarDays,
   Lightbulb, FileText, MessageCircle, Target, BookOpen, GanttChart,
@@ -175,6 +177,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/about" element={<AboutPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="*" element={<LoginPage />} />
         </Routes>
       </BrowserRouter>
