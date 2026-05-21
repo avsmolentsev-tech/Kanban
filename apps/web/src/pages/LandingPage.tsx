@@ -306,6 +306,84 @@ export function LandingPage() {
         </div>
       </section>
 
+      {/* ── AI Chat ── */}
+      <section className="relative py-20 px-5 bg-gray-50/60 dark:bg-white/[0.015] overflow-hidden">
+        <div className="pointer-events-none absolute top-[20%] right-[-8%] w-[400px] h-[400px] rounded-full bg-indigo-400/[0.06] dark:bg-indigo-500/[0.03] blur-[70px]" style={{ animation: 'orbit2 38s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-5xl mx-auto flex flex-col-reverse md:flex-row items-center gap-10 relative">
+          {/* Copy */}
+          <div className="reveal flex-1 text-center md:text-left">
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">
+              {t('AI-ассистент, который понимает контекст', 'AI Assistant That Understands Context')}
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+              {t(
+                'Спроси что обсуждали на встрече, какие задачи в работе, попроси сделать бандл по проекту. Ассистент знает твои задачи, встречи, людей — и отвечает по делу. Голосом или текстом.',
+                'Ask what was discussed at the meeting, what tasks are in progress, request a project bundle. The assistant knows your tasks, meetings, people — and answers to the point. Voice or text.',
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2.5 justify-center md:justify-start">
+              {[
+                t('Контекст задач', 'Task Context'),
+                t('Голосовые команды', 'Voice Commands'),
+                t('Подсказки-кнопки', 'Quick Actions'),
+                t('Мотивация', 'Motivation'),
+              ].map(tag => (
+                <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+          {/* Phone screenshot */}
+          <div className="reveal flex-shrink-0" style={{ animationDelay: '120ms' }}>
+            <div className="w-[190px] sm:w-[210px] rounded-[30px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20">
+              <div className="rounded-[25px] overflow-hidden">
+                <img src="/img/ai-chat.jpg" alt={t('AI чат с ассистентом', 'AI chat assistant')} className="w-full" loading="lazy" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Habits ── */}
+      <section className="relative py-20 px-5 overflow-hidden">
+        <div className="pointer-events-none absolute bottom-[15%] -left-16 w-[350px] h-[350px] rounded-full bg-orange-400/[0.05] dark:bg-orange-500/[0.03] blur-[70px]" style={{ animation: 'orbit1 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-10 relative">
+          {/* Phone screenshot */}
+          <div className="reveal flex-shrink-0">
+            <div className="w-[190px] sm:w-[210px] rounded-[30px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20">
+              <div className="rounded-[25px] overflow-hidden">
+                <img src="/img/habits.jpg" alt={t('Трекер привычек', 'Habit tracker')} className="w-full" loading="lazy" />
+              </div>
+            </div>
+          </div>
+          {/* Copy */}
+          <div className="reveal flex-1 text-center md:text-left" style={{ animationDelay: '120ms' }}>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">
+              {t('Привычки, которые работают', 'Habits That Stick')}
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+              {t(
+                'Тапни — и привычка отмечена. Стрики мотивируют не пропускать. Бот напоминает в нужное время и хвалит за прогресс. Статистика за месяц — видишь, как растёшь.',
+                'Tap — and the habit is marked. Streaks motivate you not to skip. Bot reminds at the right time and praises progress. Monthly stats — see how you grow.',
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2.5 justify-center md:justify-start">
+              {[
+                t('Стрики', 'Streaks'),
+                t('Напоминания', 'Reminders'),
+                t('Статистика', 'Statistics'),
+                t('Lucide-иконки', 'Lucide Icons'),
+              ].map(tag => (
+                <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── Features ── */}
       <section id="features" className="relative py-24 px-5 bg-gray-50/60 dark:bg-white/[0.015] overflow-hidden">
         {/* Animated circles */}
