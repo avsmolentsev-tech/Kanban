@@ -264,8 +264,9 @@ ${context}` }], '', 'gpt-4.1-mini'),
     return { notes, qa };
   }
 
-  async extractDraft(text: string, todayIso?: string, existingProjectNames?: string[]): Promise<ExtractionResult> {
-    const today = todayIso ?? new Date().toISOString().split('T')[0]!;
+  async extractDraft(text: string, todayIsoOrTypeHint?: string, existingProjectNames?: string[]): Promise<ExtractionResult> {
+    const isLecture = todayIsoOrTypeHint === 'lecture';
+    const today = (todayIsoOrTypeHint && !isLecture) ? todayIsoOrTypeHint : new Date().toISOString().split('T')[0]!;
     const projectListBlock = existingProjectNames && existingProjectNames.length > 0
       ? `\n\nСПИСОК ПРОЕКТОВ ПОЛЬЗОВАТЕЛЯ (выбирай из этого списка, НЕ придумывай новые):\n${existingProjectNames.map(n => `- ${n}`).join('\n')}\nЕсли тема совпадает с одним из проектов — используй ТОЧНОЕ название из списка в project_hints. Если ни один не подходит — оставь project_hints пустым.`
       : '';
@@ -300,7 +301,7 @@ ${context}` }], '', 'gpt-4.1-mini'),
 - Если в тексте упоминаются ЛЮДИ по имени + обсуждение/разговор/встреча/созвон/переговоры → ВСЕГДА "meeting", НЕ "idea".
 - "idea" — только если автор описывает абстрактную мысль/концепт БЕЗ привязки к конкретным людям и событию.
 - Если сомневаешься между meeting и idea → выбирай meeting.
-- Если автор говорит "встреча", "встречался", "обсуждали с кем-то" — ВСЕГДА meeting.${projectListBlock}`;
+- Если автор говорит "встреча", "встречался", "обсуждали с кем-то" — ВСЕГДА meeting.${isLecture ? '\n\nЭТО ЛЕКЦИЯ/УЧЕБНЫЙ МАТЕРИАЛ! detected_type = "meeting", но в summary сделай подробный конспект по темам: ## Оглавление, ## Ключевые тезисы, ## Определения, ## Выводы. Задачи = ["Изучить ...", "Применить ..."] — учебные задачи.' : ''}${projectListBlock}`;
     const userPrompt = `Сегодня: ${today}\n\nТекст:\n${text}\n\nВерни JSON.`;
     const resp = await this.openai.chat.completions.create({
       model: 'gpt-4.1-mini',

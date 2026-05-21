@@ -22,11 +22,19 @@ export class TelegramService {
   private pendingEmails = new Map<number, string>(); // tg_id → email entered
   private recentActions = new Map<number, Array<{ type: string; title: string; id: number; table: string; date: string; savedAt: number }>>();
   private proMode = new Set<number>(); // tg_id → next audio uses OpenAI Whisper API
+  private contentType = new Map<number, string>(); // tg_id → 'lecture'|'interview' for next audio
   private lastCreatedPerson = new Map<number, { name: string; id: number; ts: number }>(); // tg_id → last created contact
   private pendingPhotoData = new Map<number, { data: Record<string, string>; ts: number }>(); // tg_id → buffered photo data waiting for name
   private drafts = new DraftSession({
-    timeoutMs: 30 * 60_000,
-    onTimeout: (c) => { this.saveDraftAsIs(c).catch((e) => console.error('[draft] timeout save failed:', e)); },
+    timeoutMs: 60 * 60_000, // 1 hour — no rush
+    onTimeout: (c) => {
+      this.saveDraftAsIs(c)
+        .then(() => {
+          // Notify user that draft was auto-saved
+          this.notifyUser(c.tgId, `✅ ${c.type === 'meeting' ? 'Встреча' : 'Запись'} «${c.title}» автоматически сохранена.\n\nМожешь найти её в приложении и отредактировать в любое время.`);
+        })
+        .catch((e) => console.error('[draft] timeout save failed:', e));
+    },
   });
 
   private getChatHistory(tgId: number): Array<{ role: 'user' | 'assistant'; content: string }> {
@@ -250,10 +258,16 @@ export class TelegramService {
     if (!transcript.trim()) { await ctx.reply('⚠️ Пустой текст, нечего сохранять'); return; }
     const db = getDb();
     const claude = new ClaudeService();
+
+    // Check if lecture mode was set
+    const cType = this.contentType.get(tgId);
+    if (cType) this.contentType.delete(tgId); // one-shot
+
     // Pass existing project names to Claude so it picks from the list
     const existingProjects = db.prepare('SELECT name FROM projects WHERE user_id = ? AND archived = 0').all(userId) as Array<{ name: string }>;
     const projectNames = existingProjects.map(p => p.name);
-    const extraction: ExtractionResult = await claude.extractDraft(transcript, undefined, projectNames);
+    const typeHint = cType === 'lecture' ? 'lecture' : undefined;
+    const extraction: ExtractionResult = await claude.extractDraft(transcript, typeHint, projectNames);
 
     // Safety net: save raw transcript to vault inbox immediately (survives PM2 restart)
     try {
@@ -1278,6 +1292,27 @@ BHAG (Большая Дерзкая Цель на год):
       ctx.reply('🎯 PRO-режим активирован.\n\nОтправьте голосовое или аудиофайл — расшифровка будет через OpenAI Whisper API (высокое качество).\n\nРежим действует для следующей одной записи.');
     });
 
+    // /lecture — next audio transcription formatted as lecture, not meeting
+    this.bot.command('lecture', (ctx) => {
+      const tgId = ctx.from?.id ?? 0;
+      this.contentType.set(tgId, 'lecture');
+      ctx.reply('🎓 Режим лекции активирован.\n\nСледующая запись будет оформлена как учебный материал:\n• Оглавление по темам\n• Тезисы и ключевые идеи\n• Определения и термины\n• Выводы\n\nОтправьте аудио или голосовое.');
+    });
+
+    // /menu — show action menu
+    this.bot.command('menu', (ctx) => {
+      ctx.reply('📋 Выберите действие:', {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🎤 Транскрибация встречи', callback_data: 'menu_meeting' }, { text: '🎓 Лекция', callback_data: 'menu_lecture' }],
+            [{ text: '📋 Задачи на сегодня', callback_data: 'menu_tasks' }, { text: '🌅 Брифинг', callback_data: 'menu_brief' }],
+            [{ text: '🔥 Привычки', callback_data: 'menu_habits' }, { text: '📅 Встречи', callback_data: 'menu_meetings' }],
+            [{ text: '📱 Открыть приложение', url: config.webappUrl }],
+          ],
+        },
+      });
+    });
+
     // Send executeCommand result — text + optional file
     const sendCommandResult = async (ctx: { reply: (text: string) => Promise<unknown>; replyWithDocument: (doc: { source: string; filename: string }, opts?: Record<string, unknown>) => Promise<unknown> }, result: { text: string; files?: Array<{ path: string; filename: string }> }): Promise<void> => {
       await sendLong(ctx, result.text);
@@ -1343,6 +1378,48 @@ BHAG (Большая Дерзкая Цель на год):
     this.bot.on('callback_query', async (ctx) => {
       const data = (ctx.callbackQuery as any).data as string;
       if (!data) { await ctx.answerCbQuery(); return; }
+
+      // Menu button callbacks
+      if (data.startsWith('menu_')) {
+        const tgId = ctx.from!.id;
+        await ctx.answerCbQuery();
+        switch (data) {
+          case 'menu_lecture':
+            this.contentType.set(tgId, 'lecture');
+            await ctx.reply('🎓 Режим лекции активирован. Отправьте аудио или голосовое.');
+            return;
+          case 'menu_meeting':
+            this.contentType.delete(tgId); // default = meeting
+            await ctx.reply('🎤 Отправьте аудио или голосовое для транскрибации встречи.');
+            return;
+          case 'menu_tasks': {
+            const userId = this.resolveUserId(tgId, ctx.from?.first_name);
+            const today = moscowDateString();
+            const tasks = getDb().prepare("SELECT title, priority FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND (due_date = ? OR status = 'in_progress') AND user_id = ? ORDER BY priority DESC LIMIT 10").all(today, userId) as Array<{ title: string; priority: number }>;
+            await ctx.reply(tasks.length > 0 ? `📋 Задачи:\n${tasks.map(t => `  • ${t.title} ${'⭐'.repeat(t.priority)}`).join('\n')}` : '✅ Нет активных задач на сегодня!');
+            return;
+          }
+          case 'menu_brief':
+            // Trigger /brief handler
+            await (ctx as any).reply('/brief загружается...'); // placeholder
+            return;
+          case 'menu_habits': {
+            const userId = this.resolveUserId(tgId, ctx.from?.first_name);
+            const today = moscowDateString();
+            const habits = getDb().prepare("SELECT h.title, h.icon, CASE WHEN hl.id IS NOT NULL THEN 1 ELSE 0 END as done FROM habits h LEFT JOIN habit_logs hl ON hl.habit_id = h.id AND hl.date = ? AND hl.completed = 1 WHERE h.archived = 0 AND h.user_id = ?").all(today, userId) as Array<{ title: string; icon: string; done: number }>;
+            await ctx.reply(habits.length > 0 ? `🔥 Привычки:\n${habits.map(h => `  ${h.done ? '✅' : '⬜'} ${h.icon || '•'} ${h.title}`).join('\n')}` : '🌱 Нет привычек. Создай в приложении!');
+            return;
+          }
+          case 'menu_meetings': {
+            const userId = this.resolveUserId(tgId, ctx.from?.first_name);
+            const today = moscowDateString();
+            const meetings = getDb().prepare("SELECT title, date FROM meetings WHERE date >= ? AND user_id = ? ORDER BY date ASC LIMIT 5").all(today, userId) as Array<{ title: string; date: string }>;
+            await ctx.reply(meetings.length > 0 ? `📅 Встречи:\n${meetings.map(m => `  • ${m.date} — ${m.title}`).join('\n')}` : '📅 Нет предстоящих встреч');
+            return;
+          }
+        }
+      }
+
       const parsed = parseCallbackData(data);
       if (!parsed) { await ctx.answerCbQuery('Неверный формат'); return; }
       const tgId = ctx.from!.id;
