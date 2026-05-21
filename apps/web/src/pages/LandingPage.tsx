@@ -261,32 +261,41 @@ export function LandingPage() {
       {/* ── Mobile / Swipe ── */}
       <section className="relative py-20 px-5 overflow-hidden">
         <div className="pointer-events-none absolute top-[30%] -left-20 w-[350px] h-[350px] rounded-full bg-purple-400/[0.05] dark:bg-purple-500/[0.03] blur-[70px]" style={{ animation: 'orbit3 36s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-12 relative">
-          {/* Phone with real screenshot */}
-          <div className="reveal flex-shrink-0">
-            <div className="w-[200px] rounded-[32px] bg-gradient-to-b from-gray-700 to-gray-900 p-[6px] shadow-2xl shadow-black/20">
-              <div className="rounded-[26px] overflow-hidden">
-                <img src="/img/iphone-widget.jpg" alt="Clarity Space mobile" className="w-full" loading="lazy" />
+        <div className="pointer-events-none absolute bottom-[10%] right-[-5%] w-[300px] h-[300px] rounded-full bg-indigo-400/[0.06] dark:bg-indigo-500/[0.03] blur-[60px]" style={{ animation: 'orbit1 42s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-10 relative">
+          {/* Two phones */}
+          <div className="reveal flex gap-4 flex-shrink-0">
+            {/* Swipe screenshot */}
+            <div className="w-[170px] sm:w-[190px] rounded-[28px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20">
+              <div className="rounded-[23px] overflow-hidden">
+                <img src="/img/swipe-tasks.jpg" alt={t('Свайп задач', 'Swipe tasks')} className="w-full" loading="lazy" />
+              </div>
+            </div>
+            {/* Widget screenshot */}
+            <div className="w-[170px] sm:w-[190px] rounded-[28px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20 hidden sm:block -mt-6">
+              <div className="rounded-[23px] overflow-hidden">
+                <img src="/img/iphone-widget.jpg" alt={t('Виджет iPhone', 'iPhone widget')} className="w-full" loading="lazy" />
               </div>
             </div>
           </div>
           {/* Copy */}
           <div className="reveal flex-1 text-center md:text-left" style={{ animationDelay: '120ms' }}>
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">
-              {t('Свайпай задачи на ходу', 'Swipe Tasks on the Go')}
+              {t('Свайпай задачи как в Tinder', 'Swipe Tasks like Tinder')}
             </h2>
             <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
               {t(
-                'Виджет на рабочем столе iPhone показывает просроченные задачи, ближайшую встречу и привычки. Открывай приложение одним тапом — свайпай задачи влево/вправо как в Tinder. Готово, в работе, отложить.',
-                'iPhone home screen widget shows overdue tasks, next meeting and habits. Open the app with one tap — swipe tasks left/right like Tinder. Done, in progress, defer.',
+                'Вправо — готово. Влево — следующая. Виджет на рабочем столе iPhone показывает задачи, встречи и привычки. Telegram-бот всегда под рукой — голосом или текстом.',
+                'Right — done. Left — next. iPhone home screen widget shows tasks, meetings and habits. Telegram bot always at hand — voice or text.',
               )}
             </p>
-            <div className="flex flex-wrap gap-3 justify-center md:justify-start">
+            <div className="flex flex-wrap gap-2.5 justify-center md:justify-start">
               {[
-                t('iPhone виджет', 'iPhone Widget'),
                 t('Свайп задач', 'Task Swipe'),
+                t('iPhone виджет', 'iPhone Widget'),
                 t('Telegram-бот', 'Telegram Bot'),
                 t('PWA', 'PWA'),
+                t('Голосовые команды', 'Voice Commands'),
               ].map(tag => (
                 <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
                   {tag}
