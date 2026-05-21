@@ -39,29 +39,98 @@ function Card({ icon: Icon, title, desc, delay }: { icon: LucideIcon; title: str
   );
 }
 
-/* ── Widget mockup (iPhone) ── */
-function WidgetMockup({ t }: { t: (ru: string, en: string) => string }) {
-  return (
-    <div className="w-[170px] h-[170px] rounded-[22px] bg-gradient-to-br from-[#1e1b4b] to-[#312e81] p-4 shadow-2xl shadow-indigo-900/40 border border-indigo-400/10 flex flex-col justify-between text-white select-none">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded-md bg-indigo-500 flex items-center justify-center"><span className="text-[7px] font-bold">CS</span></div>
-          <span className="text-[10px] font-semibold opacity-90">Clarity Space</span>
-        </div>
-        <span className="text-[9px] opacity-50">21.05</span>
+/* ── iPhone mockup with widget ── */
+function IPhoneMockup({ t }: { t: (ru: string, en: string) => string }) {
+  const AppIcon = ({ color, label, badge }: { color: string; label: string; badge?: number }) => (
+    <div className="flex flex-col items-center gap-0.5">
+      <div className="relative">
+        <div className={`w-[38px] h-[38px] rounded-[10px] ${color} shadow-sm`} />
+        {badge && <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 flex items-center justify-center"><span className="text-[6px] text-white font-bold">{badge}</span></div>}
       </div>
-      <div className="space-y-1.5 mt-2">
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-amber-400/80 flex items-center justify-center"><span className="text-[6px]">!</span></div>
-          <span className="text-[10px] opacity-80">{t('3 задачи на сегодня', '3 tasks today')}</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <CalendarDays size={12} className="opacity-60" />
-          <span className="text-[10px] opacity-70 truncate">{t('Встреча с командой', 'Team meeting')}</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Flame size={12} className="text-orange-400 opacity-80" />
-          <span className="text-[10px] opacity-70">{t('2/5 привычек', '2/5 habits')}</span>
+      <span className="text-[7px] text-white/70">{label}</span>
+    </div>
+  );
+
+  return (
+    <div className="relative select-none">
+      {/* iPhone frame */}
+      <div className="w-[220px] h-[440px] rounded-[32px] bg-gradient-to-b from-gray-800 to-gray-900 p-[6px] shadow-2xl shadow-black/30">
+        {/* Screen */}
+        <div className="w-full h-full rounded-[26px] bg-gradient-to-br from-amber-700/90 via-amber-800/80 to-amber-900/90 overflow-hidden relative">
+          {/* Status bar */}
+          <div className="flex items-center justify-between px-5 pt-2.5 text-[8px] text-white font-semibold">
+            <span>00:07</span>
+            <div className="w-16 h-4 bg-black rounded-full" />
+            <div className="flex items-center gap-0.5">
+              <span>LTE</span>
+              <div className="w-4 h-2.5 rounded-sm border border-white/60 flex items-center justify-end pr-[1px]"><div className="w-[60%] h-1.5 rounded-[1px] bg-green-400" /></div>
+            </div>
+          </div>
+
+          {/* Home screen content */}
+          <div className="px-3 pt-3">
+            {/* Widget + top icons row */}
+            <div className="flex gap-2 mb-3">
+              {/* Clarity Space Widget */}
+              <div className="w-[100px] h-[100px] rounded-[16px] bg-gradient-to-br from-[#1e1b4b] to-[#312e81] p-2.5 flex flex-col justify-between flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1">
+                    <div className="w-3.5 h-3.5 rounded-[4px] bg-indigo-500 flex items-center justify-center"><span className="text-[5px] font-bold text-white">CS</span></div>
+                    <span className="text-[7px] font-semibold text-white/90">Clarity</span>
+                  </div>
+                  <span className="text-[6px] text-white/40">21.05</span>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-amber-400/80" />
+                    <span className="text-[6px] text-white/70">{t('3 задачи', '3 tasks')}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <CalendarDays size={7} className="text-white/50" />
+                    <span className="text-[6px] text-white/60 truncate">{t('Встреча...', 'Meeting...')}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Flame size={7} className="text-orange-400/70" />
+                    <span className="text-[6px] text-white/60">{t('0/5', '0/5')}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Top right icons */}
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                <AppIcon color="bg-white" label="Calendar" />
+                <AppIcon color="bg-gradient-to-br from-gray-700 to-gray-900" label="Camera" />
+                <AppIcon color="bg-green-500" label="WhatsApp" />
+                <AppIcon color="bg-gradient-to-br from-blue-400 to-blue-600" label="Telegram" badge={3} />
+              </div>
+            </div>
+
+            {/* App grid rows */}
+            <div className="grid grid-cols-4 gap-x-3 gap-y-2.5">
+              <AppIcon color="bg-gradient-to-br from-pink-400 via-yellow-300 to-purple-500" label="Photos" />
+              <AppIcon color="bg-white" label="Clock" />
+              <AppIcon color="bg-blue-500" label="GCal" />
+              <AppIcon color="bg-gradient-to-br from-purple-600 to-indigo-800" label="MAX" />
+              <AppIcon color="bg-blue-600" label="App Store" badge={469} />
+              <AppIcon color="bg-yellow-100" label="Notes" />
+              <AppIcon color="bg-red-500" label="Gmail" badge={53} />
+              <AppIcon color="bg-gradient-to-br from-green-500 to-teal-600" label="Chrome" />
+              <AppIcon color="bg-gray-600" label="Settings" badge={2} />
+              <AppIcon color="bg-yellow-400" label="Yandex Go" />
+              <AppIcon color="bg-gray-900" label="ChatGPT" />
+              <AppIcon color="bg-gradient-to-br from-orange-400 to-amber-600" label="Claude" />
+            </div>
+          </div>
+
+          {/* Dock */}
+          <div className="absolute bottom-2 left-3 right-3">
+            <div className="bg-white/10 backdrop-blur-md rounded-[18px] px-3 py-2 flex justify-around">
+              <div className="w-[34px] h-[34px] rounded-[9px] bg-green-500 shadow-sm" />
+              <div className="w-[34px] h-[34px] rounded-[9px] bg-gradient-to-b from-blue-400 to-blue-600 shadow-sm" />
+              <div className="w-[34px] h-[34px] rounded-[9px] bg-green-400 shadow-sm" />
+              <div className="w-[34px] h-[34px] rounded-[9px] bg-gray-200 shadow-sm" />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -152,9 +221,9 @@ export function LandingPage() {
             </div>
           </div>
 
-          {/* Right: widget mockup */}
-          <div className="reveal flex-shrink-0" style={{ animationDelay: '300ms', animation: 'float 6s ease-in-out infinite, fadeUp .65s ease forwards', animationPlayState: 'paused' }}>
-            <WidgetMockup t={t} />
+          {/* Right: iPhone mockup */}
+          <div className="reveal flex-shrink-0 hidden md:block" style={{ animationDelay: '300ms' }}>
+            <IPhoneMockup t={t} />
           </div>
         </div>
       </section>
