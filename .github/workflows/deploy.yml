@@ -218,6 +218,47 @@ jobs:
             pm2 save
           '"
 
+      # ── Deploy to SPB (Russia) server ──
+      - name: Setup SSH for SPB
+        if: ${{ secrets.SPB_HOST != '' }}
+        run: |
+          echo "${{ secrets.SPB_SSH_KEY }}" > ~/.ssh/id_spb
+          chmod 600 ~/.ssh/id_spb
+          ssh-keyscan -H ${{ secrets.SPB_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Web to SPB
+        if: ${{ secrets.SPB_HOST != '' }}
+        run: |
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_spb" \
+            web-dist/ \
+            ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }}:/var/www/kanban-app/apps/web/dist/
+
+      - name: Deploy API source to SPB
+        if: ${{ secrets.SPB_HOST != '' }}
+        run: |
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_spb" \
+            --exclude='__tests__' \
+            api-src/ \
+            ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }}:/var/www/kanban-app/packages/api/src/
+
+      - name: Deploy shared types to SPB
+        if: ${{ secrets.SPB_HOST != '' }}
+        run: |
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_spb" \
+            --exclude='node_modules' \
+            shared-types/ \
+            ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }}:/var/www/kanban-app/packages/shared/
+
+      - name: Install deps and restart API on SPB
+        if: ${{ secrets.SPB_HOST != '' }}
+        run: |
+          ssh -i ~/.ssh/id_spb ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }} "bash -lc '
+            export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+            cd /var/www/kanban-app && pnpm install --no-frozen-lockfile
+            pnpm --filter @pis/shared build
+            pm2 delete kanban-api 2>/dev/null; cd packages/api && pm2 start \"npx tsx src/index.ts\" --name kanban-api && pm2 save
+          '"
+
       - name: Install Drive backup script + cron + logrotate
         run: |
           scp -i ~/.ssh/id_ed25519 backup-scripts/backup-obsidian-md-to-drive.sh \
