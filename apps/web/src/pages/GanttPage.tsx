@@ -240,12 +240,12 @@ export function GanttPage() {
                 return (
                   <div key={task.id} className="flex" style={{ height: ROW_HEIGHT }}>
                     <div
-                      className="sticky left-0 z-10 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex items-center px-3"
-                      style={{ width: PROJECT_LABEL_WIDTH, minWidth: PROJECT_LABEL_WIDTH }}
+                      className="sticky left-0 z-10 bg-white dark:bg-gray-900 border-r border-b border-gray-200 dark:border-gray-700 flex items-center px-3 overflow-hidden"
+                      style={{ width: PROJECT_LABEL_WIDTH, minWidth: PROJECT_LABEL_WIDTH, height: ROW_HEIGHT }}
                     >
                       <button
                         onClick={() => setSelected(task)}
-                        className="text-xs text-gray-600 dark:text-gray-300 pl-5 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors cursor-pointer text-left line-clamp-2 leading-snug"
+                        className="text-[11px] text-gray-600 dark:text-gray-300 pl-5 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors cursor-pointer text-left line-clamp-2 leading-tight w-full"
                       >
                         {task.title}
                       </button>
