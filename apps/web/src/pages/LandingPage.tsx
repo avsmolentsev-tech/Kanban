@@ -221,9 +221,20 @@ export function LandingPage() {
             </div>
           </div>
 
-          {/* Right: iPhone mockup */}
+          {/* Right: real iPhone screenshot */}
           <div className="reveal flex-shrink-0 hidden md:block" style={{ animationDelay: '300ms' }}>
-            <IPhoneMockup t={t} />
+            <div className="relative">
+              {/* iPhone frame */}
+              <div className="w-[240px] rounded-[36px] bg-gradient-to-b from-gray-700 to-gray-900 p-[7px] shadow-2xl shadow-black/30">
+                <div className="rounded-[29px] overflow-hidden">
+                  <img src="/img/iphone-widget.jpg" alt="Clarity Space iPhone widget" className="w-full" loading="eager" />
+                </div>
+              </div>
+              {/* Caption */}
+              <div className="text-center mt-4">
+                <span className="text-xs text-gray-400 dark:text-gray-500">{t('Виджет на рабочем столе iPhone', 'iPhone home screen widget')}</span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -244,6 +255,45 @@ export function LandingPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed max-w-xs mx-auto">{v.t2}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ── Mobile / Swipe ── */}
+      <section className="relative py-20 px-5 overflow-hidden">
+        <div className="pointer-events-none absolute top-[30%] -left-20 w-[350px] h-[350px] rounded-full bg-purple-400/[0.05] dark:bg-purple-500/[0.03] blur-[70px]" style={{ animation: 'orbit3 36s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-12 relative">
+          {/* Phone with real screenshot */}
+          <div className="reveal flex-shrink-0">
+            <div className="w-[200px] rounded-[32px] bg-gradient-to-b from-gray-700 to-gray-900 p-[6px] shadow-2xl shadow-black/20">
+              <div className="rounded-[26px] overflow-hidden">
+                <img src="/img/iphone-widget.jpg" alt="Clarity Space mobile" className="w-full" loading="lazy" />
+              </div>
+            </div>
+          </div>
+          {/* Copy */}
+          <div className="reveal flex-1 text-center md:text-left" style={{ animationDelay: '120ms' }}>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">
+              {t('Свайпай задачи на ходу', 'Swipe Tasks on the Go')}
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+              {t(
+                'Виджет на рабочем столе iPhone показывает просроченные задачи, ближайшую встречу и привычки. Открывай приложение одним тапом — свайпай задачи влево/вправо как в Tinder. Готово, в работе, отложить.',
+                'iPhone home screen widget shows overdue tasks, next meeting and habits. Open the app with one tap — swipe tasks left/right like Tinder. Done, in progress, defer.',
+              )}
+            </p>
+            <div className="flex flex-wrap gap-3 justify-center md:justify-start">
+              {[
+                t('iPhone виджет', 'iPhone Widget'),
+                t('Свайп задач', 'Task Swipe'),
+                t('Telegram-бот', 'Telegram Bot'),
+                t('PWA', 'PWA'),
+              ].map(tag => (
+                <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
