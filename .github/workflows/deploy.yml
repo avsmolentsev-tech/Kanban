@@ -220,21 +220,21 @@ jobs:
 
       # ── Deploy to SPB (Russia) server ──
       - name: Setup SSH for SPB
-        if: ${{ secrets.SPB_HOST != '' }}
+        if: vars.DEPLOY_SPB == 'true'
         run: |
           echo "${{ secrets.SPB_SSH_KEY }}" > ~/.ssh/id_spb
           chmod 600 ~/.ssh/id_spb
           ssh-keyscan -H ${{ secrets.SPB_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy Web to SPB
-        if: ${{ secrets.SPB_HOST != '' }}
+        if: vars.DEPLOY_SPB == 'true'
         run: |
           rsync -avz --delete -e "ssh -i ~/.ssh/id_spb" \
             web-dist/ \
             ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }}:/var/www/kanban-app/apps/web/dist/
 
       - name: Deploy API source to SPB
-        if: ${{ secrets.SPB_HOST != '' }}
+        if: vars.DEPLOY_SPB == 'true'
         run: |
           rsync -avz --delete -e "ssh -i ~/.ssh/id_spb" \
             --exclude='__tests__' \
@@ -242,7 +242,7 @@ jobs:
             ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }}:/var/www/kanban-app/packages/api/src/
 
       - name: Deploy shared types to SPB
-        if: ${{ secrets.SPB_HOST != '' }}
+        if: vars.DEPLOY_SPB == 'true'
         run: |
           rsync -avz --delete -e "ssh -i ~/.ssh/id_spb" \
             --exclude='node_modules' \
@@ -250,7 +250,7 @@ jobs:
             ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }}:/var/www/kanban-app/packages/shared/
 
       - name: Install deps and restart API on SPB
-        if: ${{ secrets.SPB_HOST != '' }}
+        if: vars.DEPLOY_SPB == 'true'
         run: |
           ssh -i ~/.ssh/id_spb ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }} "bash -lc '
             export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
