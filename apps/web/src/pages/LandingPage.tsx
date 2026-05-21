@@ -345,6 +345,45 @@ export function LandingPage() {
         </div>
       </section>
 
+      {/* ── Goals Mind Map ── */}
+      <section className="relative py-20 px-5 overflow-hidden">
+        <div className="pointer-events-none absolute top-[10%] right-[-5%] w-[400px] h-[400px] rounded-full bg-rose-400/[0.05] dark:bg-rose-500/[0.03] blur-[70px]" style={{ animation: 'orbit3 36s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-10 relative">
+          {/* Phone screenshot */}
+          <div className="reveal flex-shrink-0">
+            <div className="w-[190px] sm:w-[210px] rounded-[30px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20">
+              <div className="rounded-[25px] overflow-hidden">
+                <img src="/img/goals-mindmap.jpg" alt={t('Mind Map целей', 'Goals Mind Map')} className="w-full" loading="lazy" />
+              </div>
+            </div>
+          </div>
+          {/* Copy */}
+          <div className="reveal flex-1 text-center md:text-left" style={{ animationDelay: '120ms' }}>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">
+              {t('Большие цели — на карте', 'Big Goals — on a Map')}
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+              {t(
+                'Поставь BHAG — большую амбициозную цель. AI разложит её на milestones, задачи и встречи. Интерактивная Mind Map показывает путь от идеи к результату. Видишь прогресс в реальном времени.',
+                'Set a BHAG — a big ambitious goal. AI decomposes it into milestones, tasks and meetings. Interactive Mind Map shows the path from idea to result. See progress in real time.',
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2.5 justify-center md:justify-start">
+              {[
+                t('BHAG', 'BHAG'),
+                t('AI-декомпозиция', 'AI Decomposition'),
+                t('Mind Map', 'Mind Map'),
+                t('Прогресс', 'Progress'),
+              ].map(tag => (
+                <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── Habits ── */}
       <section className="relative py-20 px-5 overflow-hidden">
         <div className="pointer-events-none absolute bottom-[15%] -left-16 w-[350px] h-[350px] rounded-full bg-orange-400/[0.05] dark:bg-orange-500/[0.03] blur-[70px]" style={{ animation: 'orbit1 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
