@@ -80,6 +80,10 @@ export function LandingPage() {
         .reveal { opacity:0; transform:translateY(20px); animation:fadeUp .65s ease forwards; animation-play-state:paused; }
         @keyframes fadeUp { to { opacity:1; transform:translateY(0); } }
         @keyframes float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-12px); } }
+        @keyframes orbit1 { 0% { transform:translate(0,0) scale(1); } 25% { transform:translate(80px,40px) scale(1.05); } 50% { transform:translate(-30px,80px) scale(0.95); } 75% { transform:translate(-70px,-20px) scale(1.02); } 100% { transform:translate(0,0) scale(1); } }
+        @keyframes orbit2 { 0% { transform:translate(0,0) scale(1); } 33% { transform:translate(-60px,50px) scale(1.08); } 66% { transform:translate(40px,-40px) scale(0.96); } 100% { transform:translate(0,0) scale(1); } }
+        @keyframes orbit3 { 0% { transform:translate(0,0); } 50% { transform:translate(50px,-60px); } 100% { transform:translate(0,0); } }
+        @keyframes pulse-glow { 0%,100% { opacity:0.4; transform:scale(1); } 50% { opacity:0.7; transform:scale(1.1); } }
       `}</style>
 
       {/* ── Header ── */}
@@ -104,11 +108,15 @@ export function LandingPage() {
 
       {/* ── Hero ── */}
       <section className="relative min-h-[92vh] flex items-center justify-center px-5 overflow-hidden">
-        {/* Gradient mesh */}
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute top-[-20%] right-[-10%] w-[700px] h-[700px] rounded-full bg-indigo-400/[0.12] dark:bg-indigo-500/[0.06] blur-[100px]" />
-          <div className="absolute top-[10%] left-[-15%] w-[500px] h-[500px] rounded-full bg-purple-400/[0.10] dark:bg-purple-500/[0.05] blur-[80px]" />
-          <div className="absolute bottom-[-10%] right-[20%] w-[600px] h-[600px] rounded-full bg-violet-300/[0.08] dark:bg-violet-500/[0.04] blur-[120px]" />
+        {/* Animated circles */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full bg-indigo-400/15 dark:bg-indigo-500/[0.07] blur-[40px]" style={{ animation: 'orbit1 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+          <div className="absolute -top-20 left-[15%] w-[450px] h-[450px] rounded-full bg-purple-400/12 dark:bg-purple-500/[0.06] blur-[60px]" style={{ animation: 'orbit2 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+          <div className="absolute bottom-[-5%] -left-32 w-[550px] h-[550px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.06] blur-[80px]" style={{ animation: 'orbit3 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+          <div className="absolute bottom-[20%] right-[10%] w-[350px] h-[350px] rounded-full bg-pink-400/[0.08] dark:bg-pink-500/[0.04] blur-[70px]" style={{ animation: 'orbit1 38s cubic-bezier(0.45,0,0.55,1) infinite reverse' }} />
+          {/* Glowing accent dot */}
+          <div className="absolute top-[30%] right-[25%] w-3 h-3 rounded-full bg-indigo-500/40 dark:bg-indigo-400/30" style={{ animation: 'pulse-glow 4s ease-in-out infinite' }} />
+          <div className="absolute bottom-[40%] left-[20%] w-2 h-2 rounded-full bg-purple-500/30 dark:bg-purple-400/20" style={{ animation: 'pulse-glow 5s ease-in-out infinite 1s' }} />
         </div>
 
         <div className="relative z-10 max-w-5xl mx-auto flex flex-col lg:flex-row items-center gap-16">
@@ -171,8 +179,11 @@ export function LandingPage() {
       </section>
 
       {/* ── Features ── */}
-      <section id="features" className="py-24 px-5 bg-gray-50/60 dark:bg-white/[0.015]">
-        <div className="max-w-6xl mx-auto">
+      <section id="features" className="relative py-24 px-5 bg-gray-50/60 dark:bg-white/[0.015] overflow-hidden">
+        {/* Animated circles */}
+        <div className="pointer-events-none absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.07] dark:bg-indigo-500/[0.04] blur-[60px]" style={{ animation: 'orbit2 35s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="pointer-events-none absolute bottom-[-10%] -left-40 w-[400px] h-[400px] rounded-full bg-purple-400/[0.06] dark:bg-purple-500/[0.03] blur-[80px]" style={{ animation: 'orbit3 40s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-6xl mx-auto relative">
           <div className="reveal text-center mb-14">
             <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">{t('Возможности', 'Features')}</p>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">{t('Всё для продуктивности', 'All-in-one Productivity')}</h2>
@@ -202,8 +213,9 @@ export function LandingPage() {
       </section>
 
       {/* ── How it works ── */}
-      <section id="how" className="py-24 px-5">
-        <div className="max-w-4xl mx-auto">
+      <section id="how" className="relative py-24 px-5 overflow-hidden">
+        <div className="pointer-events-none absolute top-[20%] right-[-10%] w-[400px] h-[400px] rounded-full bg-violet-400/[0.06] dark:bg-violet-500/[0.03] blur-[70px]" style={{ animation: 'orbit1 32s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-4xl mx-auto relative">
           <div className="reveal text-center mb-14">
             <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">{t('Как это работает', 'How It Works')}</p>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">{t('Записал — и забыл', 'Record — and Forget')}</h2>
