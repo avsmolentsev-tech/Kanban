@@ -423,6 +423,45 @@ export function LandingPage() {
         </div>
       </section>
 
+      {/* ── Stats ── */}
+      <section className="relative py-20 px-5 bg-gray-50/60 dark:bg-white/[0.015] overflow-hidden">
+        <div className="pointer-events-none absolute bottom-[20%] right-[-8%] w-[350px] h-[350px] rounded-full bg-cyan-400/[0.05] dark:bg-cyan-500/[0.03] blur-[70px]" style={{ animation: 'orbit2 40s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-5xl mx-auto flex flex-col-reverse md:flex-row items-center gap-10 relative">
+          {/* Copy */}
+          <div className="reveal flex-1 text-center md:text-left">
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">
+              {t('Аналитика, которая мотивирует', 'Analytics That Motivate')}
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+              {t(
+                'Velocity — сколько задач закрываешь в неделю. Burndown — сколько осталось и когда финиш. Экспорт в CSV для глубокого анализа. Видишь свой темп и корректируешь курс.',
+                'Velocity — how many tasks you close per week. Burndown — how many left and when you finish. CSV export for deep analysis. See your pace and adjust course.',
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2.5 justify-center md:justify-start">
+              {[
+                t('Velocity', 'Velocity'),
+                t('Burndown', 'Burndown'),
+                t('Экспорт CSV', 'CSV Export'),
+                t('Прогноз', 'Forecast'),
+              ].map(tag => (
+                <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+          {/* Phone screenshot */}
+          <div className="reveal flex-shrink-0" style={{ animationDelay: '120ms' }}>
+            <div className="w-[190px] sm:w-[210px] rounded-[30px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20">
+              <div className="rounded-[25px] overflow-hidden">
+                <img src="/img/stats.jpg" alt={t('Статистика продуктивности', 'Productivity statistics')} className="w-full" loading="lazy" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── Features ── */}
       <section id="features" className="relative py-24 px-5 bg-gray-50/60 dark:bg-white/[0.015] overflow-hidden">
         {/* Animated circles */}
