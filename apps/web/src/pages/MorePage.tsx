@@ -6,8 +6,9 @@ import { useAuthStore } from '../store/auth.store';
 import {
   Columns3, BarChart3, CalendarDays, Users, Lightbulb, Flame,
   Target, FileText, LayoutDashboard, BookOpen, MessageCircle,
-  PieChart, GanttChart, FolderKanban, Sun, LogOut, Shield
+  PieChart, GanttChart, FolderKanban, Sun, LogOut, Shield, HelpCircle
 } from 'lucide-react';
+import { resetOnboarding } from '../components/layout/OnboardingWelcome';
 import type { LucideIcon } from 'lucide-react';
 
 interface MenuItem {
@@ -70,6 +71,20 @@ export function MorePage() {
           </motion.div>
         ))}
       </div>
+
+      {/* Onboarding button */}
+      <button
+        onClick={() => { resetOnboarding(); window.location.reload(); }}
+        className="relative z-10 mt-6 w-full p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800/30 flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer text-left"
+      >
+        <div className="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
+          <HelpCircle size={18} className="text-indigo-600 dark:text-indigo-400" />
+        </div>
+        <div>
+          <div className="text-sm font-medium text-indigo-700 dark:text-indigo-300">{t('Обзор возможностей', 'Feature Tour')}</div>
+          <div className="text-xs text-indigo-500/70 dark:text-indigo-400/50">{t('Пройти онбординг заново', 'Replay onboarding')}</div>
+        </div>
+      </button>
 
       {/* User card */}
       <NavLink to="/profile" className="relative z-10 mt-6 p-4 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50 block active:scale-[0.98] transition-all">
