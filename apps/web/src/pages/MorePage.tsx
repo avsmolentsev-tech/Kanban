@@ -74,7 +74,7 @@ export function MorePage() {
 
       {/* Onboarding button */}
       <button
-        onClick={() => { resetOnboarding(); window.location.reload(); }}
+        onClick={() => resetOnboarding()}
         className="relative z-10 mt-6 w-full p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800/30 flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer text-left"
       >
         <div className="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">

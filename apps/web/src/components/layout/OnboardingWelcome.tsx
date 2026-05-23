@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLangStore } from '../../store/lang.store';
 import {
@@ -9,6 +9,9 @@ import {
 import type { LucideIcon } from 'lucide-react';
 
 const STORAGE_KEY = 'clarity-onboarding-seen';
+
+// Global event to trigger onboarding from anywhere
+const ONBOARDING_EVENT = 'show-onboarding';
 
 interface Step {
   icon: LucideIcon;
@@ -25,6 +28,16 @@ export function OnboardingWelcome() {
   const navigate = useNavigate();
   const [visible, setVisible] = useState(() => !localStorage.getItem(STORAGE_KEY));
   const [step, setStep] = useState(0);
+
+  const show = useCallback(() => {
+    setStep(0);
+    setVisible(true);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener(ONBOARDING_EVENT, show);
+    return () => window.removeEventListener(ONBOARDING_EVENT, show);
+  }, [show]);
 
   if (!visible) return null;
 
@@ -226,7 +239,8 @@ export function OnboardingWelcome() {
   );
 }
 
-/** Trigger onboarding from settings/menu */
+/** Trigger onboarding from settings/menu — no reload needed */
 export function resetOnboarding(): void {
   localStorage.removeItem(STORAGE_KEY);
+  window.dispatchEvent(new Event(ONBOARDING_EVENT));
 }
