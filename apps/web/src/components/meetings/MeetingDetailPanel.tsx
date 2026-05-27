@@ -57,12 +57,36 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
       apiGet<{ people: Array<{ id: number; name: string }> }>(`/meetings/${meeting.id}`).then((data) => {
         setMeetingPersonIds((data.people || []).map((p: { id: number }) => p.id));
       }).catch(() => setMeetingPersonIds([]));
-      // Load tasks from pro summaries
+      // Load tasks from summary_structured (supports both pro summaries and inbox formats)
       apiGet<{ summary_structured: string }>(`/meetings/${meeting.id}`).then((data) => {
         try {
           const s = JSON.parse((data as any).summary_structured || '{}');
-          const notes = s.notes || '';
-          const tasks = notes.split('\n').filter((l: string) => l.trim().startsWith('- [ ]')).map((l: string) => l.replace(/^-\s*\[\s*\]\s*/, '').trim()).filter(Boolean);
+          const extractCheckboxes = (text: string) =>
+            text.split('\n').filter((l: string) => l.trim().startsWith('- [ ]')).map((l: string) => l.replace(/^-\s*\[\s*\]\s*/, '').trim()).filter(Boolean);
+
+          let tasks: string[] = [];
+          const seen = new Set<string>();
+          const addUnique = (items: string[]) => {
+            for (const t of items) {
+              const key = t.toLowerCase().replace(/\s+/g, ' ');
+              if (!seen.has(key)) { seen.add(key); tasks.push(t); }
+            }
+          };
+
+          // 1. Deduplicated actions (pro summaries — best source)
+          if (s.actions) addUnique(extractCheckboxes(s.actions));
+          // 2. Checkboxes from notes and Q&A markdown
+          if (s.notes) addUnique(extractCheckboxes(s.notes));
+          if (s.qa) addUnique(extractCheckboxes(s.qa));
+          // 3. Checkboxes from summary markdown (inbox/ingest format)
+          if (s.summary) addUnique(extractCheckboxes(s.summary));
+          // 4. Direct tasks array (inbox/ingest format — string[])
+          if (Array.isArray(s.tasks)) addUnique(s.tasks.filter((t: unknown) => typeof t === 'string' && t.trim()));
+          // 5. Agreements as tasks (inbox/ingest format — string[])
+          if (Array.isArray(s.agreements)) {
+            addUnique(s.agreements.filter((a: unknown) => typeof a === 'string' && a.trim()));
+          }
+
           setExtractedTasks(tasks);
         } catch { setExtractedTasks([]); }
       }).catch(() => setExtractedTasks([]));

@@ -134,7 +134,7 @@ export class TelegramService {
       // Async: generate pro summaries (Notes, Q&A)
       if (draft.transcript && draft.transcript.length > 200) {
         const claude = new ClaudeService();
-        claude.generateProSummaries(draft.transcript, draft.title, draft.people).then((summaries) => {
+        claude.generateProSummaries(draft.transcript, draft.title, draft.people).then(async (summaries) => {
           // Read-merge-write to avoid overwriting user edits
           const existing = db.prepare('SELECT summary_structured FROM meetings WHERE id = ?').get(meetingId) as { summary_structured: string | null } | undefined;
           let merged: Record<string, unknown> = {};
@@ -146,6 +146,28 @@ export class TelegramService {
             meetingId
           );
           console.log(`[draft] pro summaries generated for meeting #${meetingId}`);
+          // Re-sync to Obsidian with full structured data (notes, Q&A, actions)
+          try {
+            const fresh = db.prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId) as Record<string, unknown> | undefined;
+            if (fresh && (fresh['sync_vault'] as number | null | undefined) !== 0) {
+              const projectName = fresh['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(fresh['project_id'] as number) as { name: string } | undefined)?.name : undefined;
+              const peopleNames = (db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map(x => x.name);
+              const vp = await obsidian.writeMeeting({
+                title: fresh['title'] as string,
+                date: fresh['date'] as string,
+                ...(projectName ? { project: projectName } : {}),
+                summary: (fresh['summary_raw'] as string) ?? '',
+                structured: { notes: summaries.notes, qa: summaries.qa, ...(summaries.actions ? { actions: summaries.actions } : {}) },
+                people: peopleNames,
+              });
+              if (vp && vp !== fresh['vault_path']) {
+                db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vp, meetingId);
+              }
+              console.log(`[draft] vault re-synced for meeting #${meetingId}`);
+            }
+          } catch (vaultErr) {
+            console.warn(`[draft] vault re-sync failed for meeting #${meetingId}:`, vaultErr instanceof Error ? vaultErr.message : vaultErr);
+          }
         }).catch((err) => {
           console.warn(`[draft] pro summaries failed for meeting #${meetingId}:`, err instanceof Error ? err.message : err);
         });
@@ -845,7 +867,7 @@ BHAG (Большая Дерзкая Цель на год):
         ctx.reply(
           '👋 Добро пожаловать в Clarity Space!\n\n' +
           'Для начала привяжите свой аккаунт:\n\n' +
-          '1️⃣ Зарегистрируйтесь на сайте: https://kanban.myaipro.ru\n' +
+          '1️⃣ Зарегистрируйтесь на сайте: https://clarity-space.ru\n' +
           '2️⃣ Нажмите /login и введите email и пароль\n\n' +
           'После привязки бот будет работать с вашими задачами, встречами и проектами.',
           Markup.inlineKeyboard([

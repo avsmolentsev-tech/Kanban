@@ -6,7 +6,7 @@ import { User, Lock, MessageCircle, Save, CheckCircle, Smartphone, Copy, Check, 
 
 function getWidgetScript(key: string) {
   return `const API_KEY = '${key}';
-const API = 'https://kanban.myaipro.ru/v1/widget/today?key=' + API_KEY;
+const API = 'https://clarity-space.ru/v1/widget/today?key=' + API_KEY;
 
 const req = new Request(API);
 const data = await req.loadJSON();
@@ -200,7 +200,7 @@ function WidgetKeySection() {
                 <p>{t('Добавь виджет на домашний экран (зажми экран \u2192 "Виджеты" \u2192 Web Widget)', 'Add widget to home screen (long press \u2192 "Widgets" \u2192 Web Widget)')}</p>
               </div>
               {apiKey && (
-                <button onClick={() => copy('https://kanban.myaipro.ru/v1/widget/render?key=' + apiKey, 'android')}
+                <button onClick={() => copy('https://clarity-space.ru/v1/widget/render?key=' + apiKey, 'android')}
                   className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-medium bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors">
                   {copied === 'android' ? <><Check size={12} /> {t('Скопировано!', 'Copied!')}</> : <><Copy size={12} /> {t('Скопировать ссылку для Android', 'Copy Android widget URL')}</>}
                 </button>
