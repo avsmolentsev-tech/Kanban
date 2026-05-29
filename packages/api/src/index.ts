@@ -23,7 +23,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors({
-  origin: ['https://kanban.myaipro.ru', 'https://clarity-space.ru', 'http://localhost:5173', 'http://localhost:3000'],
+  origin: ['https://clarity-space.ru', 'http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
 }));
 app.use(express.json({ limit: `${config.maxFileSizeMb}mb` }));

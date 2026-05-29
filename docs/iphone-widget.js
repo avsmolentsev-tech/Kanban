@@ -1,10 +1,10 @@
 // Clarity Space Widget for Scriptable (iPhone)
-// 1. Get your API key at kanban.myaipro.ru → Profile → iPhone Widget
+// 1. Get your API key at clarity-space.ru → Profile → iPhone Widget
 // 2. Paste it below
 // 3. Run this script, then add Scriptable widget to home screen
 
 let API_KEY = 'PASTE_YOUR_KEY_HERE'
-let API = 'https://kanban.myaipro.ru/v1/widget/today?key=' + API_KEY
+let API = 'https://clarity-space.ru/v1/widget/today?key=' + API_KEY
 
 let req = new Request(API)
 let data = await req.loadJSON()

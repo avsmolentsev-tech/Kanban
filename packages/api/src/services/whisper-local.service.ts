@@ -29,7 +29,7 @@ export async function compressForTranscription(buffer: Buffer, filename: string)
       '-vn',                    // drop video stream if any
       '-ac', '1',               // mono
       '-ar', '16000',           // 16 kHz (speech)
-      '-b:a', '32k',            // 32 kbps (enough for voice)
+      '-q:a', '8',              // VBR ~30-40 kbps (enough for voice, avoids CBR crash)
       '-f', 'mp3',
       outputPath,
       '-y',
@@ -58,7 +58,7 @@ export async function compressForOpenAI(buffer: Buffer, filename: string): Promi
       '-vn',
       '-ac', '1',
       '-ar', '16000',
-      '-b:a', '128k',
+      '-q:a', '2',              // VBR ~120-150 kbps (avoids CBR crash)
       '-f', 'mp3',
       outputPath,
       '-y',

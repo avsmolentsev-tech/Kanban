@@ -97,7 +97,7 @@ async function boostAudio(buffer: Buffer, filename: string): Promise<Buffer> {
     execFile('ffmpeg', [
       '-y', '-i', tmpIn,
       '-af', 'volume=12dB,highpass=f=100,lowpass=f=8000',
-      '-ar', '16000', '-ac', '1', '-b:a', '64k',
+      '-ar', '16000', '-ac', '1', '-q:a', '6',
       tmpOut,
     ], { timeout: 120000 }, (err: Error | null, _stdout: string, stderr: string) => {
       try { fs.unlinkSync(tmpIn); } catch {}

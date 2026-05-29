@@ -145,7 +145,7 @@ jobs:
         run: |
           rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
             web-dist/ \
-            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban.myaipro.ru/public_html/
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/clarity-space.ru/public_html/
 
       - name: Deploy API source
         run: |

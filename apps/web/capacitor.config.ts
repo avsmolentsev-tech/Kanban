@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     // Use the live server URL — app loads from your server
-    url: 'https://kanban.myaipro.ru',
+    url: 'https://clarity-space.ru',
     cleartext: false,
   },
   ios: {
@@ -24,7 +24,7 @@ const config: CapacitorConfig = {
     },
     App: {
       // Deep links
-      url: 'https://kanban.myaipro.ru',
+      url: 'https://clarity-space.ru',
     },
   },
 };
