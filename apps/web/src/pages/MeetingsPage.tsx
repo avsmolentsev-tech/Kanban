@@ -24,7 +24,9 @@ const MOBILE_MEETING_TABS: Array<{ key: AllMeetingPeriod; short_ru: string; shor
 
 function classifyMeeting(date: string | null): TimePeriod | 'none' {
   if (!date) return 'none';
-  const d = new Date(date);
+  // Parse date as local midnight (not UTC) to match local "today"
+  const [y, m, dd] = date.split('-').map(Number);
+  const d = new Date(y, m - 1, dd);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
