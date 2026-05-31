@@ -96,10 +96,11 @@ async function boostAudio(buffer: Buffer, filename: string): Promise<Buffer> {
   return new Promise<Buffer>((resolve) => {
     execFile('ffmpeg', [
       '-y', '-i', tmpIn,
+      '-vn',
       '-af', 'volume=12dB,highpass=f=100,lowpass=f=8000',
       '-ar', '16000', '-ac', '1', '-q:a', '6',
       tmpOut,
-    ], { timeout: 120000 }, (err: Error | null, _stdout: string, stderr: string) => {
+    ], { timeout: 300000 }, (err: Error | null, _stdout: string, stderr: string) => {
       try { fs.unlinkSync(tmpIn); } catch {}
       if (err || !fs.existsSync(tmpOut)) {
         console.warn('[whisper-queue] audio boost failed, using original.', err?.message || '', stderr?.slice(0, 200) || '');

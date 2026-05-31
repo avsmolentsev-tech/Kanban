@@ -113,7 +113,7 @@ export async function transcribeLocal(buffer: Buffer, filename: string): Promise
 
   try {
     // 1. Convert to WAV 16kHz mono (any format → wav via ffmpeg)
-    await runCommand('ffmpeg', ['-i', inputPath, '-ar', '16000', '-ac', '1', '-f', 'wav', wavPath, '-y'], 120000);
+    await runCommand('ffmpeg', ['-i', inputPath, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', wavPath, '-y'], 300000);
 
     // 2. Run whisper.cpp (up to 45 min for large files)
     await runCommand(WHISPER_CLI, [

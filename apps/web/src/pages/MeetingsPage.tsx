@@ -443,7 +443,7 @@ export function MeetingsPage() {
                   onChange={(e) => setNewFile(e.target.files?.[0] ?? null)} />
                 {newFile ? (
                   <div className="text-sm">
-                    <div className="text-gray-700 dark:text-gray-200 font-medium">🎧 {newFile.name}</div>
+                    <div className="text-gray-700 dark:text-gray-200 font-medium">{newFile.type?.startsWith('video/') ? '🎬' : '🎧'} {newFile.name}</div>
                     <div className="text-xs text-gray-400 dark:text-gray-500">{(newFile.size / 1024 / 1024).toFixed(1)} МБ — {t('нажмите ещё раз чтобы заменить', 'click again to replace')}</div>
                   </div>
                 ) : (
@@ -534,8 +534,8 @@ export function MeetingsPage() {
         </div>
       )}
 
-      {/* Hidden file input for audio upload */}
-      <input ref={fileRef} type="file" accept="audio/*,.ogg,.mp3,.wav,.m4a,.webm" className="hidden"
+      {/* Hidden file input for audio/video upload */}
+      <input ref={fileRef} type="file" accept="audio/*,video/*,.ogg,.oga,.mp3,.mp4,.m4a,.wav,.webm,.flac,.mov,.avi,.mkv" className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file && selected) handleTranscribe(selected.id, file);

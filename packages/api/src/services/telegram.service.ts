@@ -1738,6 +1738,8 @@ BHAG (Большая Дерзкая Цель на год):
         const filename = doc.file_name ?? 'file';
         const mime = doc.mime_type ?? '';
         const isAudio = mime.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|webm|flac|aac|wma)$/i.test(filename);
+        const isVideo = mime.startsWith('video/') || /\.(mp4|mov|avi|mkv|wmv|m4v)$/i.test(filename);
+        const isTranscribable = isAudio || isVideo;
 
         const fileSizeMb = (doc.file_size ?? 0) / (1024 * 1024);
         // Local Bot API server removes 20MB limit; only block if no local API
@@ -1751,8 +1753,8 @@ BHAG (Большая Дерзкая Цель на год):
 
         const buffer = await this.downloadTelegramFile(ctx, doc.file_id);
 
-        if (isAudio) {
-          // Transcribe audio file
+        if (isTranscribable) {
+          // Transcribe audio/video file
           const tgId = ctx.from?.id ?? 0;
           const isPro = this.proMode.has(tgId);
           if (isPro) {
@@ -1766,7 +1768,7 @@ BHAG (Большая Дерзкая Цель на год):
             } else if (qStatus.active >= 2) {
               ctx.reply('🎤 Транскрибирую (очередь занята, может занять дольше)...');
             } else {
-              ctx.reply('🎤 Транскрибирую аудиофайл...');
+              ctx.reply(isVideo ? '🎬 Транскрибирую видео...' : '🎤 Транскрибирую аудиофайл...');
             }
           }
           const transcript = isPro
@@ -1844,6 +1846,90 @@ BHAG (Большая Дерзкая Цель на год):
         }
 
         await this.buildAndSendDraft(ctx, userId!, ctx.from!.id, 'audio', transcript, null);
+      } catch (err) {
+        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
+      }
+    });
+
+    // Video message → extract audio and transcribe
+    this.bot.on(message('video'), async (ctx) => {
+      try {
+        const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+        const video = ctx.message.video;
+        const fileSizeMb = (video.file_size ?? 0) / (1024 * 1024);
+        if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
+          await ctx.reply(`⚠️ Видео слишком большое (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
+          return;
+        }
+        const tgId = ctx.from?.id ?? 0;
+        const isPro = this.proMode.has(tgId);
+        if (isPro) {
+          this.proMode.delete(tgId);
+          ctx.reply('🎯 PRO: Транскрибирую видео через OpenAI Whisper...');
+        } else {
+          const { getQueueStatus } = require('./whisper-queue');
+          const qStatus = getQueueStatus();
+          if (fileSizeMb > 20) {
+            ctx.reply(`⬇️ Большое видео (${Math.round(fileSizeMb)} МБ), скачиваю и транскрибирую...`);
+          } else if (qStatus.active >= 2 && qStatus.queued > 0) {
+            ctx.reply(`🎬 В очереди (позиция ${qStatus.queued + 1}). Транскрибирую когда освободится...`);
+          } else {
+            ctx.reply('🎬 Транскрибирую видео...');
+          }
+        }
+        const buffer = await this.downloadTelegramFile(ctx, video.file_id);
+        const filename = (video as unknown as Record<string, unknown>).file_name as string ?? 'video.mp4';
+
+        const transcript = isPro
+          ? await this.transcribeProAudio(buffer, filename)
+          : await this.transcribeAudio(buffer, filename);
+        if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь в видео'); return; }
+
+        const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
+        ctx.reply(`📝 Транскрипция видео (${transcript.length} символов):\n${preview}`);
+
+        const activeDraft = this.drafts.get(ctx.from!.id);
+        if (activeDraft) {
+          await this.applyCorrection(ctx, activeDraft, transcript);
+          return;
+        }
+
+        await this.buildAndSendDraft(ctx, userId!, ctx.from!.id, 'video', transcript, null);
+      } catch (err) {
+        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
+      }
+    });
+
+    // Video note (round video) → extract audio and transcribe
+    this.bot.on(message('video_note'), async (ctx) => {
+      try {
+        const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+        const videoNote = ctx.message.video_note;
+        const tgId = ctx.from?.id ?? 0;
+        const isPro = this.proMode.has(tgId);
+        if (isPro) {
+          this.proMode.delete(tgId);
+          ctx.reply('🎯 PRO: Транскрибирую кружок через OpenAI Whisper...');
+        } else {
+          ctx.reply('🎬 Транскрибирую видео-кружок...');
+        }
+        const buffer = await this.downloadTelegramFile(ctx, videoNote.file_id);
+
+        const transcript = isPro
+          ? await this.transcribeProAudio(buffer, 'video_note.mp4')
+          : await this.transcribeAudio(buffer, 'video_note.mp4');
+        if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
+
+        const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
+        ctx.reply(`📝 Транскрипция (${transcript.length} символов):\n${preview}`);
+
+        const activeDraft = this.drafts.get(ctx.from!.id);
+        if (activeDraft) {
+          await this.applyCorrection(ctx, activeDraft, transcript);
+          return;
+        }
+
+        await this.buildAndSendDraft(ctx, userId!, ctx.from!.id, 'video', transcript, null);
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
