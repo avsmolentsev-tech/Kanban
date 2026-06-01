@@ -91,10 +91,10 @@ export class ClaudeService {
     try {
       const usage = response.usage;
       if (usage) {
-        const { getDb } = require('../db/db');
-        const db = getDb();
-        db.prepare("INSERT INTO usage_logs (type, model, tokens_in, tokens_out, detail) VALUES (?, ?, ?, ?, ?)").run(
-          'ai_chat', selectedModel, usage.prompt_tokens || 0, usage.completion_tokens || 0, ''
+        const { execute } = require('../db/db');
+        await execute(
+          "INSERT INTO usage_logs (type, model, tokens_in, tokens_out, detail) VALUES ($1, $2, $3, $4, $5)",
+          ['ai_chat', selectedModel, usage.prompt_tokens || 0, usage.completion_tokens || 0, '']
         );
       }
     } catch {}

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import multer from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getDb } from '../db/db';
+import { query, queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
 import { ObsidianService } from '../services/obsidian.service';
@@ -41,14 +41,15 @@ const UpdateSchema = z.object({
   summary_raw: z.string().optional(),
 });
 
-function attachProjects(meetings: Record<string, unknown>[]): Record<string, unknown>[] {
+async function attachProjects(meetings: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
   if (meetings.length === 0) return meetings;
   const ids = meetings.map(m => m['id']);
-  const rows = getDb().prepare(`
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+  const rows = await queryAll<{ meeting_id: number; id: number; name: string; color: string }>(`
     SELECT mp.meeting_id, p.id, p.name, p.color
     FROM meeting_projects mp JOIN projects p ON p.id = mp.project_id
-    WHERE mp.meeting_id IN (${ids.map(() => '?').join(',')})
-  `).all(...ids) as Array<{ meeting_id: number; id: number; name: string; color: string }>;
+    WHERE mp.meeting_id IN (${placeholders})
+  `, ids);
   const byMeeting = new Map<number, Array<{ id: number; name: string; color: string }>>();
   for (const r of rows) {
     if (!byMeeting.has(r.meeting_id)) byMeeting.set(r.meeting_id, []);
@@ -60,33 +61,34 @@ function attachProjects(meetings: Record<string, unknown>[]): Record<string, unk
   });
 }
 
-function setMeetingProjects(meetingId: number, projectIds: number[]): void {
-  const db = getDb();
-  db.prepare('DELETE FROM meeting_projects WHERE meeting_id = ?').run(meetingId);
-  const stmt = db.prepare('INSERT OR IGNORE INTO meeting_projects (meeting_id, project_id) VALUES (?, ?)');
-  for (const pid of projectIds) stmt.run(meetingId, pid);
+async function setMeetingProjects(meetingId: number, projectIds: number[]): Promise<void> {
+  await execute('DELETE FROM meeting_projects WHERE meeting_id = $1', [meetingId]);
+  for (const pid of projectIds) {
+    await execute('INSERT INTO meeting_projects (meeting_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [meetingId, pid]);
+  }
   // Keep legacy project_id in sync with first
-  db.prepare('UPDATE meetings SET project_id = ? WHERE id = ?').run(projectIds[0] ?? null, meetingId);
+  await execute('UPDATE meetings SET project_id = $1 WHERE id = $2', [projectIds[0] ?? null, meetingId]);
 }
 
-meetingsRouter.get('/', (req: AuthRequest, res: Response) => {
+meetingsRouter.get('/', async (req: AuthRequest, res: Response) => {
   const scope = userScopeWhere(req);
-  let query = 'SELECT DISTINCT m.* FROM meetings m';
+  let sql = 'SELECT DISTINCT m.* FROM meetings m';
   const params: unknown[] = [];
   if (req.query['project']) {
-    query += ' LEFT JOIN meeting_projects mp ON mp.meeting_id = m.id WHERE (m.project_id = ? OR mp.project_id = ?)';
     params.push(Number(req.query['project']), Number(req.query['project']));
-    query += ` AND ${scope.sql}`;
+    const scopeOffset = params.length;
+    const scopeSql = scope.sql.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + scopeOffset}`);
+    sql += ` LEFT JOIN meeting_projects mp ON mp.meeting_id = m.id WHERE (m.project_id = $1 OR mp.project_id = $2) AND ${scopeSql}`;
     params.push(...scope.params);
   } else {
-    query += ` WHERE ${scope.sql}`;
+    sql += ` WHERE ${scope.sql}`;
     params.push(...scope.params);
   }
-  if (req.query['from']) { query += ' AND m.date >= ?'; params.push(req.query['from']); }
-  if (req.query['to']) { query += ' AND m.date <= ?'; params.push(req.query['to']); }
-  query += ' ORDER BY m.date DESC';
-  const meetings = getDb().prepare(query).all(...params) as Record<string, unknown>[];
-  res.json(ok(attachProjects(meetings)));
+  if (req.query['from']) { sql += ` AND m.date >= $${params.length + 1}`; params.push(req.query['from']); }
+  if (req.query['to']) { sql += ` AND m.date <= $${params.length + 1}`; params.push(req.query['to']); }
+  sql += ' ORDER BY m.date DESC';
+  const meetings = await queryAll<Record<string, unknown>>(sql, params);
+  res.json(ok(await attachProjects(meetings)));
 });
 
 meetingsRouter.post('/', async (req: AuthRequest, res: Response) => {
@@ -96,27 +98,30 @@ meetingsRouter.post('/', async (req: AuthRequest, res: Response) => {
   const effectiveIds = project_ids && project_ids.length > 0 ? project_ids : project_id != null ? [project_id] : [];
   const shouldSync = sync_vault !== false;
   const userId = getUserId(req);
-  const result = getDb().prepare('INSERT INTO meetings (title, date, project_id, summary_raw, user_id, sync_vault) VALUES (?, ?, ?, ?, ?, ?)').run(title, date, effectiveIds[0] ?? null, summary_raw, userId, shouldSync ? 1 : 0);
-  const meetingId = Number(result.lastInsertRowid);
-  if (effectiveIds.length > 0) setMeetingProjects(meetingId, effectiveIds);
+  const inserted = await queryOne<{ id: number }>(
+    'INSERT INTO meetings (title, date, project_id, summary_raw, user_id, sync_vault) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+    [title, date, effectiveIds[0] ?? null, summary_raw, userId, shouldSync ? 1 : 0]
+  );
+  const meetingId = inserted!.id;
+  if (effectiveIds.length > 0) await setMeetingProjects(meetingId, effectiveIds);
   searchService.indexRecord('meeting', meetingId, title, summary_raw);
   // Sync to vault (only if enabled)
   if (shouldSync) {
     try {
-      const projectName = effectiveIds[0] ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(effectiveIds[0]) as { name: string } | undefined)?.name : undefined;
-      const peopleNames = (getDb().prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map(x => x.name);
+      const projectName = effectiveIds[0] ? (await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [effectiveIds[0]]))?.name : undefined;
+      const peopleNames = (await queryAll<{ name: string }>('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [meetingId])).map(x => x.name);
       const vaultPath = await obsidian.forUser(getUserId(req)).writeMeeting({ title, date, project: projectName, summary: summary_raw, people: peopleNames });
-      getDb().prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultPath, meetingId);
+      await execute('UPDATE meetings SET vault_path = $1 WHERE id = $2', [vaultPath, meetingId]);
     } catch {}
   }
-  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId) as Record<string, unknown>;
-  res.status(201).json(ok(attachProjects([meeting])[0]));
+  const meeting = await queryOne<Record<string, unknown>>('SELECT * FROM meetings WHERE id = $1', [meetingId]);
+  res.status(201).json(ok((await attachProjects([meeting!]))[0]));
 });
 
-meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
+meetingsRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND user_id = ?').get(id, userId);
+  const existing = await queryOne('SELECT * FROM meetings WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!existing) { res.status(404).json(fail('Meeting not found')); return; }
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
@@ -124,24 +129,25 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
 
   // Handle project_ids separately (junction table)
   if (project_ids !== undefined) {
-    setMeetingProjects(id, project_ids);
+    await setMeetingProjects(id, project_ids);
   }
 
   // Handle person_ids separately (junction table)
   if (person_ids !== undefined) {
-    getDb().prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(id);
-    const insertMP = getDb().prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)');
-    for (const pid of person_ids) insertMP.run(id, pid);
+    await execute('DELETE FROM meeting_people WHERE meeting_id = $1', [id]);
+    for (const pid of person_ids) {
+      await execute('INSERT INTO meeting_people (meeting_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [id, pid]);
+    }
   }
 
   const keys = Object.keys(rest).filter(k => (rest as Record<string, unknown>)[k] !== undefined);
   if (keys.length > 0) {
-    const setClauses = keys.map((k) => `${k} = ?`).join(', ');
+    const setClauses = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
     const values = keys.map((k) => (rest as Record<string, unknown>)[k] ?? null);
-    getDb().prepare(`UPDATE meetings SET ${setClauses} WHERE id = ?`).run(...values, id);
+    await execute(`UPDATE meetings SET ${setClauses} WHERE id = $${values.length + 1}`, [...values, id]);
   }
 
-  const updated = getDb().prepare('SELECT * FROM meetings WHERE id = ?').get(id) as Record<string, unknown>;
+  const updated = await queryOne<Record<string, unknown>>('SELECT * FROM meetings WHERE id = $1', [id]);
   if (updated) searchService.indexRecord('meeting', updated['id'] as number, updated['title'] as string, (updated['summary_raw'] as string) ?? '');
 
   // Sync to Obsidian vault (async, non-blocking)
@@ -150,14 +156,15 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
       try {
         const projectId = updated['project_id'] as number | null;
         const projectName = projectId != null
-          ? (getDb().prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as { name: string } | undefined)?.name
+          ? (await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [projectId]))?.name
           : undefined;
-        const peopleNames = (getDb().prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(id) as Array<{ name: string }>).map(x => x.name);
+        const peopleNames = (await queryAll<{ name: string }>('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [id])).map(x => x.name);
         const company = (updated['company'] as string | null) ?? undefined;
         const tagsRaw = updated['tags'] as string | null;
         const tags = tagsRaw ? JSON.parse(tagsRaw) as string[] : undefined;
         const source = (updated['source'] as string | null) ?? undefined;
-        const agreementsCount = (getDb().prepare('SELECT COUNT(*) as c FROM agreements WHERE meeting_id = ?').get(id) as { c: number }).c;
+        const agreementsRow = await queryOne<{ c: number }>('SELECT COUNT(*) as c FROM agreements WHERE meeting_id = $1', [id]);
+        const agreementsCount = agreementsRow?.c ?? 0;
         let structured: { notes?: string; qa?: string; actions?: string } | undefined;
         try {
           const s = JSON.parse((updated['summary_structured'] as string) || '{}');
@@ -177,7 +184,7 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
         });
         const currentPath = updated['vault_path'] as string | null;
         if (vaultPath && vaultPath !== currentPath) {
-          getDb().prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultPath, id);
+          await execute('UPDATE meetings SET vault_path = $1 WHERE id = $2', [vaultPath, id]);
         }
       } catch (err) {
         console.error('[meetings.patch] vault sync failed:', err instanceof Error ? err.message : err);
@@ -188,31 +195,31 @@ meetingsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
     const vaultPath = updated['vault_path'] as string | null;
     if (vaultPath) {
       try { obsidian.forUser(userId).deleteFile(vaultPath); } catch {}
-      getDb().prepare('UPDATE meetings SET vault_path = NULL WHERE id = ?').run(id);
+      await execute('UPDATE meetings SET vault_path = NULL WHERE id = $1', [id]);
     }
   }
 
-  res.json(ok(attachProjects([updated])[0]));
+  res.json(ok((await attachProjects([updated!]))[0]));
 });
 
-meetingsRouter.get('/:id', (req: AuthRequest, res: Response) => {
+meetingsRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
-  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
+  const meeting = await queryOne('SELECT * FROM meetings WHERE id = $1 AND user_id = $2', [Number(req.params['id']), userId]);
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
-  const agreements = getDb().prepare('SELECT * FROM agreements WHERE meeting_id = ?').all(Number(req.params['id']));
-  const people = getDb().prepare('SELECT p.* FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(Number(req.params['id']));
+  const agreements = await queryAll('SELECT * FROM agreements WHERE meeting_id = $1', [Number(req.params['id'])]);
+  const people = await queryAll('SELECT p.* FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [Number(req.params['id'])]);
   res.json(ok({ ...meeting as object, agreements, people }));
 });
 
-meetingsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
+meetingsRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const meeting = getDb().prepare('SELECT vault_path FROM meetings WHERE id = ? AND user_id = ?').get(id, userId) as { vault_path: string | null } | undefined;
+  const meeting = await queryOne<{ vault_path: string | null }>('SELECT vault_path FROM meetings WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
-  getDb().prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(id);
-  getDb().prepare('DELETE FROM meeting_projects WHERE meeting_id = ?').run(id);
-  getDb().prepare('DELETE FROM agreements WHERE meeting_id = ?').run(id);
-  getDb().prepare('DELETE FROM meetings WHERE id = ?').run(id);
+  await execute('DELETE FROM meeting_people WHERE meeting_id = $1', [id]);
+  await execute('DELETE FROM meeting_projects WHERE meeting_id = $1', [id]);
+  await execute('DELETE FROM agreements WHERE meeting_id = $1', [id]);
+  await execute('DELETE FROM meetings WHERE id = $1', [id]);
   searchService.removeRecord('meeting', id);
   try { if (meeting.vault_path) obsidian.forUser(getUserId(req)).deleteFile(meeting.vault_path); } catch {}
   res.json(ok({ deleted: true }));
@@ -220,9 +227,8 @@ meetingsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
 
 // Heavy background pipeline: compress → transcribe → summarize → save → sync vault
 async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, originalName: string, userId: number | null, autoSummarize: boolean): Promise<void> {
-  const db = getDb();
-  const setStatus = (status: string | null, errMsg?: string | null): void => {
-    db.prepare('UPDATE meetings SET processing_status = ?, processing_error = ? WHERE id = ?').run(status, errMsg ?? null, meetingId);
+  const setStatus = async (status: string | null, errMsg?: string | null): Promise<void> => {
+    await execute('UPDATE meetings SET processing_status = $1, processing_error = $2 WHERE id = $3', [status, errMsg ?? null, meetingId]);
   };
 
   try {
@@ -232,7 +238,7 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
     const canOpenAI = !!config.openaiApiKey;
 
     // Step 1: pre-compress to small MP3
-    setStatus('compressing');
+    await setStatus('compressing');
     let audioBuffer = fileBuffer;
     let audioName = filename;
     try {
@@ -246,7 +252,7 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
     }
 
     // Step 2: transcribe
-    setStatus('transcribing');
+    await setStatus('transcribing');
     let transcript = '';
     const finalMb = audioBuffer.length / 1024 / 1024;
     const useOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
@@ -282,24 +288,24 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
     }
 
     // Step 3: save transcript
-    const meeting = db.prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId) as Record<string, unknown> | undefined;
+    const meeting = await queryOne<Record<string, unknown>>('SELECT * FROM meetings WHERE id = $1', [meetingId]);
     if (!meeting) throw new Error('Meeting deleted while processing');
     const existingSummary = (meeting['summary_raw'] as string) || '';
     let mergedBody = existingSummary
       ? `${existingSummary}\n\n---\nТранскрипция (${new Date().toLocaleString('ru')}):\n${transcript}`
       : transcript;
-    db.prepare("UPDATE meetings SET summary_raw = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(mergedBody, meetingId);
+    await execute('UPDATE meetings SET summary_raw = $1, updated_at = NOW() WHERE id = $2', [mergedBody, meetingId]);
     searchService.indexRecord('meeting', meetingId, meeting['title'] as string, mergedBody);
 
     // Step 4: AI summary
     if (autoSummarize && transcript.trim()) {
-      setStatus('summarizing');
+      await setStatus('summarizing');
       try {
         const sys = 'Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды.';
         const summary = (await claude.chat([{ role: 'user', content: transcript }], sys, 'gpt-4.1-mini', false, false)).trim();
         if (summary && !mergedBody.startsWith('## Ключевые решения')) {
           mergedBody = `${summary}\n\n---\n\n${mergedBody}`;
-          db.prepare("UPDATE meetings SET summary_raw = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(mergedBody, meetingId);
+          await execute('UPDATE meetings SET summary_raw = $1, updated_at = NOW() WHERE id = $2', [mergedBody, meetingId]);
           searchService.indexRecord('meeting', meetingId, meeting['title'] as string, mergedBody);
         }
       } catch (err) {
@@ -309,45 +315,45 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
 
     // Step 5: vault sync
     try {
-      const fresh = db.prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId) as Record<string, unknown>;
-      const syncOn = (fresh['sync_vault'] as number | null | undefined) !== 0;
+      const fresh = await queryOne<Record<string, unknown>>('SELECT * FROM meetings WHERE id = $1', [meetingId]);
+      const syncOn = (fresh!['sync_vault'] as number | null | undefined) !== 0;
       if (syncOn) {
-        const projectName = fresh['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(fresh['project_id'] as number) as { name: string } | undefined)?.name : undefined;
-        const peopleNames = (db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map(x => x.name);
+        const projectName = fresh!['project_id'] ? (await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [fresh!['project_id'] as number]))?.name : undefined;
+        const peopleNames = (await queryAll<{ name: string }>('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [meetingId])).map(x => x.name);
         let structured: { notes?: string; qa?: string; actions?: string } | undefined;
         try {
-          const s = JSON.parse((fresh['summary_structured'] as string) || '{}');
+          const s = JSON.parse((fresh!['summary_structured'] as string) || '{}');
           if (s.notes || s.qa || s.actions) structured = { notes: s.notes, qa: s.qa, actions: s.actions };
         } catch {}
         const vp = await obsidian.forUser(userId).writeMeeting({
-          title: fresh['title'] as string,
-          date: fresh['date'] as string,
+          title: fresh!['title'] as string,
+          date: fresh!['date'] as string,
           project: projectName,
-          summary: (fresh['summary_raw'] as string) ?? '',
+          summary: (fresh!['summary_raw'] as string) ?? '',
           structured,
           people: peopleNames,
         });
-        if (vp && vp !== fresh['vault_path']) {
-          db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vp, meetingId);
+        if (vp && vp !== fresh!['vault_path']) {
+          await execute('UPDATE meetings SET vault_path = $1 WHERE id = $2', [vp, meetingId]);
         }
       }
     } catch (err) {
       console.warn(`[bg-job ${meetingId}] vault sync failed:`, err instanceof Error ? err.message : err);
     }
 
-    setStatus('done', null);
+    await setStatus('done', null);
     console.log(`[bg-job ${meetingId}] DONE`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[bg-job ${meetingId}] FAILED:`, msg);
-    setStatus('failed', msg);
+    await setStatus('failed', msg);
   }
 }
 
 // POST /meetings/:id/transcribe — fires a background job and returns 202 immediately
-meetingsRouter.post('/:id/transcribe', upload.single('audio'), (req: AuthRequest, res: Response) => {
+meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
-  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND user_id = ?').get(id, getUserId(req)) as Record<string, unknown> | undefined;
+  const meeting = await queryOne<Record<string, unknown>>('SELECT * FROM meetings WHERE id = $1 AND user_id = $2', [id, getUserId(req)]);
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
 
   if (req.file) {
@@ -356,7 +362,7 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), (req: AuthRequest
     const originalName = req.file.originalname || 'audio.ogg';
     const autoSummarize = req.body?.summarize !== 'false';
     // Mark as queued + kick off background job (don't await)
-    getDb().prepare('UPDATE meetings SET processing_status = ?, processing_error = NULL WHERE id = ?').run('queued', id);
+    await execute('UPDATE meetings SET processing_status = $1, processing_error = NULL WHERE id = $2', ['queued', id]);
     void processAudioInBackground(id, buffer, originalName, userId, autoSummarize);
     res.status(202).json(ok({ id, status: 'queued', message: 'Транскрипция запущена в фоне. Можно закрыть окно.' }));
     return;
@@ -367,7 +373,7 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), (req: AuthRequest
     const text = req.body.text as string;
     const existing = (meeting['summary_raw'] as string) || '';
     const merged = existing ? `${existing}\n\n---\n${text}` : text;
-    getDb().prepare("UPDATE meetings SET summary_raw = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(merged, id);
+    await execute('UPDATE meetings SET summary_raw = $1, updated_at = NOW() WHERE id = $2', [merged, id]);
     searchService.indexRecord('meeting', id, meeting['title'] as string, merged);
     res.json(ok({ id, transcript: text }));
     return;
@@ -387,11 +393,13 @@ const SendToTelegramSchema = z.object({
 const TYPE_LABELS: Record<MeetingFileType, string> = { summary: 'rezume', full: 'polnaya', notes: 'notes', qa: 'qa', actions: 'analysis' };
 
 async function buildMeetingFile(meetingId: number, type: MeetingFileType, format: 'md' | 'pdf' | 'docx'): Promise<{ path: string; filename: string }> {
-  const db = getDb();
-  const m = db.prepare('SELECT id, title, date, project_id, summary_raw, summary_structured FROM meetings WHERE id = ?').get(meetingId) as { id: number; title: string; date: string; project_id: number | null; summary_raw: string | null; summary_structured: string | null } | undefined;
+  const m = await queryOne<{ id: number; title: string; date: string; project_id: number | null; summary_raw: string | null; summary_structured: string | null }>(
+    'SELECT id, title, date, project_id, summary_raw, summary_structured FROM meetings WHERE id = $1',
+    [meetingId]
+  );
   if (!m) throw new Error('Meeting not found');
-  const projectName = m.project_id ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(m.project_id) as { name: string } | undefined)?.name : undefined;
-  const people = (db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map((x) => x.name);
+  const projectName = m.project_id ? (await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [m.project_id]))?.name : undefined;
+  const people = (await queryAll<{ name: string }>('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [meetingId])).map((x) => x.name);
 
   let structured: Record<string, string> = {};
   try { structured = JSON.parse(m.summary_structured || '{}'); } catch {}
@@ -436,8 +444,7 @@ async function buildMeetingFile(meetingId: number, type: MeetingFileType, format
 }
 
 export async function sendMeetingToTelegram(meetingId: number, userId: number, type: MeetingFileType, format: 'md' | 'pdf' | 'docx'): Promise<void> {
-  const db = getDb();
-  const user = db.prepare('SELECT tg_id FROM users WHERE id = ?').get(userId) as { tg_id: string | null } | undefined;
+  const user = await queryOne<{ tg_id: string | null }>('SELECT tg_id FROM users WHERE id = $1', [userId]);
   if (!user?.tg_id) throw new Error('Telegram не привязан к аккаунту (зайди в Telegram-бот и пришли /start)');
   const { path: filePath, filename } = await buildMeetingFile(meetingId, type, format);
   const caption = type === 'summary' ? '📄 Резюме встречи' : '📄 Полная транскрипция';
@@ -456,7 +463,7 @@ export async function sendMeetingToTelegram(meetingId: number, userId: number, t
 meetingsRouter.post('/:id/summarize', async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const meeting = getDb().prepare('SELECT * FROM meetings WHERE id = ? AND user_id = ?').get(id, userId) as Record<string, unknown> | undefined;
+  const meeting = await queryOne<Record<string, unknown>>('SELECT * FROM meetings WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
   const raw = ((meeting['summary_raw'] as string) ?? '').trim();
   if (!raw) { res.status(400).json(fail('No content to summarize')); return; }
@@ -470,7 +477,7 @@ meetingsRouter.post('/:id/summarize', async (req: AuthRequest, res: Response) =>
     const newSummary = existingStart === 0
       ? raw // already starts with a summary — skip (caller can regenerate by clearing first)
       : `${summary}${separator}${raw}`;
-    getDb().prepare("UPDATE meetings SET summary_raw = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(newSummary, id);
+    await execute('UPDATE meetings SET summary_raw = $1, updated_at = NOW() WHERE id = $2', [newSummary, id]);
     searchService.indexRecord('meeting', id, meeting['title'] as string, newSummary);
     res.json(ok({ summary, summary_raw: newSummary }));
   } catch (err) {
@@ -483,7 +490,7 @@ meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
   if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
-  const exists = getDb().prepare('SELECT id FROM meetings WHERE id = ? AND user_id = ?').get(id, userId);
+  const exists = await queryOne('SELECT id FROM meetings WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!exists) { res.status(404).json(fail('Meeting not found')); return; }
   const validTypes: MeetingFileType[] = ['summary', 'full', 'notes', 'qa', 'actions'];
   const type = (validTypes.includes(req.query['type'] as MeetingFileType) ? req.query['type'] : 'summary') as MeetingFileType;
@@ -508,7 +515,7 @@ meetingsRouter.post('/:id/send-to-telegram', async (req: AuthRequest, res: Respo
   const id = Number(req.params['id']);
   const userId = getUserId(req);
   if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
-  const exists = getDb().prepare('SELECT id FROM meetings WHERE id = ? AND user_id = ?').get(id, userId);
+  const exists = await queryOne('SELECT id FROM meetings WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!exists) { res.status(404).json(fail('Meeting not found')); return; }
   try {
     await sendMeetingToTelegram(id, userId, parsed.data.type, parsed.data.format);

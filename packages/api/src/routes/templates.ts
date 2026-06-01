@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { getDb } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId } from '../middleware/user-scope';
@@ -15,46 +15,50 @@ const CreateSchema = z.object({
   tags: z.string().optional().default('[]'),
 });
 
-templatesRouter.get('/', (req: AuthRequest, res: Response) => {
+templatesRouter.get('/', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   if (userId == null) { res.status(401).json(fail('Authentication required')); return; }
-  const rows = getDb().prepare('SELECT * FROM task_templates WHERE user_id = ? ORDER BY created_at DESC').all(userId);
+  const rows = await queryAll('SELECT * FROM task_templates WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
   res.json(ok(rows));
 });
 
-templatesRouter.post('/', (req: AuthRequest, res: Response) => {
+templatesRouter.post('/', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   if (userId == null) { res.status(401).json(fail('Authentication required')); return; }
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { title, description, priority, project_id, tags } = parsed.data;
-  const result = getDb().prepare(
-    'INSERT INTO task_templates (user_id, title, description, priority, project_id, tags) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(userId, title, description, priority, project_id ?? null, tags);
-  res.status(201).json(ok(getDb().prepare('SELECT * FROM task_templates WHERE id = ? AND user_id = ?').get(result.lastInsertRowid, userId)));
+  const inserted = await queryOne<{ id: number }>(
+    'INSERT INTO task_templates (user_id, title, description, priority, project_id, tags) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+    [userId, title, description, priority, project_id ?? null, tags]
+  );
+  if (!inserted) { res.status(500).json(fail('Insert failed')); return; }
+  const template = await queryOne('SELECT * FROM task_templates WHERE id = $1 AND user_id = $2', [inserted.id, userId]);
+  res.status(201).json(ok(template));
 });
 
-templatesRouter.delete('/:id', (req: AuthRequest, res: Response) => {
+templatesRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   if (userId == null) { res.status(401).json(fail('Authentication required')); return; }
   const id = Number(req.params['id']);
-  const existing = getDb().prepare('SELECT * FROM task_templates WHERE id = ? AND user_id = ?').get(id, userId);
+  const existing = await queryOne('SELECT * FROM task_templates WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!existing) { res.status(404).json(fail('Template not found')); return; }
-  getDb().prepare('DELETE FROM task_templates WHERE id = ? AND user_id = ?').run(id, userId);
+  await execute('DELETE FROM task_templates WHERE id = $1 AND user_id = $2', [id, userId]);
   res.json(ok({ deleted: true }));
 });
 
-templatesRouter.post('/:id/create-task', (req: AuthRequest, res: Response) => {
+templatesRouter.post('/:id/create-task', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   if (userId == null) { res.status(401).json(fail('Authentication required')); return; }
   const id = Number(req.params['id']);
-  const template = getDb().prepare('SELECT * FROM task_templates WHERE id = ? AND user_id = ?').get(id, userId) as Record<string, unknown> | undefined;
+  const template = await queryOne<Record<string, unknown>>('SELECT * FROM task_templates WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!template) { res.status(404).json(fail('Template not found')); return; }
 
-  const result = getDb().prepare(
-    `INSERT INTO tasks (user_id, title, description, priority, project_id, status) VALUES (?, ?, ?, ?, ?, 'todo')`
-  ).run(userId, template['title'], template['description'], template['priority'], template['project_id']);
-
-  const task = getDb().prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(result.lastInsertRowid, userId);
+  const inserted = await queryOne<{ id: number }>(
+    `INSERT INTO tasks (user_id, title, description, priority, project_id, status) VALUES ($1, $2, $3, $4, $5, 'todo') RETURNING id`,
+    [userId, template['title'], template['description'], template['priority'], template['project_id']]
+  );
+  if (!inserted) { res.status(500).json(fail('Insert failed')); return; }
+  const task = await queryOne('SELECT * FROM tasks WHERE id = $1 AND user_id = $2', [inserted.id, userId]);
   res.status(201).json(ok(task));
 });

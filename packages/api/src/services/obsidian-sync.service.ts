@@ -4,7 +4,7 @@ import chokidar from 'chokidar';
 import matter from 'gray-matter';
 import { marked } from 'marked';
 import TurndownService from 'turndown';
-import { getDb } from '../db/db';
+import { queryOne, execute } from '../db/db';
 import { config } from '../config';
 
 const turndown = new TurndownService({
@@ -36,8 +36,8 @@ export function markdownToHtml(md: string): string {
 }
 
 /** Sync a document from PIS to Obsidian vault */
-export function syncDocToVault(docId: number, userId: number | null): void {
-  const doc = getDb().prepare('SELECT * FROM documents WHERE id = ?').get(docId) as Record<string, unknown> | undefined;
+export async function syncDocToVault(docId: number, userId: number | null): Promise<void> {
+  const doc = await queryOne<Record<string, unknown>>('SELECT * FROM documents WHERE id = $1', [docId]);
   if (!doc) return;
 
   const title = doc['title'] as string;
@@ -50,14 +50,20 @@ export function syncDocToVault(docId: number, userId: number | null): void {
   // Get project name
   let projectName: string | undefined;
   if (projectId) {
-    const proj = getDb().prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as { name: string } | undefined;
+    const proj = await queryOne<{ name: string }>(
+      'SELECT name FROM projects WHERE id = $1',
+      [projectId]
+    );
     projectName = proj?.name;
   }
 
   // Get parent doc title for nested path
   let parentTitle: string | undefined;
   if (parentId) {
-    const parent = getDb().prepare('SELECT title FROM documents WHERE id = ?').get(parentId) as { title: string } | undefined;
+    const parent = await queryOne<{ title: string }>(
+      'SELECT title FROM documents WHERE id = $1',
+      [parentId]
+    );
     parentTitle = parent?.title;
   }
 
@@ -101,12 +107,12 @@ export function syncDocToVault(docId: number, userId: number | null): void {
 
   // Update vault_path in DB
   const vaultPath = relParts.join('/');
-  getDb().prepare('UPDATE documents SET vault_path = ? WHERE id = ?').run(vaultPath, docId);
+  await execute('UPDATE documents SET vault_path = $1 WHERE id = $2', [vaultPath, docId]);
   console.log(`[obsidian-sync] PIS→Vault: doc #${docId} → ${vaultPath}`);
 }
 
 /** Sync a file from Obsidian vault to PIS */
-export function syncVaultToDoc(filePath: string, userId: number | null): void {
+export async function syncVaultToDoc(filePath: string, userId: number | null): Promise<void> {
   const raw = fs.readFileSync(filePath, 'utf-8');
   const { data: fm, content } = matter(raw);
 
@@ -118,11 +124,16 @@ export function syncVaultToDoc(filePath: string, userId: number | null): void {
 
   // Find by vault_path
   const vaultRelative = path.relative(config.vaultPath, filePath).replace(/\\/g, '/');
-  const existing = getDb().prepare('SELECT id FROM documents WHERE vault_path = ?').get(vaultRelative) as { id: number } | undefined;
+  const existing = await queryOne<{ id: number }>(
+    'SELECT id FROM documents WHERE vault_path = $1',
+    [vaultRelative]
+  );
 
   if (existing) {
-    getDb().prepare('UPDATE documents SET title = ?, body = ?, updated_at = ? WHERE id = ?')
-      .run(title, htmlBody, new Date().toISOString(), existing.id);
+    await execute(
+      'UPDATE documents SET title = $1, body = $2, updated_at = $3 WHERE id = $4',
+      [title, htmlBody, new Date().toISOString(), existing.id]
+    );
     console.log(`[obsidian-sync] Vault→PIS: updated doc #${existing.id}`);
   } else {
     // Create new document
@@ -130,13 +141,17 @@ export function syncVaultToDoc(filePath: string, userId: number | null): void {
     const projectName = fm.project as string | null;
     let projectId: number | null = null;
     if (projectName) {
-      const proj = getDb().prepare('SELECT id FROM projects WHERE name = ?').get(projectName) as { id: number } | undefined;
+      const proj = await queryOne<{ id: number }>(
+        'SELECT id FROM projects WHERE name = $1',
+        [projectName]
+      );
       projectId = proj?.id ?? null;
     }
-    const result = getDb()
-      .prepare('INSERT INTO documents (title, body, project_id, category, vault_path, user_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(title, htmlBody, projectId, category, vaultRelative, userId);
-    console.log(`[obsidian-sync] Vault→PIS: created doc #${result.lastInsertRowid}`);
+    const result = await queryOne<{ id: number }>(
+      'INSERT INTO documents (title, body, project_id, category, vault_path, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [title, htmlBody, projectId, category, vaultRelative, userId]
+    );
+    console.log(`[obsidian-sync] Vault→PIS: created doc #${result?.id}`);
   }
 }
 
@@ -168,9 +183,9 @@ export function startVaultWatcher(userId: number | null): chokidar.FSWatcher | n
       filePath,
       setTimeout(() => {
         debounceTimers.delete(filePath);
-        try { syncVaultToDoc(filePath, userId); } catch (err) {
+        syncVaultToDoc(filePath, userId).catch(err => {
           console.warn('[obsidian-sync] watcher error:', err);
-        }
+        });
       }, 1000),
     );
   });
@@ -178,9 +193,9 @@ export function startVaultWatcher(userId: number | null): chokidar.FSWatcher | n
   watcher.on('add', (filePath) => {
     if (!filePath.endsWith('.md')) return;
     setTimeout(() => {
-      try { syncVaultToDoc(filePath, userId); } catch (err) {
+      syncVaultToDoc(filePath, userId).catch(err => {
         console.warn('[obsidian-sync] watcher add error:', err);
-      }
+      });
     }, 1500);
   });
 

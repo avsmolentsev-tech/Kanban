@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDb } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { moscowDateString } from '../utils/time';
 import crypto from 'crypto';
@@ -7,16 +7,18 @@ import crypto from 'crypto';
 export const widgetRouter = Router();
 
 /** Resolve user_id from API key (query param ?key=xxx) */
-function resolveUserByKey(req: Request): number | null {
+async function resolveUserByKey(req: Request): Promise<number | null> {
   const key = req.query['key'] as string;
   if (!key) return null;
-  const db = getDb();
-  const row = db.prepare("SELECT user_id FROM settings WHERE key = 'widget_api_key' AND value = ?").get(key) as { user_id: number } | undefined;
+  const row = await queryOne<{ user_id: number }>(
+    "SELECT user_id FROM settings WHERE key = 'widget_api_key' AND value = $1",
+    [key]
+  );
   return row?.user_id ?? null;
 }
 
 // GET /widget/key — generate API key for authenticated user (called from app)
-widgetRouter.get('/key', (req: Request, res: Response) => {
+widgetRouter.get('/key', async (req: Request, res: Response) => {
   // This route is behind requireAuth in the main router... but widget is public.
   // We'll check auth header manually here.
   const header = req.headers['authorization'];
@@ -29,9 +31,11 @@ widgetRouter.get('/key', (req: Request, res: Response) => {
     const payload = jwt.verify(token, config.jwtSecret) as { id: number };
     const userId = payload.id;
 
-    const db = getDb();
     // Check if key already exists
-    const existing = db.prepare("SELECT value FROM settings WHERE key = 'widget_api_key' AND user_id = ?").get(userId) as { value: string } | undefined;
+    const existing = await queryOne<{ value: string }>(
+      "SELECT value FROM settings WHERE key = 'widget_api_key' AND user_id = $1",
+      [userId]
+    );
     if (existing) {
       res.json(ok({ api_key: existing.value }));
       return;
@@ -39,7 +43,10 @@ widgetRouter.get('/key', (req: Request, res: Response) => {
 
     // Generate new key
     const apiKey = `pis_${crypto.randomBytes(24).toString('hex')}`;
-    db.prepare("INSERT INTO settings (key, value, user_id) VALUES ('widget_api_key', ?, ?)").run(apiKey, userId);
+    await execute(
+      "INSERT INTO settings (key, value, user_id) VALUES ('widget_api_key', $1, $2)",
+      [apiKey, userId]
+    );
     res.json(ok({ api_key: apiKey }));
   } catch {
     res.status(401).json(fail('Invalid token'));
@@ -47,36 +54,49 @@ widgetRouter.get('/key', (req: Request, res: Response) => {
 });
 
 // GET /widget/today — tasks for today (requires ?key=xxx)
-widgetRouter.get('/today', (_req: Request, res: Response) => {
-  const userId = resolveUserByKey(_req);
+widgetRouter.get('/today', async (_req: Request, res: Response) => {
+  const userId = await resolveUserByKey(_req);
   if (!userId) { res.status(401).json(fail('API key required. Add ?key=YOUR_KEY')); return; }
 
-  const db = getDb();
   const today = moscowDateString();
-  const tasks = db.prepare(
-    "SELECT id, title, status, priority FROM tasks WHERE (due_date = ? OR status = 'in_progress') AND status != 'done' AND archived = 0 AND user_id = ? ORDER BY priority ASC LIMIT 10"
-  ).all(today, userId) as Array<{ id: number; title: string; status: string; priority: number }>;
+  const tasks = await queryAll<{ id: number; title: string; status: string; priority: number }>(
+    "SELECT id, title, status, priority FROM tasks WHERE (due_date = $1 OR status = 'in_progress') AND status != 'done' AND archived = 0 AND user_id = $2 ORDER BY priority ASC LIMIT 10",
+    [today, userId]
+  );
 
-  const habits = db.prepare("SELECT id, title, icon FROM habits WHERE archived = 0 AND user_id = ?").all(userId) as Array<{ id: number; title: string; icon: string }>;
-  const habitLogs = db.prepare("SELECT habit_id FROM habit_logs WHERE date = ?").all(today) as Array<{ habit_id: number }>;
+  const habits = await queryAll<{ id: number; title: string; icon: string }>(
+    "SELECT id, title, icon FROM habits WHERE archived = 0 AND user_id = $1",
+    [userId]
+  );
+  const habitLogs = await queryAll<{ habit_id: number }>(
+    "SELECT habit_id FROM habit_logs WHERE date = $1",
+    [today]
+  );
   const doneHabitIds = new Set(habitLogs.map(l => l.habit_id));
 
-  const overdue = (db.prepare(
-    "SELECT COUNT(*) as count FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < ? AND user_id = ?"
-  ).get(today, userId) as { count: number }).count;
+  const overdueRow = await queryOne<{ count: number }>(
+    "SELECT COUNT(*) as count FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < $1 AND user_id = $2",
+    [today, userId]
+  );
+  const overdue = overdueRow?.count ?? 0;
 
-  const meetings = db.prepare(
-    "SELECT title, date FROM meetings WHERE date = ? AND user_id = ? LIMIT 5"
-  ).all(today, userId);
+  const meetings = await queryAll(
+    "SELECT title, date FROM meetings WHERE date = $1 AND user_id = $2 LIMIT 5",
+    [today, userId]
+  );
 
   // Journal focus of the day
-  const journal = db.prepare("SELECT focus FROM journal WHERE date = ? AND user_id = ?").get(today, userId) as { focus: string } | undefined;
+  const journal = await queryOne<{ focus: string }>(
+    "SELECT focus FROM journal WHERE date = $1 AND user_id = $2",
+    [today, userId]
+  );
   const focusOfDay = journal?.focus || null;
 
   // Weekly goal for today
-  const weeklyGoal = db.prepare(
-    "SELECT title FROM tasks WHERE user_id = ? AND description LIKE '%[🎯 Цель недели]%' AND due_date = ? AND status != 'done' AND archived = 0 LIMIT 1"
-  ).get(userId, today) as { title: string } | undefined;
+  const weeklyGoal = await queryOne<{ title: string }>(
+    "SELECT title FROM tasks WHERE user_id = $1 AND description LIKE '%[🎯 Цель недели]%' AND due_date = $2 AND status != 'done' AND archived = 0 LIMIT 1",
+    [userId, today]
+  );
 
   res.json(ok({
     date: today,
@@ -90,38 +110,51 @@ widgetRouter.get('/today', (_req: Request, res: Response) => {
 });
 
 // GET /widget/render — HTML widget for Android web-widget apps (requires ?key=xxx)
-widgetRouter.get('/render', (_req: Request, res: Response) => {
-  const userId = resolveUserByKey(_req);
+widgetRouter.get('/render', async (_req: Request, res: Response) => {
+  const userId = await resolveUserByKey(_req);
   if (!userId) {
     res.type('html').send(`<!DOCTYPE html><html><body style="background:#0f172a;color:#ef4444;font-family:sans-serif;padding:12px;margin:0"><p>Invalid API key</p></body></html>`);
     return;
   }
 
-  const db = getDb();
   const today = moscowDateString();
-  const tasks = db.prepare(
-    "SELECT title, priority FROM tasks WHERE (due_date = ? OR status = 'in_progress') AND status != 'done' AND archived = 0 AND user_id = ? ORDER BY priority ASC LIMIT 6"
-  ).all(today, userId) as Array<{ title: string; priority: number }>;
+  const tasks = await queryAll<{ title: string; priority: number }>(
+    "SELECT title, priority FROM tasks WHERE (due_date = $1 OR status = 'in_progress') AND status != 'done' AND archived = 0 AND user_id = $2 ORDER BY priority ASC LIMIT 6",
+    [today, userId]
+  );
 
-  const habits = db.prepare("SELECT id, title FROM habits WHERE archived = 0 AND user_id = ?").all(userId) as Array<{ id: number; title: string }>;
-  const habitLogs = db.prepare("SELECT habit_id FROM habit_logs WHERE date = ?").all(today) as Array<{ habit_id: number }>;
+  const habits = await queryAll<{ id: number; title: string }>(
+    "SELECT id, title FROM habits WHERE archived = 0 AND user_id = $1",
+    [userId]
+  );
+  const habitLogs = await queryAll<{ habit_id: number }>(
+    "SELECT habit_id FROM habit_logs WHERE date = $1",
+    [today]
+  );
   const doneHabitIds = new Set(habitLogs.map(l => l.habit_id));
   const habitsDone = habits.filter(h => doneHabitIds.has(h.id)).length;
 
-  const overdue = (db.prepare(
-    "SELECT COUNT(*) as count FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < ? AND user_id = ?"
-  ).get(today, userId) as { count: number }).count;
+  const overdueRow = await queryOne<{ count: number }>(
+    "SELECT COUNT(*) as count FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < $1 AND user_id = $2",
+    [today, userId]
+  );
+  const overdue = overdueRow?.count ?? 0;
 
-  const meetings = db.prepare(
-    "SELECT title FROM meetings WHERE date = ? AND user_id = ? LIMIT 3"
-  ).all(today, userId) as Array<{ title: string }>;
+  const meetings = await queryAll<{ title: string }>(
+    "SELECT title FROM meetings WHERE date = $1 AND user_id = $2 LIMIT 3",
+    [today, userId]
+  );
 
-  const journal = db.prepare("SELECT focus FROM journal WHERE date = ? AND user_id = ?").get(today, userId) as { focus: string } | undefined;
+  const journal = await queryOne<{ focus: string }>(
+    "SELECT focus FROM journal WHERE date = $1 AND user_id = $2",
+    [today, userId]
+  );
   const focus = journal?.focus || null;
 
-  const weeklyGoal = db.prepare(
-    "SELECT title FROM tasks WHERE user_id = ? AND description LIKE '%[🎯 Цель недели]%' AND due_date = ? AND status != 'done' AND archived = 0 LIMIT 1"
-  ).get(userId, today) as { title: string } | undefined;
+  const weeklyGoal = await queryOne<{ title: string }>(
+    "SELECT title FROM tasks WHERE user_id = $1 AND description LIKE '%[🎯 Цель недели]%' AND due_date = $2 AND status != 'done' AND archived = 0 LIMIT 1",
+    [userId, today]
+  );
 
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -176,23 +209,24 @@ ${body}
 });
 
 // GET /widget/week — week summary (requires ?key=xxx)
-widgetRouter.get('/week', (_req: Request, res: Response) => {
-  const userId = resolveUserByKey(_req);
+widgetRouter.get('/week', async (_req: Request, res: Response) => {
+  const userId = await resolveUserByKey(_req);
   if (!userId) { res.status(401).json(fail('API key required')); return; }
 
-  const db = getDb();
   const today = moscowDateString();
   const weekEnd = new Date();
   weekEnd.setDate(weekEnd.getDate() + 7);
   const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
 
-  const tasks = db.prepare(
-    "SELECT id, title, status, priority, due_date FROM tasks WHERE due_date BETWEEN ? AND ? AND status != 'done' AND archived = 0 AND user_id = ? ORDER BY due_date, priority ASC LIMIT 20"
-  ).all(today, weekEndStr, userId);
+  const tasks = await queryAll(
+    "SELECT id, title, status, priority, due_date FROM tasks WHERE due_date BETWEEN $1 AND $2 AND status != 'done' AND archived = 0 AND user_id = $3 ORDER BY due_date, priority ASC LIMIT 20",
+    [today, weekEndStr, userId]
+  );
 
-  const meetings = db.prepare(
-    "SELECT id, title, date FROM meetings WHERE date BETWEEN ? AND ? AND user_id = ? ORDER BY date LIMIT 10"
-  ).all(today, weekEndStr, userId);
+  const meetings = await queryAll(
+    "SELECT id, title, date FROM meetings WHERE date BETWEEN $1 AND $2 AND user_id = $3 ORDER BY date LIMIT 10",
+    [today, weekEndStr, userId]
+  );
 
   res.json(ok({ from: today, to: weekEndStr, tasks, meetings }));
 });

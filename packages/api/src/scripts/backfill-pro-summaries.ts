@@ -2,23 +2,23 @@
  * One-time script: generate pro summaries (Notes, Q&A, Actions) for all existing meetings.
  * Run: cd packages/api && npx tsx src/scripts/backfill-pro-summaries.ts
  */
-import { initDb, getDb } from '../db/db';
+import { initPg, queryAll, execute } from '../db/db';
 import { ClaudeService } from '../services/claude.service';
+import { config } from '../config';
 
-initDb();
+initPg(config.databaseUrl);
 
 async function main() {
-  const db = getDb();
   const claude = new ClaudeService();
 
-  const meetings = db.prepare(`
+  const meetings = await queryAll<{ id: number; title: string; summary_raw: string; summary_structured: string | null }>(`
     SELECT id, title, summary_raw, summary_structured
     FROM meetings
     WHERE user_id = 2
       AND summary_raw IS NOT NULL
       AND length(summary_raw) > 200
     ORDER BY id ASC
-  `).all() as Array<{ id: number; title: string; summary_raw: string; summary_structured: string | null }>;
+  `, []);
 
   console.log(`Found ${meetings.length} meetings to process\n`);
 
@@ -57,11 +57,12 @@ async function main() {
     }
 
     // Extract people from DB
-    const people = (db.prepare(`
+    const peopleRows = await queryAll<{ name: string }>(`
       SELECT p.name FROM people p
       JOIN meeting_people mp ON p.id = mp.person_id
-      WHERE mp.meeting_id = ?
-    `).all(m.id) as Array<{ name: string }>).map(p => p.name);
+      WHERE mp.meeting_id = $1
+    `, [m.id]);
+    const people = peopleRows.map(p => p.name);
 
     console.log(`[${m.id}] Processing: "${m.title}" (${transcript.length} chars, ${people.length} people)...`);
 
@@ -73,10 +74,9 @@ async function main() {
       try { existing = JSON.parse(m.summary_structured || '{}'); } catch {}
 
       const updated = { ...existing, ...summaries };
-      db.prepare('UPDATE meetings SET summary_structured = ?, summary_raw = ? WHERE id = ?').run(
-        JSON.stringify(updated),
-        summaries.notes || m.summary_raw, // Update summary_raw with Notes
-        m.id
+      await execute(
+        'UPDATE meetings SET summary_structured = $1, summary_raw = $2 WHERE id = $3',
+        [JSON.stringify(updated), summaries.notes || m.summary_raw, m.id]
       );
 
       done++;

@@ -1,6 +1,6 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
-import { getDb } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
@@ -14,11 +14,19 @@ function syncProjectToVault(projectId: number, userId: number | null): void {
   if (userId == null) return;
   void (async () => {
     try {
-      const db = getDb();
-      const p = db.prepare('SELECT name, description, status, color FROM projects WHERE id = ?').get(projectId) as { name: string; description: string | null; status: string | null; color: string | null } | undefined;
+      const p = await queryOne<{ name: string; description: string | null; status: string | null; color: string | null }>(
+        'SELECT name, description, status, color FROM projects WHERE id = $1',
+        [projectId]
+      );
       if (!p) return;
-      const people = db.prepare('SELECT DISTINCT pe.name FROM people pe JOIN people_projects pp ON pe.id = pp.person_id WHERE pp.project_id = ?').all(projectId) as Array<{ name: string }>;
-      const meetings = db.prepare('SELECT title, date FROM meetings WHERE project_id = ? ORDER BY date DESC').all(projectId) as Array<{ title: string; date: string }>;
+      const people = await queryAll<{ name: string }>(
+        'SELECT DISTINCT pe.name FROM people pe JOIN people_projects pp ON pe.id = pp.person_id WHERE pp.project_id = $1',
+        [projectId]
+      );
+      const meetings = await queryAll<{ title: string; date: string }>(
+        'SELECT title, date FROM meetings WHERE project_id = $1 ORDER BY date DESC',
+        [projectId]
+      );
       await obsidian.forUser(userId).writeProject({
         name: p.name,
         description: p.description ?? '',
@@ -48,65 +56,93 @@ const UpdateSchema = z.object({
   archived: z.boolean().optional(),
 });
 
-projectsRouter.get('/', (req: AuthRequest, res: Response) => {
+projectsRouter.get('/', async (req: AuthRequest, res: Response) => {
   const scope = userScopeWhere(req);
-  const projects = getDb().prepare(`SELECT * FROM projects WHERE archived = 0 AND ${scope.sql} ORDER BY order_index ASC, created_at DESC`).all(...scope.params);
+  const projects = await queryAll(
+    `SELECT * FROM projects WHERE archived = 0 AND ${scope.sql} ORDER BY order_index ASC, created_at DESC`,
+    scope.params
+  );
   res.json(ok(projects));
 });
 
-projectsRouter.patch('/reorder', (req: AuthRequest, res: Response) => {
+projectsRouter.patch('/reorder', async (req: AuthRequest, res: Response) => {
   const parsed = z.array(z.object({ id: z.number(), order_index: z.number() })).safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const db = getDb();
-  const stmt = db.prepare('UPDATE projects SET order_index = ? WHERE id = ?');
   for (const { id, order_index } of parsed.data) {
-    stmt.run(order_index, id);
+    await execute('UPDATE projects SET order_index = $1 WHERE id = $2', [order_index, id]);
   }
   const scope = userScopeWhere(req);
-  const projects = db.prepare(`SELECT * FROM projects WHERE archived = 0 AND ${scope.sql} ORDER BY order_index ASC, created_at DESC`).all(...scope.params);
+  const projects = await queryAll(
+    `SELECT * FROM projects WHERE archived = 0 AND ${scope.sql} ORDER BY order_index ASC, created_at DESC`,
+    scope.params
+  );
   res.json(ok(projects));
 });
 
-projectsRouter.post('/', (req: AuthRequest, res: Response) => {
+projectsRouter.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { name, description, status, color } = parsed.data;
   const userId = getUserId(req);
-  const result = getDb().prepare('INSERT INTO projects (name, description, status, color, user_id) VALUES (?, ?, ?, ?, ?)').run(name, description, status, color, userId);
-  const project = getDb().prepare('SELECT * FROM projects WHERE id = ?').get(result.lastInsertRowid);
-  syncProjectToVault(Number(result.lastInsertRowid), userId);
+  const inserted = await queryOne<{ id: number }>(
+    'INSERT INTO projects (name, description, status, color, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+    [name, description, status, color, userId]
+  );
+  const project = await queryOne('SELECT * FROM projects WHERE id = $1', [inserted!.id]);
+  syncProjectToVault(inserted!.id, userId);
   res.status(201).json(ok(project));
 });
 
-projectsRouter.get('/:id', (req: AuthRequest, res: Response) => {
+projectsRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
-  const project = getDb().prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
+  const project = await queryOne(
+    'SELECT * FROM projects WHERE id = $1 AND user_id = $2',
+    [Number(req.params['id']), userId]
+  );
   if (!project) { res.status(404).json(fail('Project not found')); return; }
-  const tasks = getDb().prepare('SELECT * FROM tasks WHERE project_id = ? AND user_id = ? AND archived = 0').all(Number(req.params['id']), userId);
-  const meetings = getDb().prepare('SELECT * FROM meetings WHERE project_id = ? AND user_id = ?').all(Number(req.params['id']), userId);
+  const tasks = await queryAll(
+    'SELECT * FROM tasks WHERE project_id = $1 AND user_id = $2 AND archived = 0',
+    [Number(req.params['id']), userId]
+  );
+  const meetings = await queryAll(
+    'SELECT * FROM meetings WHERE project_id = $1 AND user_id = $2',
+    [Number(req.params['id']), userId]
+  );
   res.json(ok({ ...project as object, tasks, meetings }));
 });
 
-projectsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
+projectsRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
+  const existing = await queryOne(
+    'SELECT id FROM projects WHERE id = $1 AND user_id = $2',
+    [Number(req.params['id']), userId]
+  );
   if (!existing) { res.status(404).json(fail('Project not found')); return; }
-  const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
-  const values = Object.values(parsed.data).filter((v) => v !== undefined);
-  if (fields.length === 0) { res.status(400).json(fail('No fields to update')); return; }
-  getDb().prepare(`UPDATE projects SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?`).run(...values, Number(req.params['id']), userId);
-  const updated = getDb().prepare('SELECT * FROM projects WHERE id = ?').get(Number(req.params['id']));
+  const entries = Object.entries(parsed.data).filter(([, v]) => v !== undefined);
+  if (entries.length === 0) { res.status(400).json(fail('No fields to update')); return; }
+  const fields = entries.map(([k], i) => `${k} = $${i + 1}`);
+  const values = entries.map(([, v]) => v);
+  // updated_at = $N+1, id = $N+2, user_id = $N+3
+  fields.push(`updated_at = $${entries.length + 1}`);
+  await execute(
+    `UPDATE projects SET ${fields.join(', ')} WHERE id = $${entries.length + 2} AND user_id = $${entries.length + 3}`,
+    [...values, new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'), Number(req.params['id']), userId]
+  );
+  const updated = await queryOne('SELECT * FROM projects WHERE id = $1', [Number(req.params['id'])]);
   syncProjectToVault(Number(req.params['id']), userId);
   res.json(ok(updated));
 });
 
-projectsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
+projectsRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(id, userId);
+  const existing = await queryOne('SELECT id FROM projects WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!existing) { res.status(404).json(fail('Project not found')); return; }
-  getDb().prepare("UPDATE projects SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?").run(id, userId);
+  await execute(
+    "UPDATE projects SET archived = 1, updated_at = $1 WHERE id = $2 AND user_id = $3",
+    [new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'), id, userId]
+  );
   res.json(ok({ deleted: true }));
 });

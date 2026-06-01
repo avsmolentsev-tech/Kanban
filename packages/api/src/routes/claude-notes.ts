@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { getDb } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 
 export const claudeNotesRouter = Router();
@@ -10,39 +10,43 @@ const CreateSchema = z.object({
   source: z.string().optional().default('api'),
 });
 
-claudeNotesRouter.get('/', (req: Request, res: Response) => {
+claudeNotesRouter.get('/', async (req: Request, res: Response) => {
   const onlyPending = req.query['pending'] === 'true';
-  const query = onlyPending
-    ? 'SELECT * FROM claude_notes WHERE processed = 0 ORDER BY created_at DESC'
+  const sql = onlyPending
+    ? 'SELECT * FROM claude_notes WHERE processed = false ORDER BY created_at DESC'
     : 'SELECT * FROM claude_notes ORDER BY created_at DESC LIMIT 100';
-  const notes = getDb().prepare(query).all();
+  const notes = await queryAll(sql);
   res.json(ok(notes));
 });
 
-claudeNotesRouter.post('/', (req: Request, res: Response) => {
+claudeNotesRouter.post('/', async (req: Request, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { content, source } = parsed.data;
-  const result = getDb().prepare('INSERT INTO claude_notes (content, source) VALUES (?, ?)').run(content, source);
-  const note = getDb().prepare('SELECT * FROM claude_notes WHERE id = ?').get(result.lastInsertRowid);
+  const inserted = await queryOne<{ id: number }>(
+    'INSERT INTO claude_notes (content, source) VALUES ($1, $2) RETURNING id',
+    [content, source]
+  );
+  if (!inserted) { res.status(500).json(fail('Insert failed')); return; }
+  const note = await queryOne('SELECT * FROM claude_notes WHERE id = $1', [inserted.id]);
   res.status(201).json(ok(note));
 });
 
-claudeNotesRouter.patch('/:id', (req: Request, res: Response) => {
+claudeNotesRouter.patch('/:id', async (req: Request, res: Response) => {
   const id = Number(req.params['id']);
   const { processed, vault_path } = req.body;
   const fields: string[] = [];
   const values: unknown[] = [];
-  if (processed !== undefined) { fields.push('processed = ?'); values.push(processed ? 1 : 0); }
-  if (vault_path !== undefined) { fields.push('vault_path = ?'); values.push(vault_path); }
+  if (processed !== undefined) { fields.push(`processed = $${fields.length + 1}`); values.push(processed ? true : false); }
+  if (vault_path !== undefined) { fields.push(`vault_path = $${fields.length + 1}`); values.push(vault_path); }
   if (fields.length === 0) { res.status(400).json(fail('No fields')); return; }
-  getDb().prepare(`UPDATE claude_notes SET ${fields.join(', ')} WHERE id = ?`).run(...values, id);
-  const note = getDb().prepare('SELECT * FROM claude_notes WHERE id = ?').get(id);
+  await execute(`UPDATE claude_notes SET ${fields.join(', ')} WHERE id = $${values.length + 1}`, [...values, id]);
+  const note = await queryOne('SELECT * FROM claude_notes WHERE id = $1', [id]);
   res.json(ok(note));
 });
 
-claudeNotesRouter.delete('/:id', (req: Request, res: Response) => {
+claudeNotesRouter.delete('/:id', async (req: Request, res: Response) => {
   const id = Number(req.params['id']);
-  getDb().prepare('DELETE FROM claude_notes WHERE id = ?').run(id);
+  await execute('DELETE FROM claude_notes WHERE id = $1', [id]);
   res.json(ok({ deleted: true }));
 });

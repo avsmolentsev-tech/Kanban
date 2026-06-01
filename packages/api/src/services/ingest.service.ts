@@ -1,4 +1,4 @@
-import { getDb } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { parseFile, detectFileType } from '../parsers';
 import { ClaudeService } from './claude.service';
 import { ObsidianService } from './obsidian.service';
@@ -18,79 +18,118 @@ export class IngestService {
     if (userId == null) {
       throw new Error('ingestBuffer requires userId — refusing to create orphan records');
     }
-    const db = getDb();
     const fileType = detectFileType(originalFilename);
 
-    const { lastInsertRowid } = db.prepare(
-      'INSERT INTO inbox_items (original_filename, file_type) VALUES (?, ?)'
-    ).run(originalFilename, fileType);
-    const itemId = Number(lastInsertRowid);
+    const inserted = await queryOne<{ id: number }>(
+      'INSERT INTO inbox_items (original_filename, file_type) VALUES ($1, $2) RETURNING id',
+      [originalFilename, fileType]
+    );
+    const itemId = inserted!.id;
 
     try {
       const extractedText = await parseFile(buffer, fileType);
-      db.prepare('UPDATE inbox_items SET extracted_text = ? WHERE id = ?').run(extractedText, itemId);
+      await execute('UPDATE inbox_items SET extracted_text = $1 WHERE id = $2', [extractedText, itemId]);
 
       const analysis = await this.claude.parseInboxItem(extractedText, fileType);
       const createdRecords: IngestResult['created_records'] = [];
 
-      const matchedProjectId = this.matchProject(analysis.project_hints ?? [], userId);
-      const matchedPeopleIds = this.matchPeople(analysis.people ?? [], userId);
+      const matchedProjectId = await this.matchProject(analysis.project_hints ?? [], userId);
+      const matchedPeopleIds = await this.matchPeople(analysis.people ?? [], userId);
 
       if (analysis.detected_type === 'meeting') {
         const date = analysis.date ?? new Date().toISOString().split('T')[0]!;
-        const projectName = matchedProjectId ? (db.prepare('SELECT name FROM projects WHERE id = ? AND user_id = ?').get(matchedProjectId, userId) as { name: string } | undefined)?.name : undefined;
+        let projectName: string | undefined;
+        if (matchedProjectId) {
+          const proj = await queryOne<{ name: string }>(
+            'SELECT name FROM projects WHERE id = $1 AND user_id = $2',
+            [matchedProjectId, userId]
+          );
+          projectName = proj?.name;
+        }
         const fullContent = `${analysis.summary}\n\n---\n\n## Полная транскрипция\n\n${extractedText}`;
         const vaultPath = await this.obsidian.forUser(userId).writeMeeting({
           title: analysis.title, date, people: analysis.people,
           summary: fullContent, agreements: analysis.agreements.length,
           source: originalFilename, project: projectName,
         });
-        const result = db.prepare(
-          'INSERT INTO meetings (user_id, title, date, project_id, summary_raw, summary_structured, vault_path, source_file, processed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)'
-        ).run(userId, analysis.title, date, matchedProjectId, fullContent, JSON.stringify(analysis), vaultPath, originalFilename);
-        const meetingId = Number(result.lastInsertRowid);
+        const meetingInserted = await queryOne<{ id: number }>(
+          'INSERT INTO meetings (user_id, title, date, project_id, summary_raw, summary_structured, vault_path, source_file, processed) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1) RETURNING id',
+          [userId, analysis.title, date, matchedProjectId, fullContent, JSON.stringify(analysis), vaultPath, originalFilename]
+        );
+        const meetingId = meetingInserted!.id;
         for (const pid of matchedPeopleIds) {
-          db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, pid);
+          await execute(
+            'INSERT INTO meeting_people (meeting_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [meetingId, pid]
+          );
         }
         if (matchedProjectId) {
-          db.prepare('INSERT OR IGNORE INTO meeting_projects (meeting_id, project_id) VALUES (?, ?)').run(meetingId, matchedProjectId);
+          await execute(
+            'INSERT INTO meeting_projects (meeting_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [meetingId, matchedProjectId]
+          );
         }
         createdRecords.push({ type: 'meeting', id: meetingId, title: analysis.title, vault_path: vaultPath });
 
         const tasksFromMeeting = analysis.tasks ?? [];
-        const selfRow = db.prepare("SELECT id FROM people WHERE user_id = ? AND LOWER(name) IN ('я','me','self') LIMIT 1").get(userId) as { id: number } | undefined;
+        const selfRow = await queryOne<{ id: number }>(
+          "SELECT id FROM people WHERE user_id = $1 AND LOWER(name) IN ('я','me','self') LIMIT 1",
+          [userId]
+        );
         for (const taskTitle of tasksFromMeeting) {
           if (!taskTitle || typeof taskTitle !== 'string') continue;
           try {
-            const tr = db.prepare('INSERT INTO tasks (user_id, project_id, title, description, status, priority) VALUES (?, ?, ?, ?, ?, ?)').run(
-              userId, matchedProjectId, taskTitle, `Из встречи: ${analysis.title}`, 'backlog', 3
+            const taskInserted = await queryOne<{ id: number }>(
+              'INSERT INTO tasks (user_id, project_id, title, description, status, priority) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+              [userId, matchedProjectId, taskTitle, `Из встречи: ${analysis.title}`, 'backlog', 3]
             );
-            const newTaskId = Number(tr.lastInsertRowid);
-            if (selfRow) db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(newTaskId, selfRow.id);
-            createdRecords.push({ type: 'task', id: newTaskId, title: taskTitle });
+            const newTaskId = taskInserted!.id;
+            if (selfRow) {
+              await execute(
+                'INSERT INTO task_people (task_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                [newTaskId, selfRow.id]
+              );
+            }
+            createdRecords.push({ type: 'task', id: newTaskId, title: taskTitle, vault_path: null });
           } catch {}
         }
       } else if (analysis.detected_type === 'task') {
         const date = analysis.date ?? null;
-        const result = db.prepare('INSERT INTO tasks (user_id, project_id, title, description, status, priority, due_date) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-          userId, matchedProjectId, analysis.title, analysis.summary, 'todo', 3, date
+        const taskInserted = await queryOne<{ id: number }>(
+          'INSERT INTO tasks (user_id, project_id, title, description, status, priority, due_date) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+          [userId, matchedProjectId, analysis.title, analysis.summary, 'todo', 3, date]
         );
-        const taskId = Number(result.lastInsertRowid);
+        const taskId = taskInserted!.id;
         for (const pid of matchedPeopleIds) {
-          db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(taskId, pid);
+          await execute(
+            'INSERT INTO task_people (task_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [taskId, pid]
+          );
+        }
+        let projectName: string | undefined;
+        if (matchedProjectId) {
+          const proj = await queryOne<{ name: string }>(
+            'SELECT name FROM projects WHERE id = $1 AND user_id = $2',
+            [matchedProjectId, userId]
+          );
+          projectName = proj?.name;
         }
         const vaultPath = await this.obsidian.forUser(userId).writeTask({
           title: analysis.title, status: 'todo', priority: 3, urgency: 3,
-          project: matchedProjectId ? (db.prepare('SELECT name FROM projects WHERE id = ? AND user_id = ?').get(matchedProjectId, userId) as { name: string } | undefined)?.name : undefined,
+          project: projectName,
           due_date: date,
         });
-        db.prepare('UPDATE tasks SET vault_path = ? WHERE id = ? AND user_id = ?').run(vaultPath, taskId, userId);
+        await execute(
+          'UPDATE tasks SET vault_path = $1 WHERE id = $2 AND user_id = $3',
+          [vaultPath, taskId, userId]
+        );
         createdRecords.push({ type: 'task', id: taskId, title: analysis.title, vault_path: vaultPath });
       } else if (analysis.detected_type === 'idea') {
-        const result = db.prepare('INSERT INTO ideas (user_id, title, body, category, project_id, status) VALUES (?, ?, ?, ?, ?, ?)').run(
-          userId, analysis.title, analysis.summary, 'personal', matchedProjectId, 'backlog'
+        const ideaInserted = await queryOne<{ id: number }>(
+          'INSERT INTO ideas (user_id, title, body, category, project_id, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+          [userId, analysis.title, analysis.summary, 'personal', matchedProjectId, 'backlog']
         );
-        createdRecords.push({ type: 'idea', id: Number(result.lastInsertRowid), title: analysis.title });
+        createdRecords.push({ type: 'idea', id: ideaInserted!.id, title: analysis.title, vault_path: null });
       } else {
         const vaultPath = await this.obsidian.forUser(userId).writeInboxItem(
           originalFilename, `# ${analysis.title}\n\n${analysis.summary}\n\n---\n\n${extractedText}`
@@ -98,22 +137,26 @@ export class IngestService {
         createdRecords.push({ type: 'inbox', id: itemId, title: analysis.title, vault_path: vaultPath });
       }
 
-      db.prepare('UPDATE inbox_items SET processed = 1, target_type = ?, target_id = ? WHERE id = ?')
-        .run(analysis.detected_type, createdRecords[0]?.id ?? null, itemId);
+      await execute(
+        'UPDATE inbox_items SET processed = 1, target_type = $1, target_id = $2 WHERE id = $3',
+        [analysis.detected_type, createdRecords[0]?.id ?? null, itemId]
+      );
 
       return { inbox_item_id: itemId, detected_type: analysis.detected_type as IngestTargetType, created_records: createdRecords, summary: analysis.summary };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      db.prepare('UPDATE inbox_items SET error = ? WHERE id = ?').run(message, itemId);
+      await execute('UPDATE inbox_items SET error = $1 WHERE id = $2', [message, itemId]);
       throw err;
     }
   }
 
   /** Fuzzy match project by name hints, scoped to user */
-  private matchProject(hints: string[], userId: number): number | null {
+  private async matchProject(hints: string[], userId: number): Promise<number | null> {
     if (hints.length === 0) return null;
-    const db = getDb();
-    const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0 AND user_id = ?').all(userId) as Array<{ id: number; name: string }>;
+    const projects = await queryAll<{ id: number; name: string }>(
+      'SELECT id, name FROM projects WHERE archived = 0 AND user_id = $1',
+      [userId]
+    );
     for (const hint of hints) {
       const lower = hint.toLowerCase();
       const match = projects.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase()));
@@ -123,10 +166,12 @@ export class IngestService {
   }
 
   /** Match existing people (scoped to user) or create new ones owned by user */
-  private matchPeople(names: string[], userId: number): number[] {
+  private async matchPeople(names: string[], userId: number): Promise<number[]> {
     if (names.length === 0) return [];
-    const db = getDb();
-    const existing = db.prepare('SELECT id, name FROM people WHERE user_id = ?').all(userId) as Array<{ id: number; name: string }>;
+    const existing = await queryAll<{ id: number; name: string }>(
+      'SELECT id, name FROM people WHERE user_id = $1',
+      [userId]
+    );
     const ids: number[] = [];
     for (const name of names) {
       const lower = name.toLowerCase().trim();
@@ -135,8 +180,11 @@ export class IngestService {
       if (match) {
         ids.push(match.id);
       } else {
-        const result = db.prepare('INSERT INTO people (user_id, name) VALUES (?, ?)').run(userId, name.trim());
-        const newId = Number(result.lastInsertRowid);
+        const result = await queryOne<{ id: number }>(
+          'INSERT INTO people (user_id, name) VALUES ($1, $2) RETURNING id',
+          [userId, name.trim()]
+        );
+        const newId = result!.id;
         existing.push({ id: newId, name: name.trim() });
         ids.push(newId);
       }
@@ -148,24 +196,7 @@ export class IngestService {
     return this.ingestBuffer(Buffer.from(text, 'utf-8'), 'paste.txt', userId);
   }
 
-  /** Match existing company by name across this user's people; return the canonical name or the hint verbatim */
-  private matchCompany(hints: string[], userId: number): string | null {
-    if (hints.length === 0) return null;
-    const db = getDb();
-    const rows = db.prepare('SELECT DISTINCT company FROM people WHERE user_id = ? AND company != ""').all(userId) as Array<{ company: string }>;
-    const existing = rows.map((r) => r.company);
-    for (const hint of hints) {
-      const lower = hint.toLowerCase().trim();
-      if (!lower) continue;
-      const match = existing.find((c) => c.toLowerCase() === lower || c.toLowerCase().includes(lower) || lower.includes(c.toLowerCase()));
-      if (match) return match;
-    }
-    // No match in DB; return the first non-empty hint verbatim so it still lands in vault as a wiki-link
-    const first = hints.find((h) => h && h.trim());
-    return first ? first.trim() : null;
-  }
-
-  getStatus(id: number): unknown {
-    return getDb().prepare('SELECT * FROM inbox_items WHERE id = ?').get(id);
+  async getStatus(id: number): Promise<unknown> {
+    return queryOne('SELECT * FROM inbox_items WHERE id = $1', [id]);
   }
 }

@@ -1,9 +1,9 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import * as fs from 'fs';
 import * as path from 'path';
 import multer from 'multer';
-import { getDb } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
 import { config } from '../config';
@@ -40,14 +40,21 @@ const UpdateSchema = z.object({
   status: z.enum(DOC_STATUSES).optional(),
 });
 
-documentsRouter.get('/', (req: AuthRequest, res: Response) => {
+documentsRouter.get('/', async (req: AuthRequest, res: Response) => {
   const scope = userScopeWhere(req);
-  let query = `SELECT * FROM documents WHERE ${scope.sql}`;
+  // scope uses $1 for user_id; additional conditions use $2, $3...
+  let sql = `SELECT * FROM documents WHERE ${scope.sql}`;
   const params: unknown[] = [...scope.params];
-  if (req.query['project']) { query += ' AND project_id = ?'; params.push(Number(req.query['project'])); }
-  if (req.query['category']) { query += ' AND category = ?'; params.push(req.query['category']); }
-  query += ' ORDER BY updated_at DESC';
-  const docs = getDb().prepare(query).all(...params) as Array<Record<string, unknown>>;
+  if (req.query['project']) {
+    params.push(Number(req.query['project']));
+    sql += ` AND project_id = $${params.length}`;
+  }
+  if (req.query['category']) {
+    params.push(req.query['category']);
+    sql += ` AND category = $${params.length}`;
+  }
+  sql += ' ORDER BY updated_at DESC';
+  const docs = await queryAll<Record<string, unknown>>(sql, params);
 
   if (req.query['tree'] === 'true') {
     const map = new Map<number, Record<string, unknown> & { children: unknown[] }>();
@@ -71,20 +78,21 @@ documentsRouter.get('/', (req: AuthRequest, res: Response) => {
   res.json(ok(docs));
 });
 
-documentsRouter.post('/', (req: AuthRequest, res: Response) => {
+documentsRouter.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { title, body, project_id, parent_id, category, vault_path } = parsed.data;
   const userId = getUserId(req);
-  const result = getDb()
-    .prepare('INSERT INTO documents (title, body, project_id, parent_id, category, vault_path, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(title, body, project_id ?? null, parent_id ?? null, category, vault_path ?? null, userId);
-  searchService.indexRecord('document', Number(result.lastInsertRowid), title, body ?? '');
-  res.status(201).json(ok(getDb().prepare('SELECT * FROM documents WHERE id = ?').get(result.lastInsertRowid)));
+  const inserted = await queryOne<{ id: number }>(
+    'INSERT INTO documents (title, body, project_id, parent_id, category, vault_path, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+    [title, body, project_id ?? null, parent_id ?? null, category, vault_path ?? null, userId]
+  );
+  searchService.indexRecord('document', inserted!.id, title, body ?? '');
+  res.status(201).json(ok(await queryOne('SELECT * FROM documents WHERE id = $1', [inserted!.id])));
 });
 
 // Get ancestor chain for breadcrumbs (single request instead of N+1)
-documentsRouter.get('/:id/ancestors', (req: AuthRequest, res: Response) => {
+documentsRouter.get('/:id/ancestors', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   const docId = Number(req.params['id']);
   const chain: Array<{ id: number; title: string; parent_id: number | null }> = [];
@@ -93,7 +101,11 @@ documentsRouter.get('/:id/ancestors', (req: AuthRequest, res: Response) => {
   while (currentId) {
     if (seen.has(currentId)) break; // cycle protection
     seen.add(currentId);
-    const doc = getDb().prepare('SELECT id, title, parent_id FROM documents WHERE id = ? AND user_id = ?').get(currentId, userId) as { id: number; title: string; parent_id: number | null } | undefined;
+    const cid: number = currentId;
+    const doc: { id: number; title: string; parent_id: number | null } | undefined = await queryOne<{ id: number; title: string; parent_id: number | null }>(
+      'SELECT id, title, parent_id FROM documents WHERE id = $1 AND user_id = $2',
+      [cid, userId]
+    );
     if (!doc || doc.id === docId) { currentId = doc?.parent_id ?? null; continue; } // skip self
     chain.unshift(doc);
     currentId = doc.parent_id;
@@ -102,87 +114,92 @@ documentsRouter.get('/:id/ancestors', (req: AuthRequest, res: Response) => {
 });
 
 // Serve attachment files — MUST be before /:id to avoid route conflict
-documentsRouter.get('/attachments/file/:filename', (req: AuthRequest, res: Response) => {
+documentsRouter.get('/attachments/file/:filename', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   // Verify the attachment belongs to a document owned by this user
-  const att = getDb().prepare('SELECT a.id FROM attachments a JOIN documents d ON d.id = a.document_id WHERE a.filename = ? AND d.user_id = ?').get(req.params['filename']!, userId);
+  const att = await queryOne(
+    'SELECT a.id FROM attachments a JOIN documents d ON d.id = a.document_id WHERE a.filename = $1 AND d.user_id = $2',
+    [req.params['filename']!, userId]
+  );
   if (!att) { res.status(404).json(fail('Файл не найден')); return; }
   const filePath = path.join(attachDir, req.params['filename']!);
   if (!fs.existsSync(filePath)) { res.status(404).json(fail('Файл не найден')); return; }
   res.sendFile(filePath);
 });
 
-documentsRouter.delete('/attachments/:attId', (req: AuthRequest, res: Response) => {
+documentsRouter.delete('/attachments/:attId', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
-  const att = getDb().prepare('SELECT a.id, a.filename FROM attachments a JOIN documents d ON d.id = a.document_id WHERE a.id = ? AND d.user_id = ?').get(Number(req.params['attId']), userId) as { id: number; filename: string } | undefined;
+  const att = await queryOne<{ id: number; filename: string }>(
+    'SELECT a.id, a.filename FROM attachments a JOIN documents d ON d.id = a.document_id WHERE a.id = $1 AND d.user_id = $2',
+    [Number(req.params['attId']), userId]
+  );
   if (!att) { res.status(404).json(fail('Attachment not found')); return; }
   try { fs.unlinkSync(path.join(attachDir, att.filename)); } catch {}
-  getDb().prepare('DELETE FROM attachments WHERE id = ?').run(att.id);
+  await execute('DELETE FROM attachments WHERE id = $1', [att.id]);
   res.json(ok({ deleted: true }));
 });
 
-documentsRouter.get('/:id', (req: AuthRequest, res: Response) => {
+documentsRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
-  const doc = getDb().prepare('SELECT * FROM documents WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
+  const doc = await queryOne('SELECT * FROM documents WHERE id = $1 AND user_id = $2', [Number(req.params['id']), userId]);
   if (!doc) { res.status(404).json(fail('Document not found')); return; }
   res.json(ok(doc));
 });
 
-documentsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
+documentsRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM documents WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
+  const existing = await queryOne('SELECT id FROM documents WHERE id = $1 AND user_id = $2', [Number(req.params['id']), userId]);
   if (!existing) { res.status(404).json(fail('Document not found')); return; }
-  const fields = Object.entries(parsed.data)
-    .filter(([, v]) => v !== undefined)
-    .map(([k]) => `${k} = ?`);
-  const values = Object.values(parsed.data).filter((v) => v !== undefined);
-  if (fields.length === 0) { res.status(400).json(fail('No fields to update')); return; }
-  fields.push('updated_at = ?');
+  const entries = Object.entries(parsed.data).filter(([, v]) => v !== undefined);
+  if (entries.length === 0) { res.status(400).json(fail('No fields to update')); return; }
+  const fields = entries.map(([k], i) => `${k} = $${i + 1}`);
+  const values = entries.map(([, v]) => v);
+  // add updated_at
+  fields.push(`updated_at = $${entries.length + 1}`);
   values.push(new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'));
   const docId = Number(req.params['id']);
-  getDb()
-    .prepare(`UPDATE documents SET ${fields.join(', ')} WHERE id = ?`)
-    .run(...values, docId);
-  const updatedDoc = getDb().prepare('SELECT * FROM documents WHERE id = ?').get(docId) as Record<string, unknown>;
+  await execute(
+    `UPDATE documents SET ${fields.join(', ')} WHERE id = $${entries.length + 2}`,
+    [...values, docId]
+  );
+  const updatedDoc = await queryOne<Record<string, unknown>>('SELECT * FROM documents WHERE id = $1', [docId]);
   if (updatedDoc) searchService.indexRecord('document', updatedDoc['id'] as number, updatedDoc['title'] as string, (updatedDoc['body'] as string) ?? '');
 
   // Sync to Obsidian vault
   if (updatedDoc) {
     const docStatus = updatedDoc['status'] as string;
     if (docStatus === 'in_obsidian' || docStatus === 'active') {
-      try {
-        syncDocToVault(docId, userId);
-      } catch (err) {
+      syncDocToVault(docId, userId).catch(err => {
         console.warn('[documents] vault sync failed:', err);
-      }
+      });
     }
   }
 
   res.json(ok(updatedDoc));
 });
 
-documentsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
+documentsRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM documents WHERE id = ? AND user_id = ?').get(id, userId);
+  const existing = await queryOne('SELECT id FROM documents WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!existing) { res.status(404).json(fail('Document not found')); return; }
   // Unparent children so they don't become orphaned
-  getDb().prepare('UPDATE documents SET parent_id = NULL WHERE parent_id = ?').run(id);
+  await execute('UPDATE documents SET parent_id = NULL WHERE parent_id = $1', [id]);
   // Delete attachments
-  const atts = getDb().prepare('SELECT filename FROM attachments WHERE document_id = ?').all(id) as Array<{ filename: string }>;
+  const atts = await queryAll<{ filename: string }>('SELECT filename FROM attachments WHERE document_id = $1', [id]);
   for (const a of atts) { try { fs.unlinkSync(path.join(attachDir, a.filename)); } catch {} }
-  getDb().prepare('DELETE FROM attachments WHERE document_id = ?').run(id);
-  getDb().prepare('DELETE FROM documents WHERE id = ?').run(id);
+  await execute('DELETE FROM attachments WHERE document_id = $1', [id]);
+  await execute('DELETE FROM documents WHERE id = $1', [id]);
   res.json(ok({ deleted: true }));
 });
 
 // Attachments
-documentsRouter.post('/:id/attachments', upload.single('file'), (req: AuthRequest, res: Response) => {
+documentsRouter.post('/:id/attachments', upload.single('file'), async (req: AuthRequest, res: Response) => {
   const docId = Number(req.params['id']);
   const userId = getUserId(req);
-  const doc = getDb().prepare('SELECT id FROM documents WHERE id = ? AND user_id = ?').get(docId, userId);
+  const doc = await queryOne('SELECT id FROM documents WHERE id = $1 AND user_id = $2', [docId, userId]);
   if (!doc) { res.status(404).json(fail('Document not found')); return; }
   if (!req.file) { res.status(400).json(fail('Файл не предоставлен')); return; }
 
@@ -190,19 +207,19 @@ documentsRouter.post('/:id/attachments', upload.single('file'), (req: AuthReques
   const filename = `${docId}-${Date.now()}${ext}`;
   fs.writeFileSync(path.join(attachDir, filename), req.file.buffer);
 
-  const result = getDb().prepare('INSERT INTO attachments (document_id, filename, original_name, size, mime_type) VALUES (?, ?, ?, ?, ?)').run(
-    docId, filename, req.file.originalname, req.file.size, req.file.mimetype
+  const inserted = await queryOne<{ id: number }>(
+    'INSERT INTO attachments (document_id, filename, original_name, size, mime_type) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+    [docId, filename, req.file.originalname, req.file.size, req.file.mimetype]
   );
-  const attachment = getDb().prepare('SELECT * FROM attachments WHERE id = ?').get(result.lastInsertRowid);
+  const attachment = await queryOne('SELECT * FROM attachments WHERE id = $1', [inserted!.id]);
   res.status(201).json(ok(attachment));
 });
 
-documentsRouter.get('/:id/attachments', (req: AuthRequest, res: Response) => {
+documentsRouter.get('/:id/attachments', async (req: AuthRequest, res: Response) => {
   const docId = Number(req.params['id']);
   const userId = getUserId(req);
-  const doc = getDb().prepare('SELECT id FROM documents WHERE id = ? AND user_id = ?').get(docId, userId);
+  const doc = await queryOne('SELECT id FROM documents WHERE id = $1 AND user_id = $2', [docId, userId]);
   if (!doc) { res.status(404).json(fail('Document not found')); return; }
-  const atts = getDb().prepare('SELECT * FROM attachments WHERE document_id = ? ORDER BY created_at DESC').all(docId);
+  const atts = await queryAll('SELECT * FROM attachments WHERE document_id = $1 ORDER BY created_at DESC', [docId]);
   res.json(ok(atts));
 });
-

@@ -131,9 +131,10 @@ export async function transcribeLocal(buffer: Buffer, filename: string): Promise
 
     // Log
     try {
-      const { getDb } = require('../db/db');
-      getDb().prepare("INSERT INTO usage_logs (type, model, detail) VALUES (?, ?, ?)").run(
-        'transcription', 'whisper-local', `${transcript.length} chars`
+      const { execute } = require('../db/db');
+      await execute(
+        "INSERT INTO usage_logs (type, model, detail) VALUES ($1, $2, $3)",
+        ['transcription', 'whisper-local', `${transcript.length} chars`]
       );
     } catch {}
 

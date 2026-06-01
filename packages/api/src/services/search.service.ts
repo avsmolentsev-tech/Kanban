@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { getDb } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { config } from '../config';
 
 export interface SearchHit {
@@ -12,90 +12,99 @@ export interface SearchHit {
 }
 
 export class SearchService {
-  indexRecord(type: string, refId: number, title: string, body: string): void {
-    const db = getDb();
-    // Remove existing entry
-    db.prepare('DELETE FROM search_index WHERE type = ? AND ref_id = ?').run(type, refId);
-    // Insert new
-    db.prepare('INSERT INTO search_index (type, ref_id, title, body) VALUES (?, ?, ?, ?)').run(type, refId, title, body);
+  /** No-op: tsvector on tasks is maintained by DB trigger */
+  async indexRecord(_type: string, _refId: number, _title: string, _body: string): Promise<void> {
+    // no-op — trigger handles tasks; other entities use ILIKE search
   }
 
-  removeRecord(type: string, refId: number): void {
-    getDb().prepare('DELETE FROM search_index WHERE type = ? AND ref_id = ?').run(type, refId);
+  /** No-op */
+  async removeRecord(_type: string, _refId: number): Promise<void> {
+    // no-op
   }
 
-  search(query: string, limit = 50): SearchHit[] {
+  async search(query: string, limit = 50): Promise<SearchHit[]> {
     if (!query.trim()) return [];
-    const db = getDb();
-    // FTS5 query — append * for prefix matching
-    const ftsQuery = query.trim().split(/\s+/).map(w => `"${w}"*`).join(' ');
+    const q = query.trim();
+    const likeQ = `%${q}%`;
+    const results: SearchHit[] = [];
+
     try {
-      const results = db.prepare(`
-        SELECT type, ref_id, title,
-          snippet(search_index, 3, '<mark>', '</mark>', '...', 40) as snippet,
-          rank
-        FROM search_index
-        WHERE search_index MATCH ?
-        ORDER BY rank
-        LIMIT ?
-      `).all(ftsQuery, limit) as SearchHit[];
-      return results;
-    } catch {
-      // If FTS query fails (syntax), fall back to LIKE
-      const like = `%${query.trim()}%`;
-      return db.prepare(`
-        SELECT type, ref_id, title, substr(body, 1, 200) as snippet, 0 as rank
-        FROM search_index
-        WHERE title LIKE ? OR body LIKE ?
-        LIMIT ?
-      `).all(like, like, limit) as SearchHit[];
+      // Tasks: use tsvector full-text search
+      const tasks = await queryAll<{ id: number; title: string; rank: number }>(
+        `SELECT id, title, ts_rank(search_vector, plainto_tsquery('russian', $1)) as rank
+         FROM tasks
+         WHERE search_vector @@ plainto_tsquery('russian', $1) AND archived = 0
+         ORDER BY rank DESC
+         LIMIT $2`,
+        [q, limit]
+      );
+      for (const t of tasks) {
+        results.push({ type: 'task', ref_id: t.id, title: t.title, snippet: '', rank: t.rank });
+      }
+
+      // Meetings: ILIKE
+      const meetings = await queryAll<{ id: number; title: string; summary_raw: string }>(
+        'SELECT id, title, summary_raw FROM meetings WHERE title ILIKE $1 OR summary_raw ILIKE $1 LIMIT $2',
+        [likeQ, limit]
+      );
+      for (const m of meetings) {
+        const snippet = (m.summary_raw ?? '').slice(0, 200);
+        results.push({ type: 'meeting', ref_id: m.id, title: m.title, snippet, rank: 0 });
+      }
+
+      // Ideas: ILIKE
+      const ideas = await queryAll<{ id: number; title: string; body: string }>(
+        'SELECT id, title, body FROM ideas WHERE title ILIKE $1 OR body ILIKE $1 LIMIT $2',
+        [likeQ, limit]
+      );
+      for (const i of ideas) {
+        results.push({ type: 'idea', ref_id: i.id, title: i.title, snippet: (i.body ?? '').slice(0, 200), rank: 0 });
+      }
+
+      // Documents: ILIKE
+      try {
+        const docs = await queryAll<{ id: number; title: string; body: string }>(
+          'SELECT id, title, body FROM documents WHERE title ILIKE $1 OR body ILIKE $1 LIMIT $2',
+          [likeQ, limit]
+        );
+        for (const d of docs) {
+          results.push({ type: 'document', ref_id: d.id, title: d.title, snippet: (d.body ?? '').slice(0, 200), rank: 0 });
+        }
+      } catch {}
+
+      // People: ILIKE
+      const people = await queryAll<{ id: number; name: string; notes: string }>(
+        'SELECT id, name, notes FROM people WHERE name ILIKE $1 OR notes ILIKE $1 LIMIT $2',
+        [likeQ, limit]
+      );
+      for (const p of people) {
+        results.push({ type: 'person', ref_id: p.id, title: p.name, snippet: (p.notes ?? '').slice(0, 200), rank: 0 });
+      }
+    } catch (err) {
+      console.warn('[search] search error:', err);
     }
+
+    // Sort: FTS results first (rank > 0), then ILIKE; limit total
+    results.sort((a, b) => b.rank - a.rank);
+    return results.slice(0, limit);
   }
 
-  reindexAll(): { indexed: number } {
-    const db = getDb();
-    db.prepare('DELETE FROM search_index').run();
+  async reindexAll(): Promise<{ indexed: number }> {
+    // Rebuild tsvector for tasks (trigger handles new inserts/updates going forward)
+    await execute(
+      `UPDATE tasks SET search_vector = setweight(to_tsvector('russian', COALESCE(title, '')), 'A') || setweight(to_tsvector('russian', COALESCE(description, '')), 'B')`
+    );
 
+    // Count what we have for reporting
     let count = 0;
+    const taskCount = await queryOne<{ c: number }>('SELECT COUNT(*) as c FROM tasks WHERE archived = 0');
+    count += taskCount?.c ?? 0;
+    const meetingCount = await queryOne<{ c: number }>('SELECT COUNT(*) as c FROM meetings');
+    count += meetingCount?.c ?? 0;
+    const ideaCount = await queryOne<{ c: number }>('SELECT COUNT(*) as c FROM ideas');
+    count += ideaCount?.c ?? 0;
 
-    // Index tasks
-    const tasks = db.prepare('SELECT id, title, description FROM tasks WHERE archived = 0').all() as Array<{ id: number; title: string; description: string }>;
-    for (const t of tasks) {
-      this.indexRecord('task', t.id, t.title, t.description);
-      count++;
-    }
-
-    // Index meetings
-    const meetings = db.prepare('SELECT id, title, summary_raw FROM meetings').all() as Array<{ id: number; title: string; summary_raw: string }>;
-    for (const m of meetings) {
-      this.indexRecord('meeting', m.id, m.title, m.summary_raw);
-      count++;
-    }
-
-    // Index ideas
-    const ideas = db.prepare('SELECT id, title, body FROM ideas').all() as Array<{ id: number; title: string; body: string }>;
-    for (const i of ideas) {
-      this.indexRecord('idea', i.id, i.title, i.body);
-      count++;
-    }
-
-    // Index documents
-    try {
-      const docs = db.prepare('SELECT id, title, body FROM documents').all() as Array<{ id: number; title: string; body: string }>;
-      for (const d of docs) {
-        this.indexRecord('document', d.id, d.title, d.body);
-        count++;
-      }
-    } catch {} // table might not exist yet
-
-    // Index people
-    const people = db.prepare('SELECT id, name, notes FROM people').all() as Array<{ id: number; name: string; notes: string }>;
-    for (const p of people) {
-      this.indexRecord('person', p.id, p.name, p.notes);
-      count++;
-    }
-
-    // Index vault .md files
+    // Index vault files (no-op for DB, just count)
     count += this.indexVaultFiles();
 
     return { indexed: count };
@@ -109,7 +118,7 @@ export class SearchService {
     const folders = ['Tasks', 'Meetings', 'Ideas', 'Materials', 'Inbox', 'Projects', 'Goals'];
 
     // Index files in root vault folders (legacy)
-    count += this.indexVaultFolders(vaultPath, folders, '');
+    count += this.countVaultFolders(vaultPath, folders);
 
     // Index user-specific vault folders (user_N/)
     try {
@@ -117,7 +126,7 @@ export class SearchService {
       for (const entry of entries) {
         if (entry.isDirectory() && entry.name.startsWith('user_')) {
           const userDir = path.join(vaultPath, entry.name);
-          count += this.indexVaultFolders(userDir, folders, entry.name + '/');
+          count += this.countVaultFolders(userDir, folders);
         }
       }
     } catch {}
@@ -125,21 +134,12 @@ export class SearchService {
     return count;
   }
 
-  private indexVaultFolders(basePath: string, folders: string[], prefix: string): number {
+  private countVaultFolders(basePath: string, folders: string[]): number {
     let count = 0;
     for (const folder of folders) {
       const dir = path.join(basePath, folder);
       if (!fs.existsSync(dir)) continue;
-      const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'));
-      for (const file of files) {
-        try {
-          const content = fs.readFileSync(path.join(dir, file), 'utf-8');
-          const title = file.replace('.md', '');
-          const refId = -(Math.abs(this.hashCode(prefix + folder + '/' + file)) % 1000000);
-          this.indexRecord('vault', refId, `${prefix}${folder}/${title}`, content);
-          count++;
-        } catch {}
-      }
+      count += fs.readdirSync(dir).filter(f => f.endsWith('.md')).length;
     }
     return count;
   }
@@ -152,7 +152,7 @@ export class SearchService {
     const pending = new Map<string, NodeJS.Timeout>();
 
     try {
-      fs.watch(vaultPath, { recursive: true }, (eventType, filename) => {
+      fs.watch(vaultPath, { recursive: true }, (_eventType, filename) => {
         if (!filename || !filename.endsWith('.md')) return;
 
         // Debounce — wait 500ms before processing
@@ -163,15 +163,12 @@ export class SearchService {
           try {
             if (fs.existsSync(fullPath)) {
               const content = fs.readFileSync(fullPath, 'utf-8');
-              const title = path.basename(filename, '.md');
-              const refId = -(Math.abs(this.hashCode(filename)) % 1000000);
-              this.indexRecord('vault', refId, title, content);
 
               // Sync back to DB if it's a task/meeting file with frontmatter
-              this.syncVaultFileToDb(filename, content);
+              this.syncVaultFileToDb(filename, content).catch(() => {});
             } else {
               // File deleted in Obsidian → archive in DB
-              this.archiveDeletedVaultFile(filename);
+              this.archiveDeletedVaultFile(filename).catch(() => {});
             }
           } catch {}
         }, 500));
@@ -194,14 +191,13 @@ export class SearchService {
   }
 
   /** Parse vault .md file and sync changes back to database */
-  private syncVaultFileToDb(filename: string, content: string): void {
+  private async syncVaultFileToDb(filename: string, content: string): Promise<void> {
     try {
-      const db = getDb();
       const vaultRelPath = filename.replace(/\\/g, '/');
 
       // Check if it's in Meetings folder → handle as new meeting
       if (this.isMeetingPath(vaultRelPath)) {
-        this.syncMeetingFromVault(vaultRelPath, content);
+        await this.syncMeetingFromVault(vaultRelPath, content);
         return;
       }
 
@@ -209,21 +205,29 @@ export class SearchService {
       if (!fm['type']) return;
 
       if (fm['type'] === 'task') {
-        const task = db.prepare('SELECT id FROM tasks WHERE vault_path = ?').get(vaultRelPath) as { id: number } | undefined;
+        const task = await queryOne<{ id: number }>(
+          'SELECT id FROM tasks WHERE vault_path = $1',
+          [vaultRelPath]
+        );
         if (!task) return;
 
         const updates: string[] = [];
         const values: unknown[] = [];
+        let paramIdx = 1;
 
         if (fm['status'] && ['backlog', 'todo', 'in_progress', 'done', 'someday'].includes(fm['status'])) {
-          updates.push('status = ?'); values.push(fm['status']);
+          updates.push(`status = $${paramIdx++}`); values.push(fm['status']);
         }
-        if (fm['priority']) { updates.push('priority = ?'); values.push(Number(fm['priority'])); }
-        if (fm['urgency']) { updates.push('urgency = ?'); values.push(Number(fm['urgency'])); }
-        if (fm['due_date'] && fm['due_date'] !== 'null') { updates.push('due_date = ?'); values.push(fm['due_date']); }
+        if (fm['priority']) { updates.push(`priority = $${paramIdx++}`); values.push(Number(fm['priority'])); }
+        if (fm['urgency']) { updates.push(`urgency = $${paramIdx++}`); values.push(Number(fm['urgency'])); }
+        if (fm['due_date'] && fm['due_date'] !== 'null') { updates.push(`due_date = $${paramIdx++}`); values.push(fm['due_date']); }
 
         if (updates.length > 0) {
-          db.prepare(`UPDATE tasks SET ${updates.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, task.id);
+          values.push(task.id);
+          await execute(
+            `UPDATE tasks SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${paramIdx}`,
+            values
+          );
           console.log(`[vault-sync] updated task #${task.id} from ${vaultRelPath}`);
         }
       }
@@ -233,8 +237,10 @@ export class SearchService {
   /** Sync meeting from vault file. If new — create record + extract tasks via AI */
   private async syncMeetingFromVault(vaultRelPath: string, content: string): Promise<void> {
     try {
-      const db = getDb();
-      const existing = db.prepare('SELECT id FROM meetings WHERE vault_path = ?').get(vaultRelPath) as { id: number } | undefined;
+      const existing = await queryOne<{ id: number }>(
+        'SELECT id FROM meetings WHERE vault_path = $1',
+        [vaultRelPath]
+      );
       if (existing) return; // Already exists, don't re-extract tasks
 
       // Parse frontmatter for metadata
@@ -249,7 +255,9 @@ export class SearchService {
       const date = fm['date'] ?? new Date().toISOString().split('T')[0]!;
 
       // Try to match project by frontmatter or filename
-      const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
+      const projects = await queryAll<{ id: number; name: string }>(
+        'SELECT id, name FROM projects WHERE archived = 0'
+      );
       let projectId: number | null = null;
       const projectHint = (fm['project'] ?? '').toLowerCase();
       if (projectHint) {
@@ -261,12 +269,17 @@ export class SearchService {
       const userId = this.extractUserIdFromPath(vaultRelPath);
 
       // Create meeting record
-      const result = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw, vault_path, processed, user_id) VALUES (?, ?, ?, ?, ?, 1, ?)').run(
-        title, date, projectId, body, vaultRelPath, userId
+      const inserted = await queryOne<{ id: number }>(
+        'INSERT INTO meetings (title, date, project_id, summary_raw, vault_path, processed, user_id) VALUES ($1, $2, $3, $4, $5, 1, $6) RETURNING id',
+        [title, date, projectId, body, vaultRelPath, userId]
       );
-      const meetingId = Number(result.lastInsertRowid);
-      if (projectId) db.prepare('INSERT OR IGNORE INTO meeting_projects (meeting_id, project_id) VALUES (?, ?)').run(meetingId, projectId);
-      this.indexRecord('meeting', meetingId, title, body);
+      const meetingId = inserted!.id;
+      if (projectId) {
+        await execute(
+          'INSERT INTO meeting_projects (meeting_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [meetingId, projectId]
+        );
+      }
       console.log(`[vault-sync] created meeting #${meetingId} from ${vaultRelPath}`);
 
       // Extract tasks via AI (async, don't block watcher)
@@ -298,19 +311,25 @@ ${body.slice(0, 8000)}`;
       const tasks = JSON.parse(jsonMatch[0]) as string[];
       if (!Array.isArray(tasks) || tasks.length === 0) return;
 
-      const db = getDb();
-      const selfRow = db.prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
+      const selfRow = await queryOne<{ id: number }>(
+        "SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1"
+      );
 
       let created = 0;
       for (const taskTitle of tasks) {
         if (!taskTitle || typeof taskTitle !== 'string' || taskTitle.length < 3) continue;
         try {
-          const tr = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, user_id) VALUES (?, ?, ?, ?, ?, ?)').run(
-            projectId, taskTitle, `Из встречи: ${title}`, 'backlog', 3, userId ?? null
+          const newTask = await queryOne<{ id: number }>(
+            'INSERT INTO tasks (project_id, title, description, status, priority, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+            [projectId, taskTitle, `Из встречи: ${title}`, 'backlog', 3, userId ?? null]
           );
-          const newTaskId = Number(tr.lastInsertRowid);
-          if (selfRow) db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(newTaskId, selfRow.id);
-          this.indexRecord('task', newTaskId, taskTitle, '');
+          const newTaskId = newTask!.id;
+          if (selfRow) {
+            await execute(
+              'INSERT INTO task_people (task_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+              [newTaskId, selfRow.id]
+            );
+          }
           created++;
         } catch {}
       }
@@ -323,24 +342,32 @@ ${body.slice(0, 8000)}`;
   }
 
   /** Archive DB records when vault file is deleted */
-  private archiveDeletedVaultFile(filename: string): void {
+  private async archiveDeletedVaultFile(filename: string): Promise<void> {
     try {
-      const db = getDb();
       const vaultRelPath = filename.replace(/\\/g, '/');
 
       // Check tasks
-      const task = db.prepare('SELECT id FROM tasks WHERE vault_path = ?').get(vaultRelPath) as { id: number } | undefined;
+      const task = await queryOne<{ id: number }>(
+        'SELECT id FROM tasks WHERE vault_path = $1',
+        [vaultRelPath]
+      );
       if (task) {
-        db.prepare("UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(task.id);
+        await execute(
+          'UPDATE tasks SET archived = 1, updated_at = NOW() WHERE id = $1',
+          [task.id]
+        );
         console.log(`[vault-sync] archived task #${task.id} (file deleted: ${vaultRelPath})`);
         return;
       }
 
       // Check meetings
-      const meeting = db.prepare('SELECT id FROM meetings WHERE vault_path = ?').get(vaultRelPath) as { id: number } | undefined;
+      const meeting = await queryOne<{ id: number }>(
+        'SELECT id FROM meetings WHERE vault_path = $1',
+        [vaultRelPath]
+      );
       if (meeting) {
-        db.prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(meeting.id);
-        db.prepare('DELETE FROM meetings WHERE id = ?').run(meeting.id);
+        await execute('DELETE FROM meeting_people WHERE meeting_id = $1', [meeting.id]);
+        await execute('DELETE FROM meetings WHERE id = $1', [meeting.id]);
         console.log(`[vault-sync] deleted meeting #${meeting.id} (file deleted: ${vaultRelPath})`);
         return;
       }
@@ -351,7 +378,7 @@ ${body.slice(0, 8000)}`;
     const match = content.match(/^---\n([\s\S]*?)\n---/);
     if (!match) return {};
     const result: Record<string, string> = {};
-    for (const line of match[1].split('\n')) {
+    for (const line of match[1]!.split('\n')) {
       const idx = line.indexOf(':');
       if (idx > 0) {
         let val = line.slice(idx + 1).trim();
@@ -362,15 +389,6 @@ ${body.slice(0, 8000)}`;
     return result;
   }
 
-  private hashCode(str: string): number {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash |= 0;
-    }
-    return hash;
-  }
 }
 
 export const searchService = new SearchService();

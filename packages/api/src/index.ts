@@ -3,7 +3,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { router } from './routes';
-import { initDb } from './db/db';
+import { initPg, runSchema } from './db/db';
 import { seedDb } from './db/seed';
 import { searchService } from './services/search.service';
 import { telegramService } from './services/telegram.service';
@@ -56,7 +56,8 @@ app.get('/health', (_req, res) => {
 });
 
 async function start(): Promise<void> {
-  initDb();
+  await initPg(config.databaseUrl);
+  await runSchema();
   seedDb();
   searchService.reindexAll();
   searchService.startVaultWatcher();

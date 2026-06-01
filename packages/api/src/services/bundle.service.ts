@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { getDb } from '../db/db';
+import { queryAll, queryOne } from '../db/db';
 import { config } from '../config';
 import { moscowDateString } from '../utils/time';
 
@@ -19,8 +19,7 @@ export interface BundleResult {
 
 /** Generate a NotebookLM-ready bundle markdown for a specific project, or all projects.
  *  brief=true omits full meeting transcripts — only title, date, and 1-line TL;DR. */
-export function generateBundle(projectIdOrAll: number | 'all', brief = false): BundleResult {
-  const db = getDb();
+export async function generateBundle(projectIdOrAll: number | 'all', brief = false): Promise<BundleResult> {
   const bundleDate = moscowDateString();
 
   let projects: Array<{ id: number; name: string; description: string }>;
@@ -28,11 +27,16 @@ export function generateBundle(projectIdOrAll: number | 'all', brief = false): B
   let filenameSuffix: string;
 
   if (projectIdOrAll === 'all') {
-    projects = db.prepare('SELECT id, name, description FROM projects WHERE archived = 0 ORDER BY order_index').all() as Array<{ id: number; name: string; description: string }>;
+    projects = await queryAll<{ id: number; name: string; description: string }>(
+      'SELECT id, name, description FROM projects WHERE archived = 0 ORDER BY order_index'
+    );
     projectLabel = 'Все проекты';
     filenameSuffix = 'all-projects';
   } else {
-    const proj = db.prepare('SELECT id, name, description FROM projects WHERE id = ?').get(projectIdOrAll) as { id: number; name: string; description: string } | undefined;
+    const proj = await queryOne<{ id: number; name: string; description: string }>(
+      'SELECT id, name, description FROM projects WHERE id = $1',
+      [projectIdOrAll]
+    );
     if (!proj) throw new Error(`Проект #${projectIdOrAll} не найден`);
     projects = [proj];
     projectLabel = proj.name;
@@ -40,31 +44,54 @@ export function generateBundle(projectIdOrAll: number | 'all', brief = false): B
   }
 
   const projectIds = projects.map(p => p.id);
-  const idsPlaceholders = projectIds.map(() => '?').join(',');
+
+  // Build $1, $2, ... placeholders
+  const makePlaceholders = (count: number, offset = 0) =>
+    Array.from({ length: count }, (_, i) => `$${i + offset + 1}`).join(', ');
 
   // Fetch all related data
-  const meetings = projectIds.length > 0
-    ? db.prepare(`SELECT m.id, m.title, m.date, m.summary_raw, m.summary_structured, m.project_id FROM meetings m LEFT JOIN meeting_projects mp ON mp.meeting_id = m.id WHERE m.project_id IN (${idsPlaceholders}) OR mp.project_id IN (${idsPlaceholders}) GROUP BY m.id ORDER BY m.date DESC`).all(...projectIds, ...projectIds) as Array<Meeting & { summary_structured: string | null }>
-    : [];
-
-  const tasks = projectIds.length > 0
-    ? db.prepare(`SELECT id, title, description, status, priority, due_date, project_id FROM tasks WHERE project_id IN (${idsPlaceholders}) AND archived = 0 ORDER BY priority DESC, due_date ASC`).all(...projectIds) as Task[]
-    : [];
-
-  const ideas = projectIds.length > 0
-    ? db.prepare(`SELECT id, title, body, status, project_id FROM ideas WHERE project_id IN (${idsPlaceholders}) AND archived = 0 ORDER BY created_at DESC`).all(...projectIds) as Idea[]
-    : [];
-
+  let meetings: Array<Meeting & { summary_structured: string | null }> = [];
+  let tasks: Task[] = [];
+  let ideas: Idea[] = [];
   let documents: Document[] = [];
-  try {
-    documents = projectIds.length > 0
-      ? db.prepare(`SELECT id, title, body, project_id FROM documents WHERE project_id IN (${idsPlaceholders}) ORDER BY created_at DESC`).all(...projectIds) as Document[]
-      : [];
-  } catch {}
+  let people: Person[] = [];
 
-  const people = projectIds.length > 0
-    ? db.prepare(`SELECT DISTINCT p.id, p.name, p.company, p.role, p.notes FROM people p JOIN people_projects pp ON pp.person_id = p.id WHERE pp.project_id IN (${idsPlaceholders})`).all(...projectIds) as Person[]
-    : [];
+  if (projectIds.length > 0) {
+    const ph = makePlaceholders(projectIds.length);
+    const ph2 = makePlaceholders(projectIds.length, projectIds.length);
+
+    meetings = await queryAll<Meeting & { summary_structured: string | null }>(
+      `SELECT m.id, m.title, m.date, m.summary_raw, m.summary_structured, m.project_id
+       FROM meetings m
+       LEFT JOIN meeting_projects mp ON mp.meeting_id = m.id
+       WHERE m.project_id IN (${ph}) OR mp.project_id IN (${ph2})
+       GROUP BY m.id
+       ORDER BY m.date DESC`,
+      [...projectIds, ...projectIds]
+    );
+
+    tasks = await queryAll<Task>(
+      `SELECT id, title, description, status, priority, due_date, project_id FROM tasks WHERE project_id IN (${ph}) AND archived = 0 ORDER BY priority DESC, due_date ASC`,
+      projectIds
+    );
+
+    ideas = await queryAll<Idea>(
+      `SELECT id, title, body, status, project_id FROM ideas WHERE project_id IN (${ph}) AND archived = 0 ORDER BY created_at DESC`,
+      projectIds
+    );
+
+    try {
+      documents = await queryAll<Document>(
+        `SELECT id, title, body, project_id FROM documents WHERE project_id IN (${ph}) ORDER BY created_at DESC`,
+        projectIds
+      );
+    } catch {}
+
+    people = await queryAll<Person>(
+      `SELECT DISTINCT p.id, p.name, p.company, p.role, p.notes FROM people p JOIN people_projects pp ON pp.person_id = p.id WHERE pp.project_id IN (${ph})`,
+      projectIds
+    );
+  }
 
   // Build markdown
   const lines: string[] = [];
@@ -207,10 +234,12 @@ export function generateBundle(projectIdOrAll: number | 'all', brief = false): B
 }
 
 /** Fuzzy find project by name */
-export function findProjectByName(query: string): number | 'all' | null {
+export async function findProjectByName(query: string): Promise<number | 'all' | null> {
   const lower = query.toLowerCase().trim();
   if (['все', 'all', 'всё'].includes(lower)) return 'all';
-  const projects = getDb().prepare('SELECT id, name FROM projects WHERE archived = 0').all() as Array<{ id: number; name: string }>;
+  const projects = await queryAll<{ id: number; name: string }>(
+    'SELECT id, name FROM projects WHERE archived = 0'
+  );
   for (const p of projects) {
     if (p.name.toLowerCase() === lower) return p.id;
   }

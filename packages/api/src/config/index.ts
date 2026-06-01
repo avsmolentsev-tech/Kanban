@@ -9,6 +9,7 @@ export const config = {
   anthropicApiKey: process.env['ANTHROPIC_API_KEY'] ?? '',
   vaultPath: process.env['VAULT_PATH'] ?? path.resolve(process.cwd(), '../../vault'),
   databasePath: process.env['DATABASE_PATH'] ?? path.resolve(process.cwd(), '../../data/pis.db'),
+  databaseUrl: process.env['DATABASE_URL'] ?? '',
   openaiApiKey: process.env['OPENAI_API_KEY'] ?? '',
   openaiBaseUrl: process.env['OPENAI_BASE_URL'] || undefined,
   maxFileSizeMb: parseInt(process.env['MAX_FILE_SIZE_MB'] ?? '50', 10),

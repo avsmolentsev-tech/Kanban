@@ -1,4 +1,4 @@
-import { getDb } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { telegramService } from './telegram.service';
 import { moscowNow, moscowDateString } from '../utils/time';
 import { generateBundle } from './bundle.service';
@@ -17,7 +17,7 @@ interface UserCtx {
   name: string;
 }
 
-function getUsers(): UserCtx[] {
+async function getUsers(): Promise<UserCtx[]> {
   return telegramService.getLinkedUsers();
 }
 
@@ -39,27 +39,36 @@ export function startNotificationScheduler(): void {
   console.log('[notifications] scheduler started');
 }
 
-function checkOverdueTasks(): void {
+async function checkOverdueTasks(): Promise<void> {
   const now = moscowNow();
   const hour = now.getUTCHours();
   // Don't send overdue notifications at night (22:00–08:00)
   if (hour >= 22 || hour < 8) return;
 
   const today = moscowDateString();
-  const db = getDb();
 
-  for (const user of getUsers()) {
-    const overdue = db.prepare(
-      "SELECT title, due_date, priority FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND due_date < ? AND user_id = ? ORDER BY due_date ASC LIMIT 10"
-    ).all(today, user.id) as Array<{ title: string; due_date: string; priority: number }>;
+  for (const user of await getUsers()) {
+    const overdue = await queryAll<{ title: string; due_date: string; priority: number }>(
+      "SELECT title, due_date, priority FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND due_date < $1 AND user_id = $2 ORDER BY due_date ASC LIMIT 10",
+      [today, user.id]
+    );
 
     if (overdue.length === 0) continue;
     // Send overdue digest at most once per day per user
-    if (!shouldSendNotification(user.id, 'overdue_digest', 'all')) continue;
+    if (!await shouldSendNotification(user.id, 'overdue_digest', 'all')) continue;
 
     // Start with achievements, then overdue
-    const doneWeek = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= date('now', '-7 days') AND user_id = ?").get(user.id) as { c: number }).c;
-    const inProgress = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'in_progress' AND archived = 0 AND user_id = ?").get(user.id) as { c: number }).c;
+    const doneWeekRow = await queryOne<{ c: number }>(
+      "SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= (CURRENT_DATE - INTERVAL '7 days') AND user_id = $1",
+      [user.id]
+    );
+    const doneWeek = doneWeekRow?.c ?? 0;
+
+    const inProgressRow = await queryOne<{ c: number }>(
+      "SELECT COUNT(*) as c FROM tasks WHERE status = 'in_progress' AND archived = 0 AND user_id = $1",
+      [user.id]
+    );
+    const inProgress = inProgressRow?.c ?? 0;
 
     let msg = '';
     // Positive opening
@@ -78,7 +87,7 @@ function checkOverdueTasks(): void {
   }
 }
 
-function checkMorningBrief(): void {
+async function checkMorningBrief(): Promise<void> {
   const now = moscowNow();
   const hour = now.getUTCHours();
   const today = moscowDateString();
@@ -86,12 +95,19 @@ function checkMorningBrief(): void {
   if (lastMorningBrief === today) return;
   lastMorningBrief = today;
 
-  const db = getDb();
-
-  for (const user of getUsers()) {
-    const tasks = db.prepare("SELECT title, priority FROM tasks WHERE archived = 0 AND status = 'in_progress' AND user_id = ? ORDER BY priority DESC LIMIT 5").all(user.id) as Array<{ title: string; priority: number }>;
-    const todayTasks = db.prepare("SELECT title FROM tasks WHERE archived = 0 AND due_date = ? AND status != 'done' AND user_id = ?").all(today, user.id) as Array<{ title: string }>;
-    const todayMeetings = db.prepare("SELECT title, date FROM meetings WHERE date = ? AND user_id = ? AND (summary_raw IS NULL OR summary_raw = '') AND (source_file IS NULL OR source_file = '') ORDER BY date").all(today, user.id) as Array<{ title: string; date: string }>;
+  for (const user of await getUsers()) {
+    const tasks = await queryAll<{ title: string; priority: number }>(
+      "SELECT title, priority FROM tasks WHERE archived = 0 AND status = 'in_progress' AND user_id = $1 ORDER BY priority DESC LIMIT 5",
+      [user.id]
+    );
+    const todayTasks = await queryAll<{ title: string }>(
+      "SELECT title FROM tasks WHERE archived = 0 AND due_date = $1 AND status != 'done' AND user_id = $2",
+      [today, user.id]
+    );
+    const todayMeetings = await queryAll<{ title: string; date: string }>(
+      "SELECT title, date FROM meetings WHERE date = $1 AND user_id = $2 AND (summary_raw IS NULL OR summary_raw = '') AND (source_file IS NULL OR source_file = '') ORDER BY date",
+      [today, user.id]
+    );
 
     let msg = `🌅 <b>Доброе утро, ${user.name}!</b>\n\n`;
     if (todayMeetings.length > 0) {
@@ -105,7 +121,10 @@ function checkMorningBrief(): void {
     }
 
     // Focus of the day
-    const journal = db.prepare('SELECT focus FROM journal WHERE date = ? AND user_id = ?').get(today, user.id) as { focus: string } | undefined;
+    const journal = await queryOne<{ focus: string }>(
+      'SELECT focus FROM journal WHERE date = $1 AND user_id = $2',
+      [today, user.id]
+    );
     const focusLine = journal?.focus ? `\n🎯 <b>Фокус дня:</b> ${journal.focus}` : '\n🎯 Фокус дня не задан. Напиши /focus чтобы поставить.';
     msg += focusLine;
 
@@ -115,7 +134,7 @@ function checkMorningBrief(): void {
   }
 }
 
-function checkWeeklyReport(): void {
+async function checkWeeklyReport(): Promise<void> {
   const now = moscowNow();
   const hour = now.getUTCHours();
   const dayOfWeek = now.getUTCDay();
@@ -125,15 +144,33 @@ function checkWeeklyReport(): void {
   if (lastWeeklyReport === today) return;
   lastWeeklyReport = today;
 
-  const db = getDb();
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-  for (const user of getUsers()) {
+  for (const user of await getUsers()) {
     try {
-      const completed = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND updated_at >= ? AND user_id = ?").get(weekAgo, user.id) as { c: number }).c;
-      const created = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE created_at >= ? AND user_id = ?").get(weekAgo, user.id) as { c: number }).c;
-      const meetingsCount = (db.prepare("SELECT COUNT(*) as c FROM meetings WHERE date >= ? AND date <= ? AND user_id = ?").get(weekAgo, today, user.id) as { c: number }).c;
-      const active = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND user_id = ?").get(user.id) as { c: number }).c;
+      const completedRow = await queryOne<{ c: number }>(
+        "SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND updated_at >= $1 AND user_id = $2",
+        [weekAgo, user.id]
+      );
+      const completed = completedRow?.c ?? 0;
+
+      const createdRow = await queryOne<{ c: number }>(
+        "SELECT COUNT(*) as c FROM tasks WHERE created_at >= $1 AND user_id = $2",
+        [weekAgo, user.id]
+      );
+      const created = createdRow?.c ?? 0;
+
+      const meetingsCountRow = await queryOne<{ c: number }>(
+        "SELECT COUNT(*) as c FROM meetings WHERE date >= $1 AND date <= $2 AND user_id = $3",
+        [weekAgo, today, user.id]
+      );
+      const meetingsCount = meetingsCountRow?.c ?? 0;
+
+      const activeRow = await queryOne<{ c: number }>(
+        "SELECT COUNT(*) as c FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND user_id = $1",
+        [user.id]
+      );
+      const active = activeRow?.c ?? 0;
 
       let msg = `📊 <b>Еженедельный отчёт</b>\n\n`;
       msg += `📅 Неделя: ${weekAgo} — ${today}\n\n`;
@@ -145,9 +182,10 @@ function checkWeeklyReport(): void {
       telegramService.notifyUser(user.tg_id, msg);
 
       // Generate and send PDF bundle for admin users
-      if (user.id === getUsers()[0]?.id) {
+      const allUsers = await getUsers();
+      if (user.id === allUsers[0]?.id) {
         try {
-          const result = generateBundle('all', true);
+          const result = await generateBundle('all', true);
           const fullPath = path.join(config.vaultPath, result.vaultPath);
           const formats = generateAllFormats(fullPath);
           if (formats.pdf) {
@@ -161,7 +199,7 @@ function checkWeeklyReport(): void {
   }
 }
 
-function checkDailyDigest(): void {
+async function checkDailyDigest(): Promise<void> {
   const now = moscowNow();
   const hour = now.getUTCHours();
   const today = moscowDateString();
@@ -169,19 +207,35 @@ function checkDailyDigest(): void {
   if (lastDailyDigest === today) return;
   lastDailyDigest = today;
 
-  const db = getDb();
-
-  for (const user of getUsers()) {
+  for (const user of await getUsers()) {
     try {
-      const done = db.prepare("SELECT title FROM tasks WHERE status = 'done' AND updated_at LIKE ? AND archived = 0 AND user_id = ?").all(`${today}%`, user.id) as Array<{ title: string }>;
-      const inProgress = db.prepare("SELECT title, priority FROM tasks WHERE status = 'in_progress' AND archived = 0 AND user_id = ? ORDER BY priority DESC LIMIT 5").all(user.id) as Array<{ title: string; priority: number }>;
-      const overdue = db.prepare("SELECT title, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < ? AND user_id = ? LIMIT 5").all(today, user.id) as Array<{ title: string; due_date: string }>;
+      const done = await queryAll<{ title: string }>(
+        "SELECT title FROM tasks WHERE status = 'done' AND updated_at::text LIKE $1 AND archived = 0 AND user_id = $2",
+        [`${today}%`, user.id]
+      );
+      const inProgress = await queryAll<{ title: string; priority: number }>(
+        "SELECT title, priority FROM tasks WHERE status = 'in_progress' AND archived = 0 AND user_id = $1 ORDER BY priority DESC LIMIT 5",
+        [user.id]
+      );
+      const overdue = await queryAll<{ title: string; due_date: string }>(
+        "SELECT title, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < $1 AND user_id = $2 LIMIT 5",
+        [today, user.id]
+      );
       const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-      const tomorrowTasks = db.prepare("SELECT title FROM tasks WHERE due_date = ? AND archived = 0 AND status != 'done' AND user_id = ?").all(tomorrow, user.id) as Array<{ title: string }>;
-      const tomorrowMeetings = db.prepare("SELECT title FROM meetings WHERE date = ? AND user_id = ?").all(tomorrow, user.id) as Array<{ title: string }>;
+      const tomorrowTasks = await queryAll<{ title: string }>(
+        "SELECT title FROM tasks WHERE due_date = $1 AND archived = 0 AND status != 'done' AND user_id = $2",
+        [tomorrow, user.id]
+      );
+      const tomorrowMeetings = await queryAll<{ title: string }>(
+        "SELECT title FROM meetings WHERE date = $1 AND user_id = $2",
+        [tomorrow, user.id]
+      );
 
       // Habit streaks for motivation
-      const habitsDone = db.prepare(`SELECT h.title, h.icon FROM habits h WHERE h.archived = 0 AND h.user_id = ? AND h.id IN (SELECT habit_id FROM habit_logs WHERE date = ? AND completed = 1)`).all(user.id, today) as Array<{ title: string; icon: string }>;
+      const habitsDone = await queryAll<{ title: string; icon: string }>(
+        `SELECT h.title, h.icon FROM habits h WHERE h.archived = 0 AND h.user_id = $1 AND h.id IN (SELECT habit_id FROM habit_logs WHERE date = $2 AND completed = 1)`,
+        [user.id, today]
+      );
 
       let msg = `🌙 <b>Итоги дня</b>\n\n`;
 
@@ -217,7 +271,7 @@ function checkDailyDigest(): void {
   }
 }
 
-function checkHabitReminders(): void {
+async function checkHabitReminders(): Promise<void> {
   try {
     const now = moscowNow();
     const hour = now.getUTCHours();
@@ -225,14 +279,18 @@ function checkHabitReminders(): void {
     const today = moscowDateString();
     const currentTime = `${String(hour).padStart(2, '0')}:${String(minute < 30 ? '00' : '30')}`;
 
-    const db = getDb();
-
-    for (const user of getUsers()) {
-      const habits = db.prepare("SELECT id, title, icon, remind_time FROM habits WHERE archived = 0 AND remind_time IS NOT NULL AND user_id = ?").all(user.id) as Array<{ id: number; title: string; icon: string; remind_time: string }>;
+    for (const user of await getUsers()) {
+      const habits = await queryAll<{ id: number; title: string; icon: string; remind_time: string }>(
+        "SELECT id, title, icon, remind_time FROM habits WHERE archived = 0 AND remind_time IS NOT NULL AND user_id = $1",
+        [user.id]
+      );
 
       for (const h of habits) {
         if (h.remind_time !== currentTime) continue;
-        const log = db.prepare("SELECT id FROM habit_logs WHERE habit_id = ? AND date = ?").get(h.id, today);
+        const log = await queryOne(
+          "SELECT id FROM habit_logs WHERE habit_id = $1 AND date = $2",
+          [h.id, today]
+        );
         if (log) continue;
         telegramService.notifyUser(user.tg_id, `${h.icon} Напоминание: <b>${h.title}</b>\n\nОтметь в /habits или в приложении`);
       }
@@ -240,7 +298,7 @@ function checkHabitReminders(): void {
   } catch {}
 }
 
-function checkUpcomingDeadlines(): void {
+async function checkUpcomingDeadlines(): Promise<void> {
   const now = moscowNow();
   const hour = now.getUTCHours();
   const today = moscowDateString();
@@ -248,20 +306,20 @@ function checkUpcomingDeadlines(): void {
   if (lastDeadlineCheck === today) return;
   lastDeadlineCheck = today;
 
-  const db = getDb();
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const tomorrowStr = tomorrow.toISOString().split('T')[0]!;
 
-  for (const user of getUsers()) {
+  for (const user of await getUsers()) {
     try {
-      const tasks = db.prepare(
-        "SELECT title FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND due_date = ? AND user_id = ? ORDER BY priority DESC"
-      ).all(tomorrowStr, user.id) as Array<{ title: string }>;
+      const tasks = await queryAll<{ title: string }>(
+        "SELECT title FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND due_date = $1 AND user_id = $2 ORDER BY priority DESC",
+        [tomorrowStr, user.id]
+      );
 
       if (tasks.length === 0) continue;
 
       const lines = tasks.map(t => `• ${t.title}`);
-      if (!shouldSendNotification(user.id, 'deadline_tomorrow', 'all')) continue;
+      if (!await shouldSendNotification(user.id, 'deadline_tomorrow', 'all')) continue;
       telegramService.notifyUser(user.tg_id, `⏰ Завтра дедлайн:\n\n${lines.join('\n')}`);
     } catch {}
   }
@@ -271,30 +329,32 @@ function checkUpcomingDeadlines(): void {
  * Persistent dedup: try to register a notification. Returns true if it's a NEW one
  * and the caller should send. False if already sent today for this (user, type, ref).
  */
-function shouldSendNotification(userId: number, type: string, refId: string): boolean {
-  const db = getDb();
+async function shouldSendNotification(userId: number, type: string, refId: string): Promise<boolean> {
   // ref_id includes the date so the same meeting/task can be re-notified next day
   const key = `${refId}|${moscowDateString()}`;
   try {
-    const result = db.prepare('INSERT OR IGNORE INTO notification_log (user_id, type, ref_id) VALUES (?, ?, ?)').run(userId, type, key);
-    return result.changes > 0;
+    const rowCount = await execute(
+      'INSERT INTO notification_log (user_id, type, ref_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+      [userId, type, key]
+    );
+    return rowCount > 0;
   } catch {
     return true; // on DB error, prefer to send rather than miss
   }
 }
 
-function checkUpcomingMeetings(): void {
+async function checkUpcomingMeetings(): Promise<void> {
   const today = moscowDateString();
-  const db = getDb();
 
-  for (const user of getUsers()) {
+  for (const user of await getUsers()) {
     // Only remind about PLANNED meetings — skip those already transcribed/summarized
-    const meetings = db.prepare(
-      "SELECT id, title FROM meetings WHERE date = ? AND user_id = ? AND (summary_raw IS NULL OR summary_raw = '') AND (source_file IS NULL OR source_file = '') ORDER BY id"
-    ).all(today, user.id) as Array<{ id: number; title: string }>;
+    const meetings = await queryAll<{ id: number; title: string }>(
+      "SELECT id, title FROM meetings WHERE date = $1 AND user_id = $2 AND (summary_raw IS NULL OR summary_raw = '') AND (source_file IS NULL OR source_file = '') ORDER BY id",
+      [today, user.id]
+    );
 
     if (meetings.length === 0) continue;
-    if (!shouldSendNotification(user.id, 'meetings_today_digest', 'all')) continue;
+    if (!await shouldSendNotification(user.id, 'meetings_today_digest', 'all')) continue;
 
     const lines = meetings.map(m => `  • ${m.title}`);
     const header = meetings.length === 1 ? '📅 Встреча сегодня:' : `📅 Встречи сегодня (${meetings.length}):`;
@@ -310,12 +370,11 @@ function getNextMonday(today: string): string {
   return d.toISOString().split('T')[0]!;
 }
 
-function checkWeeklyGoalPrompt(): void {
+async function checkWeeklyGoalPrompt(): Promise<void> {
   const now = moscowNow();
   const hour = now.getUTCHours();
   const dayOfWeek = now.getUTCDay(); // 0=Sun, 1=Mon
   const today = moscowDateString();
-  const db = getDb();
 
   // Sunday 18:00 MSK or Monday 09:00 MSK
   const isSundayEvening = dayOfWeek === 0 && hour >= 18 && hour < 19;
@@ -323,9 +382,9 @@ function checkWeeklyGoalPrompt(): void {
 
   if (!isSundayEvening && !isMondayMorning) return;
 
-  for (const user of getUsers()) {
+  for (const user of await getUsers()) {
     const notifKey = isSundayEvening ? 'weekly_goal_sunday' : 'weekly_goal_monday';
-    if (!shouldSendNotification(user.id, notifKey, 'all')) continue;
+    if (!await shouldSendNotification(user.id, notifKey, 'all')) continue;
 
     // Check if user already has weekly-goal tasks for next week
     const nextMonday = isSundayEvening ? getNextMonday(today) : today; // Monday morning = this week
@@ -334,11 +393,12 @@ function checkWeeklyGoalPrompt(): void {
       d.setUTCDate(d.getUTCDate() + 6);
       return d.toISOString().split('T')[0]!;
     })();
-    const existing = db.prepare(
-      "SELECT COUNT(*) as c FROM tasks WHERE user_id = ? AND description LIKE '%[🎯 Цель недели]%' AND due_date >= ? AND due_date <= ? AND archived = 0"
-    ).get(user.id, nextMonday, nextSundayDate) as { c: number };
+    const existing = await queryOne<{ c: number }>(
+      "SELECT COUNT(*) as c FROM tasks WHERE user_id = $1 AND description LIKE $2 AND due_date >= $3 AND due_date <= $4 AND archived = 0",
+      [user.id, '%[🎯 Цель недели]%', nextMonday, nextSundayDate]
+    );
 
-    if (existing.c > 0) continue; // already set
+    if ((existing?.c ?? 0) > 0) continue; // already set
 
     const message = isSundayEvening
       ? '🎯 Какие цели на следующую неделю? Напиши или надиктуй список — я распределю по дням.'
@@ -348,14 +408,16 @@ function checkWeeklyGoalPrompt(): void {
   }
 }
 
-function checkDailyGoalReminder(): void {
+async function checkDailyGoalReminder(): Promise<void> {
   const now = moscowNow();
   const today = moscowDateString();
-  const db = getDb();
 
-  for (const user of getUsers()) {
+  for (const user of await getUsers()) {
     // Get user's reminder time (default 21:00)
-    const timeSetting = db.prepare('SELECT value FROM settings WHERE user_id = ? AND key = ?').get(user.id, 'reminder_time') as { value: string } | undefined;
+    const timeSetting = await queryOne<{ value: string }>(
+      'SELECT value FROM settings WHERE user_id = $1 AND key = $2',
+      [user.id, 'reminder_time']
+    );
     const reminderTime = timeSetting?.value ?? '21:00';
     const [rHourStr, rMinStr] = reminderTime.split(':');
     const rHour = Number(rHourStr);
@@ -367,12 +429,13 @@ function checkDailyGoalReminder(): void {
     // Check if current time is within the reminder window (±7 min since scheduler runs every 15 min)
     if (hour !== rHour || minute < rMin - 7 || minute > rMin + 7) continue;
 
-    if (!shouldSendNotification(user.id, 'daily_goal_reminder', 'all')) continue;
+    if (!await shouldSendNotification(user.id, 'daily_goal_reminder', 'all')) continue;
 
     // Find today's weekly-goal task that's not done
-    const goalTask = db.prepare(
-      "SELECT title FROM tasks WHERE user_id = ? AND description LIKE '%[🎯 Цель недели]%' AND due_date = ? AND status != 'done' AND archived = 0 LIMIT 1"
-    ).get(user.id, today) as { title: string } | undefined;
+    const goalTask = await queryOne<{ title: string }>(
+      "SELECT title FROM tasks WHERE user_id = $1 AND description LIKE $2 AND due_date = $3 AND status != 'done' AND archived = 0 LIMIT 1",
+      [user.id, '%[🎯 Цель недели]%', today]
+    );
 
     if (!goalTask) continue;
 
@@ -380,7 +443,7 @@ function checkDailyGoalReminder(): void {
   }
 }
 
-function checkBhagCoach(): void {
+async function checkBhagCoach(): Promise<void> {
   const now = moscowNow();
   const hour = now.getUTCHours();
   const dayOfWeek = now.getUTCDay(); // 5 = Friday
@@ -388,23 +451,31 @@ function checkBhagCoach(): void {
 
   if (dayOfWeek !== 5 || hour < 18 || hour >= 19) return;
 
-  const db = getDb();
-  for (const user of getUsers()) {
-    if (!shouldSendNotification(user.id, 'bhag_coach', today)) continue;
+  for (const user of await getUsers()) {
+    if (!await shouldSendNotification(user.id, 'bhag_coach', today)) continue;
 
     // Get active BHAGs
-    const bhags = db.prepare("SELECT id, title, due_date FROM goals WHERE type = 'bhag' AND status = 'active' AND user_id = ?").all(user.id) as Array<{ id: number; title: string; due_date: string }>;
+    const bhags = await queryAll<{ id: number; title: string; due_date: string }>(
+      "SELECT id, title, due_date FROM goals WHERE type = 'bhag' AND status = 'active' AND user_id = $1",
+      [user.id]
+    );
     if (bhags.length === 0) continue;
 
     for (const bhag of bhags) {
       // Get milestones with progress
-      const milestones = db.prepare("SELECT id, title, due_date FROM goals WHERE parent_id = ? AND user_id = ?").all(bhag.id, user.id) as Array<{ id: number; title: string; due_date: string }>;
+      const milestones = await queryAll<{ id: number; title: string; due_date: string }>(
+        "SELECT id, title, due_date FROM goals WHERE parent_id = $1 AND user_id = $2",
+        [bhag.id, user.id]
+      );
 
       let totalTasks = 0, doneTasks = 0;
       const milestoneStats: string[] = [];
 
       for (const m of milestones) {
-        const tasks = db.prepare("SELECT status FROM tasks WHERE goal_id = ? AND user_id = ? AND archived = 0").all(m.id, user.id) as Array<{ status: string }>;
+        const tasks = await queryAll<{ status: string }>(
+          "SELECT status FROM tasks WHERE goal_id = $1 AND user_id = $2 AND archived = 0",
+          [m.id, user.id]
+        );
         const done = tasks.filter(t => t.status === 'done').length;
         totalTasks += tasks.length;
         doneTasks += done;

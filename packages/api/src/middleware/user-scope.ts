@@ -13,5 +13,5 @@ export function userScopeWhere(req: AuthRequest): { sql: string; params: unknown
   if (userId === null) {
     return { sql: '1=0', params: [] };
   }
-  return { sql: 'user_id = ?', params: [userId] };
+  return { sql: 'user_id = $1', params: [userId] };
 }

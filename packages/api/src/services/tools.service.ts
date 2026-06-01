@@ -3,7 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { config } from '../config';
-import { getDb } from '../db/db';
+import { queryAll, queryOne } from '../db/db';
 
 interface GeocodingResult {
   results?: Array<{ latitude: number; longitude: number; name: string; country: string }>;
@@ -56,11 +56,11 @@ export async function getWeather(city: string): Promise<string> {
   }
 }
 
-/** Search vault via FTS5 search index */
-export function searchVault(query: string, limit = 10): string {
+/** Search vault via full-text search */
+export async function searchVault(query: string, limit = 10): Promise<string> {
   try {
     const { searchService } = require('./search.service');
-    const results = searchService.search(query, limit) as Array<{ type: string; ref_id: number; title: string; snippet: string }>;
+    const results = await searchService.search(query, limit) as Array<{ type: string; ref_id: number; title: string; snippet: string }>;
     if (results.length === 0) return 'Ничего не найдено';
     return results.map(r => `[${r.type}#${r.ref_id}] ${r.title}\n${r.snippet.replace(/<\/?mark>/g, '')}`).join('\n\n') +
       '\n\nЧтобы получить полное содержимое, используй get_entity_details с type и id (например, type=meeting id=5) или read_vault_file.';
@@ -70,18 +70,21 @@ export function searchVault(query: string, limit = 10): string {
 }
 
 /** Search meetings by topic and return full content */
-export function searchMeetingsFull(query: string, limit = 3): string {
+export async function searchMeetingsFull(query: string, limit = 3): Promise<string> {
   try {
-    const db = getDb();
-    const results = db.prepare(`
-      SELECT id, title, date, summary_raw FROM meetings
-      WHERE title LIKE ? OR summary_raw LIKE ?
-      ORDER BY date DESC LIMIT ?
-    `).all(`%${query}%`, `%${query}%`, limit) as Array<{ id: number; title: string; date: string; summary_raw: string }>;
+    const results = await queryAll<{ id: number; title: string; date: string; summary_raw: string }>(
+      `SELECT id, title, date, summary_raw FROM meetings
+       WHERE title ILIKE $1 OR summary_raw ILIKE $1
+       ORDER BY date DESC LIMIT $2`,
+      [`%${query}%`, limit]
+    );
 
     const maxChars = 15000; // per meeting, sufficient for full transcript
     if (results.length === 0) {
-      const recent = db.prepare('SELECT id, title, date, summary_raw FROM meetings ORDER BY date DESC LIMIT ?').all(limit) as Array<{ id: number; title: string; date: string; summary_raw: string }>;
+      const recent = await queryAll<{ id: number; title: string; date: string; summary_raw: string }>(
+        'SELECT id, title, date, summary_raw FROM meetings ORDER BY date DESC LIMIT $1',
+        [limit]
+      );
       if (recent.length === 0) return 'Встреч не найдено';
       return 'По запросу ничего не найдено. Недавние встречи:\n\n' + recent.map(m =>
         `## ${m.title} (${m.date}, id=${m.id})\n${(m.summary_raw || '').slice(0, maxChars)}`
@@ -122,39 +125,56 @@ export function listVaultFolder(folder: string): string {
 }
 
 /** Get detailed info about a specific task, meeting, project, or person */
-export function getEntityDetails(entityType: string, entityId: number): string {
+export async function getEntityDetails(entityType: string, entityId: number): Promise<string> {
   try {
-    const db = getDb();
     let result;
     switch (entityType) {
       case 'task': {
-        const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(entityId);
+        const task = await queryOne('SELECT * FROM tasks WHERE id = $1', [entityId]);
         if (!task) return 'Задача не найдена';
-        const people = db.prepare('SELECT p.name FROM people p JOIN task_people tp ON p.id = tp.person_id WHERE tp.task_id = ?').all(entityId);
-        result = { ...task as object, people };
+        const people = await queryAll(
+          'SELECT p.name FROM people p JOIN task_people tp ON p.id = tp.person_id WHERE tp.task_id = $1',
+          [entityId]
+        );
+        result = { ...task, people };
         break;
       }
       case 'meeting': {
-        const meeting = db.prepare('SELECT * FROM meetings WHERE id = ?').get(entityId);
+        const meeting = await queryOne('SELECT * FROM meetings WHERE id = $1', [entityId]);
         if (!meeting) return 'Встреча не найдена';
-        const people = db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(entityId);
-        result = { ...meeting as object, people };
+        const people = await queryAll(
+          'SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1',
+          [entityId]
+        );
+        result = { ...meeting, people };
         break;
       }
       case 'project': {
-        const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(entityId);
+        const project = await queryOne('SELECT * FROM projects WHERE id = $1', [entityId]);
         if (!project) return 'Проект не найден';
-        const tasks = db.prepare('SELECT id, title, status FROM tasks WHERE project_id = ? AND archived = 0').all(entityId);
-        const meetings = db.prepare('SELECT id, title, date FROM meetings WHERE project_id = ? ORDER BY date DESC LIMIT 5').all(entityId);
-        result = { ...project as object, tasks, meetings };
+        const tasks = await queryAll(
+          'SELECT id, title, status FROM tasks WHERE project_id = $1 AND archived = 0',
+          [entityId]
+        );
+        const meetings = await queryAll(
+          'SELECT id, title, date FROM meetings WHERE project_id = $1 ORDER BY date DESC LIMIT 5',
+          [entityId]
+        );
+        result = { ...project, tasks, meetings };
         break;
       }
       case 'person': {
-        const person = db.prepare('SELECT * FROM people WHERE id = ?').get(entityId);
+        const person = await queryOne('SELECT * FROM people WHERE id = $1', [entityId]);
         if (!person) return 'Человек не найден';
-        const tasks = db.prepare('SELECT t.id, t.title FROM tasks t JOIN task_people tp ON t.id = tp.task_id WHERE tp.person_id = ?').all(entityId);
-        const meetings = db.prepare('SELECT m.id, m.title, m.date FROM meetings m JOIN meeting_people mp ON m.id = mp.meeting_id WHERE mp.person_id = ?').all(entityId);
-        result = { ...person as object, tasks, meetings };
+        const tasks = await queryAll(
+          'SELECT t.id, t.title FROM tasks t JOIN task_people tp ON t.id = tp.task_id WHERE tp.person_id = $1',
+          [entityId]
+        );
+        const meetings = await queryAll(
+          'SELECT m.id, m.title, m.date FROM meetings m JOIN meeting_people mp ON m.id = mp.meeting_id WHERE mp.person_id = $1',
+          [entityId]
+        );
+        result = { ...person, tasks, meetings };
         break;
       }
       default:
@@ -263,15 +283,15 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
     case 'get_weather':
       return await getWeather(args['city'] as string);
     case 'search_vault':
-      return searchVault(args['query'] as string, (args['limit'] as number) ?? 10);
+      return await searchVault(args['query'] as string, (args['limit'] as number) ?? 10);
     case 'search_meetings_full':
-      return searchMeetingsFull(args['query'] as string, (args['limit'] as number) ?? 3);
+      return await searchMeetingsFull(args['query'] as string, (args['limit'] as number) ?? 3);
     case 'read_vault_file':
       return readVaultFile(args['path'] as string);
     case 'list_vault_folder':
       return listVaultFolder(args['folder'] as string);
     case 'get_entity_details':
-      return getEntityDetails(args['entity_type'] as string, args['entity_id'] as number);
+      return await getEntityDetails(args['entity_type'] as string, args['entity_id'] as number);
     default:
       return `Неизвестный инструмент: ${name}`;
   }

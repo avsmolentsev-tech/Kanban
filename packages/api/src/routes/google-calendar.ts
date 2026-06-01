@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { getDb } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { config } from '../config';
 import { moscowDateString } from '../utils/time';
@@ -12,15 +12,20 @@ export const googleCalendarRouter = Router();
 const SCOPES = 'https://www.googleapis.com/auth/calendar';
 
 // Per-user settings helpers
-function getUserSetting(userId: number, key: string): string | null {
-  const db = getDb();
-  const row = db.prepare("SELECT value FROM settings WHERE key = ? AND user_id = ?").get(key, userId) as { value: string } | undefined;
+async function getUserSetting(userId: number, key: string): Promise<string | null> {
+  const row = await queryOne<{ value: string }>(
+    'SELECT value FROM settings WHERE key = $1 AND user_id = $2',
+    [key, userId]
+  );
   return row?.value ?? null;
 }
 
-function setUserSetting(userId: number, key: string, value: string): void {
-  const db = getDb();
-  db.prepare("INSERT OR REPLACE INTO settings (key, value, user_id) VALUES (?, ?, ?)").run(key, value, userId);
+async function setUserSetting(userId: number, key: string, value: string): Promise<void> {
+  await execute(
+    `INSERT INTO settings (key, value, user_id) VALUES ($1, $2, $3)
+     ON CONFLICT (key, user_id) DO UPDATE SET value = EXCLUDED.value`,
+    [key, value, userId]
+  );
 }
 
 // Step 1: Redirect to Google OAuth — user_id passed via query param or JWT
@@ -76,9 +81,9 @@ googleCalendarRouter.get('/callback', async (req: AuthRequest, res: Response) =>
     }
 
     // Store tokens per user
-    setUserSetting(userId, 'google_access_token', tokens.access_token);
-    setUserSetting(userId, 'google_refresh_token', tokens.refresh_token || '');
-    setUserSetting(userId, 'google_token_expiry', String(Date.now() + (tokens.expires_in || 3600) * 1000));
+    await setUserSetting(userId, 'google_access_token', tokens.access_token);
+    await setUserSetting(userId, 'google_refresh_token', tokens.refresh_token || '');
+    await setUserSetting(userId, 'google_token_expiry', String(Date.now() + (tokens.expires_in || 3600) * 1000));
 
     res.send('<html><body><h2>Google Calendar подключён!</h2><p>Можете закрыть эту вкладку.</p><script>setTimeout(()=>window.close(),2000)</script></body></html>');
   } catch (err) {
@@ -88,9 +93,9 @@ googleCalendarRouter.get('/callback', async (req: AuthRequest, res: Response) =>
 
 // Helper: get valid access token for a specific user
 async function getAccessTokenForUser(userId: number): Promise<string | null> {
-  const token = getUserSetting(userId, 'google_access_token');
-  const expiry = getUserSetting(userId, 'google_token_expiry');
-  const refresh = getUserSetting(userId, 'google_refresh_token');
+  const token = await getUserSetting(userId, 'google_access_token');
+  const expiry = await getUserSetting(userId, 'google_token_expiry');
+  const refresh = await getUserSetting(userId, 'google_refresh_token');
 
   if (!token) return null;
 
@@ -109,8 +114,8 @@ async function getAccessTokenForUser(userId: number): Promise<string | null> {
       });
       const data = await res.json();
       if (data.access_token) {
-        setUserSetting(userId, 'google_access_token', data.access_token);
-        setUserSetting(userId, 'google_token_expiry', String(Date.now() + (data.expires_in || 3600) * 1000));
+        await setUserSetting(userId, 'google_access_token', data.access_token);
+        await setUserSetting(userId, 'google_token_expiry', String(Date.now() + (data.expires_in || 3600) * 1000));
         return data.access_token;
       }
     } catch {}
@@ -128,11 +133,13 @@ googleCalendarRouter.get('/status', async (req: AuthRequest, res: Response) => {
 });
 
 // POST /google-calendar/disconnect
-googleCalendarRouter.post('/disconnect', (req: AuthRequest, res: Response) => {
+googleCalendarRouter.post('/disconnect', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) { res.status(401).json(fail('Not authenticated')); return; }
-  const db = getDb();
-  db.prepare("DELETE FROM settings WHERE user_id = ? AND key IN ('google_access_token', 'google_refresh_token', 'google_token_expiry')").run(userId);
+  await execute(
+    "DELETE FROM settings WHERE user_id = $1 AND key IN ('google_access_token', 'google_refresh_token', 'google_token_expiry')",
+    [userId]
+  );
   res.json(ok({ disconnected: true }));
 });
 
@@ -144,13 +151,15 @@ googleCalendarRouter.post('/sync', async (req: AuthRequest, res: Response) => {
   if (!token) { res.status(400).json(fail('Google Calendar не подключён')); return; }
 
   try {
-    const db = getDb();
     const today = moscowDateString();
-    const meetings = db.prepare("SELECT id, title, date FROM meetings WHERE date >= ? AND user_id = ? ORDER BY date LIMIT 50").all(today, userId) as Array<{ id: number; title: string; date: string }>;
+    const meetings = await queryAll<{ id: number; title: string; date: string }>(
+      'SELECT id, title, date FROM meetings WHERE date >= $1 AND user_id = $2 ORDER BY date LIMIT 50',
+      [today, userId]
+    );
 
     let synced = 0;
     for (const m of meetings) {
-      const existing = getUserSetting(userId, `gcal_event_${m.id}`);
+      const existing = await getUserSetting(userId, `gcal_event_${m.id}`);
       if (existing) continue;
 
       const event = {
@@ -167,7 +176,7 @@ googleCalendarRouter.post('/sync', async (req: AuthRequest, res: Response) => {
 
       if (gcRes.ok) {
         const gcEvent = await gcRes.json();
-        setUserSetting(userId, `gcal_event_${m.id}`, gcEvent.id);
+        await setUserSetting(userId, `gcal_event_${m.id}`, gcEvent.id);
         synced++;
       }
     }

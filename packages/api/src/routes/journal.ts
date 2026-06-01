@@ -1,6 +1,6 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
-import { getDb } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
@@ -24,41 +24,57 @@ const UpdateSchema = z.object({
   mood: z.number().int().min(1).max(5).optional(),
 });
 
-journalRouter.get('/', (req: AuthRequest, res: Response) => {
+journalRouter.get('/', async (req: AuthRequest, res: Response) => {
   const scope = userScopeWhere(req);
-  const entries = getDb().prepare(`SELECT * FROM journal WHERE ${scope.sql} ORDER BY date DESC LIMIT 60`).all(...scope.params);
+  const entries = await queryAll(
+    `SELECT * FROM journal WHERE ${scope.sql} ORDER BY date DESC LIMIT 60`,
+    scope.params
+  );
   res.json(ok(entries));
 });
 
-journalRouter.post('/', (req: AuthRequest, res: Response) => {
+journalRouter.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { date, focus, gratitude, notes, results, mood } = parsed.data;
   const userId = getUserId(req);
-  // Upsert — if entry for date exists, update it
-  const scope = userScopeWhere(req);
-  const existing = getDb().prepare(`SELECT id FROM journal WHERE date = ? AND ${scope.sql}`).get(date, ...scope.params) as { id: number } | undefined;
+  // Upsert — if entry for date exists for this user, update it
+  const existing = await queryOne<{ id: number }>(
+    'SELECT id FROM journal WHERE date = $1 AND user_id = $2',
+    [date, userId]
+  );
   if (existing) {
-    getDb().prepare('UPDATE journal SET focus = ?, gratitude = ?, notes = ?, results = ?, mood = ? WHERE id = ?').run(focus, gratitude, notes, results, mood, existing.id);
-    const updated = getDb().prepare('SELECT * FROM journal WHERE id = ?').get(existing.id);
+    await execute(
+      'UPDATE journal SET focus = $1, gratitude = $2, notes = $3, results = $4, mood = $5 WHERE id = $6',
+      [focus, gratitude, notes, results, mood, existing.id]
+    );
+    const updated = await queryOne('SELECT * FROM journal WHERE id = $1', [existing.id]);
     res.json(ok(updated));
   } else {
-    const result = getDb().prepare('INSERT INTO journal (date, focus, gratitude, notes, results, mood, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(date, focus, gratitude, notes, results, mood, userId);
-    const entry = getDb().prepare('SELECT * FROM journal WHERE id = ?').get(result.lastInsertRowid);
+    const inserted = await queryOne<{ id: number }>(
+      'INSERT INTO journal (date, focus, gratitude, notes, results, mood, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      [date, focus, gratitude, notes, results, mood, userId]
+    );
+    if (!inserted) { res.status(500).json(fail('Insert failed')); return; }
+    const entry = await queryOne('SELECT * FROM journal WHERE id = $1', [inserted.id]);
     res.status(201).json(ok(entry));
   }
 });
 
-journalRouter.patch('/:id', (req: AuthRequest, res: Response) => {
+journalRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const id = Number(req.params['id']);
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM journal WHERE id = ? AND user_id = ?').get(id, userId);
+  const existing = await queryOne('SELECT id FROM journal WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!existing) { res.status(404).json(fail('Journal entry not found')); return; }
-  const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined).map(([k]) => `${k} = ?`);
-  const values = Object.values(parsed.data).filter((v) => v !== undefined);
-  if (fields.length === 0) { res.status(400).json(fail('No fields')); return; }
-  getDb().prepare(`UPDATE journal SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, id, userId);
-  res.json(ok(getDb().prepare('SELECT * FROM journal WHERE id = ?').get(id)));
+  const entries = Object.entries(parsed.data).filter(([, v]) => v !== undefined);
+  if (entries.length === 0) { res.status(400).json(fail('No fields')); return; }
+  const fields = entries.map(([k], i) => `${k} = $${i + 1}`);
+  const values = entries.map(([, v]) => v);
+  await execute(
+    `UPDATE journal SET ${fields.join(', ')} WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`,
+    [...values, id, userId]
+  );
+  res.json(ok(await queryOne('SELECT * FROM journal WHERE id = $1', [id])));
 });

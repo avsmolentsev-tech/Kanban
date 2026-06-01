@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { getDb } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { config } from '../config';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest, AuthUser } from '../middleware/auth';
@@ -44,7 +44,7 @@ function signToken(user: UserRow): string {
 }
 
 // POST /auth/register
-authRouter.post('/register', rateLimitLogin, (req: AuthRequest, res: Response) => {
+authRouter.post('/register', rateLimitLogin, async (req: AuthRequest, res: Response) => {
   try {
     const { email, password, name } = req.body;
     if (!email || !password) {
@@ -56,8 +56,7 @@ authRouter.post('/register', rateLimitLogin, (req: AuthRequest, res: Response) =
       return;
     }
 
-    const db = getDb();
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: number } | undefined;
+    const existing = await queryOne<{ id: number }>('SELECT id FROM users WHERE email = $1', [email]);
     if (existing) {
       res.status(409).json(fail('Email already registered'));
       return;
@@ -65,34 +64,41 @@ authRouter.post('/register', rateLimitLogin, (req: AuthRequest, res: Response) =
 
     const hash = bcrypt.hashSync(password, 10);
     // First user becomes admin
-    const userCount = (db.prepare('SELECT COUNT(*) as cnt FROM users').get() as { cnt: number }).cnt;
+    const countRow = await queryOne<{ cnt: string }>('SELECT COUNT(*) as cnt FROM users');
+    const userCount = Number(countRow?.cnt ?? 0);
     const role = userCount === 0 ? 'admin' : 'user';
 
     const normalEmail = email.toLowerCase().trim();
-    const result = db.prepare('INSERT INTO users (email, password_hash, name, role, email_verified) VALUES (?, ?, ?, ?, 0)').run(
-      normalEmail,
-      hash,
-      (name || email.split('@')[0] || 'User').trim(),
-      role
+    const inserted = await queryOne<{ id: number }>(
+      'INSERT INTO users (email, password_hash, name, role, email_verified) VALUES ($1, $2, $3, $4, 0) RETURNING id',
+      [
+        normalEmail,
+        hash,
+        (name || email.split('@')[0] || 'User').trim(),
+        role,
+      ]
     );
 
     // Send verification code
     const code = generateCode();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    db.prepare('INSERT INTO verification_codes (email, code, type, expires_at) VALUES (?, ?, ?, ?)').run(normalEmail, code, 'register', expiresAt);
+    await execute(
+      'INSERT INTO verification_codes (email, code, type, expires_at) VALUES ($1, $2, $3, $4)',
+      [normalEmail, code, 'register', expiresAt]
+    );
     sendVerificationEmail(normalEmail, code, 'register').catch(err => console.error('[auth] email send failed:', err));
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid) as UserRow;
-    const token = signToken(user);
+    const user = await queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [inserted!.id]);
+    const token = signToken(user!);
 
-    res.json(ok({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role }, needsVerification: true }));
+    res.json(ok({ token, user: { id: user!.id, email: user!.email, name: user!.name, role: user!.role }, needsVerification: true }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Registration error'));
   }
 });
 
 // POST /auth/login
-authRouter.post('/login', rateLimitLogin, (req: AuthRequest, res: Response) => {
+authRouter.post('/login', rateLimitLogin, async (req: AuthRequest, res: Response) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -100,8 +106,7 @@ authRouter.post('/login', rateLimitLogin, (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const db = getDb();
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim()) as UserRow | undefined;
+    const user = await queryOne<UserRow>('SELECT * FROM users WHERE email = $1', [email.toLowerCase().trim()]);
     if (!user) {
       res.status(401).json(fail('Invalid email or password'));
       return;
@@ -125,13 +130,12 @@ authRouter.get('/me', requireAuth, (req: AuthRequest, res: Response) => {
 });
 
 // PATCH /auth/me — update profile
-authRouter.patch('/me', requireAuth, (req: AuthRequest, res: Response) => {
+authRouter.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { name, password } = req.body;
-    const db = getDb();
 
     if (name) {
-      db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), req.user!.id);
+      await execute('UPDATE users SET name = $1 WHERE id = $2', [name.trim(), req.user!.id]);
     }
     if (password) {
       if (password.length < 6) {
@@ -139,30 +143,30 @@ authRouter.patch('/me', requireAuth, (req: AuthRequest, res: Response) => {
         return;
       }
       const hash = bcrypt.hashSync(password, 10);
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user!.id);
+      await execute('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.user!.id]);
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user!.id) as UserRow;
-    const token = signToken(user);
-    res.json(ok({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } }));
+    const user = await queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [req.user!.id]);
+    const token = signToken(user!);
+    res.json(ok({ token, user: { id: user!.id, email: user!.email, name: user!.name, role: user!.role } }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Update error'));
   }
 });
 
 // POST /auth/verify-email
-authRouter.post('/verify-email', (req: AuthRequest, res: Response) => {
+authRouter.post('/verify-email', async (req: AuthRequest, res: Response) => {
   try {
     const { email, code } = req.body;
     if (!email || !code) { res.status(400).json(fail('Email and code required')); return; }
-    const db = getDb();
     const normalEmail = email.toLowerCase().trim();
-    const record = db.prepare(
-      "SELECT * FROM verification_codes WHERE email = ? AND code = ? AND type = 'register' AND used = 0 AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1"
-    ).get(normalEmail, String(code)) as { id: number } | undefined;
+    const record = await queryOne<{ id: number }>(
+      "SELECT * FROM verification_codes WHERE email = $1 AND code = $2 AND type = 'register' AND used = 0 AND expires_at > NOW() ORDER BY id DESC LIMIT 1",
+      [normalEmail, String(code)]
+    );
     if (!record) { res.status(400).json(fail('Invalid or expired code')); return; }
-    db.prepare('UPDATE verification_codes SET used = 1 WHERE id = ?').run(record.id);
-    db.prepare('UPDATE users SET email_verified = 1 WHERE email = ?').run(normalEmail);
+    await execute('UPDATE verification_codes SET used = 1 WHERE id = $1', [record.id]);
+    await execute('UPDATE users SET email_verified = 1 WHERE email = $1', [normalEmail]);
     res.json(ok({ verified: true }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Verification error'));
@@ -170,17 +174,19 @@ authRouter.post('/verify-email', (req: AuthRequest, res: Response) => {
 });
 
 // POST /auth/resend-code
-authRouter.post('/resend-code', rateLimitLogin, (req: AuthRequest, res: Response) => {
+authRouter.post('/resend-code', rateLimitLogin, async (req: AuthRequest, res: Response) => {
   try {
     const { email } = req.body;
     if (!email) { res.status(400).json(fail('Email required')); return; }
-    const db = getDb();
     const normalEmail = email.toLowerCase().trim();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(normalEmail) as { id: number } | undefined;
+    const user = await queryOne<{ id: number }>('SELECT id FROM users WHERE email = $1', [normalEmail]);
     if (!user) { res.json(ok({ sent: true })); return; } // Don't leak whether email exists
     const code = generateCode();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    db.prepare('INSERT INTO verification_codes (email, code, type, expires_at) VALUES (?, ?, ?, ?)').run(normalEmail, code, 'register', expiresAt);
+    await execute(
+      'INSERT INTO verification_codes (email, code, type, expires_at) VALUES ($1, $2, $3, $4)',
+      [normalEmail, code, 'register', expiresAt]
+    );
     sendVerificationEmail(normalEmail, code, 'register').catch(err => console.error('[auth] resend email failed:', err));
     res.json(ok({ sent: true }));
   } catch (err) {
@@ -189,17 +195,19 @@ authRouter.post('/resend-code', rateLimitLogin, (req: AuthRequest, res: Response
 });
 
 // POST /auth/forgot-password
-authRouter.post('/forgot-password', rateLimitLogin, (req: AuthRequest, res: Response) => {
+authRouter.post('/forgot-password', rateLimitLogin, async (req: AuthRequest, res: Response) => {
   try {
     const { email } = req.body;
     if (!email) { res.status(400).json(fail('Email required')); return; }
-    const db = getDb();
     const normalEmail = email.toLowerCase().trim();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(normalEmail) as { id: number } | undefined;
+    const user = await queryOne<{ id: number }>('SELECT id FROM users WHERE email = $1', [normalEmail]);
     if (!user) { res.json(ok({ sent: true })); return; } // Don't leak
     const code = generateCode();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    db.prepare('INSERT INTO verification_codes (email, code, type, expires_at) VALUES (?, ?, ?, ?)').run(normalEmail, code, 'reset', expiresAt);
+    await execute(
+      'INSERT INTO verification_codes (email, code, type, expires_at) VALUES ($1, $2, $3, $4)',
+      [normalEmail, code, 'reset', expiresAt]
+    );
     sendVerificationEmail(normalEmail, code, 'reset').catch(err => console.error('[auth] reset email failed:', err));
     res.json(ok({ sent: true }));
   } catch (err) {
@@ -208,35 +216,34 @@ authRouter.post('/forgot-password', rateLimitLogin, (req: AuthRequest, res: Resp
 });
 
 // POST /auth/reset-password
-authRouter.post('/reset-password', (req: AuthRequest, res: Response) => {
+authRouter.post('/reset-password', async (req: AuthRequest, res: Response) => {
   try {
     const { email, code, password } = req.body;
     if (!email || !code || !password) { res.status(400).json(fail('Email, code and new password required')); return; }
     if (password.length < 6) { res.status(400).json(fail('Password must be at least 6 characters')); return; }
-    const db = getDb();
     const normalEmail = email.toLowerCase().trim();
-    const record = db.prepare(
-      "SELECT * FROM verification_codes WHERE email = ? AND code = ? AND type = 'reset' AND used = 0 AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1"
-    ).get(normalEmail, String(code)) as { id: number } | undefined;
+    const record = await queryOne<{ id: number }>(
+      "SELECT * FROM verification_codes WHERE email = $1 AND code = $2 AND type = 'reset' AND used = 0 AND expires_at > NOW() ORDER BY id DESC LIMIT 1",
+      [normalEmail, String(code)]
+    );
     if (!record) { res.status(400).json(fail('Invalid or expired code')); return; }
-    db.prepare('UPDATE verification_codes SET used = 1 WHERE id = ?').run(record.id);
+    await execute('UPDATE verification_codes SET used = 1 WHERE id = $1', [record.id]);
     const hash = bcrypt.hashSync(password, 10);
-    db.prepare('UPDATE users SET password_hash = ?, email_verified = 1 WHERE email = ?').run(hash, normalEmail);
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalEmail) as UserRow;
-    const token = signToken(user);
-    res.json(ok({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } }));
+    await execute('UPDATE users SET password_hash = $1, email_verified = 1 WHERE email = $2', [hash, normalEmail]);
+    const user = await queryOne<UserRow>('SELECT * FROM users WHERE email = $1', [normalEmail]);
+    const token = signToken(user!);
+    res.json(ok({ token, user: { id: user!.id, email: user!.email, name: user!.name, role: user!.role } }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Reset error'));
   }
 });
 
 // GET /auth/users — admin only
-authRouter.get('/users', requireAuth, (req: AuthRequest, res: Response) => {
+authRouter.get('/users', requireAuth, async (req: AuthRequest, res: Response) => {
   if (req.user!.role !== 'admin') {
     res.status(403).json(fail('Admin access required'));
     return;
   }
-  const db = getDb();
-  const users = db.prepare('SELECT id, email, name, role, created_at FROM users ORDER BY id').all();
+  const users = await queryAll('SELECT id, email, name, role, created_at FROM users ORDER BY id');
   res.json(ok(users));
 });

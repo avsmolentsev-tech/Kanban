@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { getDb } from '../db/db';
+import { query, queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
@@ -32,20 +32,21 @@ const UpdateSchema = z.object({
   status: z.enum(['active', 'completed', 'cancelled']).optional(),
 });
 
-goalsRouter.get('/', (req: AuthRequest, res: Response) => {
+goalsRouter.get('/', async (req: AuthRequest, res: Response) => {
   const scope = userScopeWhere(req);
-  const goals = getDb()
-    .prepare(`SELECT * FROM goals WHERE type IN ('goal', 'bhag') AND ${scope.sql} ORDER BY created_at DESC`)
-    .all(...scope.params) as Record<string, unknown>[];
+  const goals = await queryAll<Record<string, unknown>>(
+    `SELECT * FROM goals WHERE type IN ('goal', 'bhag') AND ${scope.sql} ORDER BY created_at DESC`,
+    scope.params
+  );
 
   const goalIds = goals.map((g) => g['id'] as number);
   let keyResults: Record<string, unknown>[] = [];
   if (goalIds.length > 0) {
-    keyResults = getDb()
-      .prepare(
-        `SELECT * FROM goals WHERE type IN ('key_result', 'milestone') AND parent_id IN (${goalIds.map(() => '?').join(',')}) ORDER BY created_at ASC`
-      )
-      .all(...goalIds) as Record<string, unknown>[];
+    const placeholders = goalIds.map((_, i) => `$${i + 1}`).join(',');
+    keyResults = await queryAll<Record<string, unknown>>(
+      `SELECT * FROM goals WHERE type IN ('key_result', 'milestone') AND parent_id IN (${placeholders}) ORDER BY created_at ASC`,
+      goalIds
+    );
   }
 
   const krByParent = new Map<number, Record<string, unknown>[]>();
@@ -63,7 +64,7 @@ goalsRouter.get('/', (req: AuthRequest, res: Response) => {
   res.json(ok(enriched));
 });
 
-goalsRouter.post('/', (req: AuthRequest, res: Response) => {
+goalsRouter.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json(fail(parsed.error.message));
@@ -71,16 +72,15 @@ goalsRouter.post('/', (req: AuthRequest, res: Response) => {
   }
   const { title, description, type, parent_id, project_id, target_value, unit, due_date } = parsed.data;
   const userId = getUserId(req);
-  const result = getDb()
-    .prepare(
-      'INSERT INTO goals (title, description, type, parent_id, project_id, target_value, unit, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    )
-    .run(title, description, type, parent_id ?? null, project_id ?? null, target_value ?? null, unit, due_date ?? null, userId);
-  const goal = getDb().prepare('SELECT * FROM goals WHERE id = ?').get(result.lastInsertRowid as number);
+  const inserted = await queryOne<{ id: number }>(
+    'INSERT INTO goals (title, description, type, parent_id, project_id, target_value, unit, due_date, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
+    [title, description, type, parent_id ?? null, project_id ?? null, target_value ?? null, unit, due_date ?? null, userId]
+  );
+  const goal = await queryOne('SELECT * FROM goals WHERE id = $1', [inserted!.id]);
   res.status(201).json(ok(goal));
 });
 
-goalsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
+goalsRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json(fail(parsed.error.message));
@@ -88,44 +88,50 @@ goalsRouter.patch('/:id', (req: AuthRequest, res: Response) => {
   }
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM goals WHERE id = ? AND user_id = ?').get(goalId, userId);
+  const existing = await queryOne('SELECT id FROM goals WHERE id = $1 AND user_id = $2', [goalId, userId]);
   if (!existing) { res.status(404).json(fail('Goal not found')); return; }
   const entries = Object.entries(parsed.data).filter(([, v]) => v !== undefined);
   if (entries.length === 0) {
     res.status(400).json(fail('No fields'));
     return;
   }
-  const fields = entries.map(([k]) => `${k} = ?`);
+  const fields = entries.map(([k], i) => `${k} = $${i + 1}`);
   const values = entries.map(([, v]) => v);
-  getDb()
-    .prepare(`UPDATE goals SET ${fields.join(', ')} WHERE id = ?`)
-    .run(...values, goalId);
-  const goal = getDb().prepare('SELECT * FROM goals WHERE id = ?').get(goalId);
+  await execute(
+    `UPDATE goals SET ${fields.join(', ')} WHERE id = $${values.length + 1}`,
+    [...values, goalId]
+  );
+  const goal = await queryOne('SELECT * FROM goals WHERE id = $1', [goalId]);
   res.json(ok(goal));
 });
 
-goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
+goalsRouter.get('/:id/mindmap', async (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);
   if (!userId) { res.status(401).json(fail('Auth required')); return; }
-  const db = getDb();
 
-  const bhag = db.prepare('SELECT * FROM goals WHERE id = ? AND user_id = ?').get(goalId, userId) as Record<string, unknown> | undefined;
+  const bhag = await queryOne<Record<string, unknown>>('SELECT * FROM goals WHERE id = $1 AND user_id = $2', [goalId, userId]);
   if (!bhag) { res.status(404).json(fail('Goal not found')); return; }
 
   // Milestones (direct children)
-  const milestones = db.prepare('SELECT * FROM goals WHERE parent_id = ? AND user_id = ?').all(goalId, userId) as Array<Record<string, unknown>>;
+  const milestones = await queryAll<Record<string, unknown>>('SELECT * FROM goals WHERE parent_id = $1 AND user_id = $2', [goalId, userId]);
   const milestoneIds = milestones.map(m => m['id'] as number);
 
   // Tasks linked to milestones or directly to BHAG
   const allGoalIds = [goalId, ...milestoneIds];
-  const placeholders = allGoalIds.map(() => '?').join(',');
+  const placeholders = allGoalIds.map((_, i) => `$${i + 1}`).join(',');
   const tasks = allGoalIds.length > 0
-    ? db.prepare(`SELECT id, title, status, priority, due_date, goal_id FROM tasks WHERE goal_id IN (${placeholders}) AND user_id = ? AND archived = 0`).all(...allGoalIds, userId) as Array<Record<string, unknown>>
+    ? await queryAll<Record<string, unknown>>(
+        `SELECT id, title, status, priority, due_date, goal_id FROM tasks WHERE goal_id IN (${placeholders}) AND user_id = $${allGoalIds.length + 1} AND archived = 0`,
+        [...allGoalIds, userId]
+      )
     : [];
 
   const meetings = allGoalIds.length > 0
-    ? db.prepare(`SELECT id, title, date, goal_id FROM meetings WHERE goal_id IN (${placeholders}) AND user_id = ?`).all(...allGoalIds, userId) as Array<Record<string, unknown>>
+    ? await queryAll<Record<string, unknown>>(
+        `SELECT id, title, date, goal_id FROM meetings WHERE goal_id IN (${placeholders}) AND user_id = $${allGoalIds.length + 1}`,
+        [...allGoalIds, userId]
+      )
     : [];
 
   // Build nodes + edges
@@ -181,10 +187,11 @@ goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
   // Subtasks (children of displayed tasks via parent_id)
   const displayedTaskIds = tasks.map(t => t['id'] as number);
   if (displayedTaskIds.length > 0) {
-    const subPlaceholders = displayedTaskIds.map(() => '?').join(',');
-    const subtasks = db.prepare(
-      `SELECT id, title, status, priority, due_date, parent_id FROM tasks WHERE parent_id IN (${subPlaceholders}) AND user_id = ? AND archived = 0`
-    ).all(...displayedTaskIds, userId) as Array<Record<string, unknown>>;
+    const subPlaceholders = displayedTaskIds.map((_, i) => `$${i + 1}`).join(',');
+    const subtasks = await queryAll<Record<string, unknown>>(
+      `SELECT id, title, status, priority, due_date, parent_id FROM tasks WHERE parent_id IN (${subPlaceholders}) AND user_id = $${displayedTaskIds.length + 1} AND archived = 0`,
+      [...displayedTaskIds, userId]
+    );
 
     for (const st of subtasks) {
       const stId = st['id'] as number;
@@ -200,10 +207,11 @@ goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
   // Dependency edges between displayed tasks
   const allTaskIds = nodes.filter(n => n.id.startsWith('task-')).map(n => Number(n.id.split('-')[1]));
   if (allTaskIds.length > 0) {
-    const depPlaceholders = allTaskIds.map(() => '?').join(',');
-    const deps = db.prepare(
-      `SELECT task_id, depends_on_id FROM task_dependencies WHERE task_id IN (${depPlaceholders}) AND depends_on_id IN (${depPlaceholders})`
-    ).all(...allTaskIds, ...allTaskIds) as Array<{ task_id: number; depends_on_id: number }>;
+    const depPlaceholders = allTaskIds.map((_, i) => `$${i + 1}`).join(',');
+    const deps = await queryAll<{ task_id: number; depends_on_id: number }>(
+      `SELECT task_id, depends_on_id FROM task_dependencies WHERE task_id IN (${depPlaceholders}) AND depends_on_id IN (${depPlaceholders})`,
+      [...allTaskIds, ...allTaskIds]
+    );
     for (const dep of deps) {
       edges.push({ source: `task-${dep.depends_on_id}`, target: `task-${dep.task_id}`, edgeType: 'dependency' });
     }
@@ -226,31 +234,29 @@ goalsRouter.get('/:id/mindmap', (req: AuthRequest, res: Response) => {
 });
 
 // Save mind map positions
-goalsRouter.put('/:id/mindmap-positions', (req: AuthRequest, res: Response) => {
+goalsRouter.put('/:id/mindmap-positions', async (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);
   if (!userId) { res.status(401).json(fail('Auth required')); return; }
   const positions = req.body['positions'];
   if (!positions || typeof positions !== 'object') { res.status(400).json(fail('positions object required')); return; }
-  const db = getDb();
   const settingsKey = `mindmap_positions_${goalId}`;
   const jsonValue = JSON.stringify(positions);
-  const existing = db.prepare("SELECT 1 FROM settings WHERE user_id = ? AND key = ?").get(userId, settingsKey);
+  const existing = await queryOne('SELECT 1 FROM settings WHERE user_id = $1 AND key = $2', [userId, settingsKey]);
   if (existing) {
-    db.prepare("UPDATE settings SET value = ? WHERE user_id = ? AND key = ?").run(jsonValue, userId, settingsKey);
+    await execute('UPDATE settings SET value = $1 WHERE user_id = $2 AND key = $3', [jsonValue, userId, settingsKey]);
   } else {
-    db.prepare("INSERT INTO settings (user_id, key, value) VALUES (?, ?, ?)").run(userId, settingsKey, jsonValue);
+    await execute('INSERT INTO settings (user_id, key, value) VALUES ($1, $2, $3)', [userId, settingsKey, jsonValue]);
   }
   res.json(ok({ saved: true }));
 });
 
 // Get saved positions
-goalsRouter.get('/:id/mindmap-positions', (req: AuthRequest, res: Response) => {
+goalsRouter.get('/:id/mindmap-positions', async (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);
   if (!userId) { res.status(401).json(fail('Auth required')); return; }
-  const db = getDb();
-  const row = db.prepare("SELECT value FROM settings WHERE user_id = ? AND key = ?").get(userId, `mindmap_positions_${goalId}`) as { value: string } | undefined;
+  const row = await queryOne<{ value: string }>('SELECT value FROM settings WHERE user_id = $1 AND key = $2', [userId, `mindmap_positions_${goalId}`]);
   res.json(ok(row ? JSON.parse(row.value) : {}));
 });
 
@@ -258,14 +264,13 @@ goalsRouter.post('/:id/decompose', async (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);
   if (!userId) { res.status(401).json(fail('Auth required')); return; }
-  const db = getDb();
 
-  const bhag = db.prepare('SELECT * FROM goals WHERE id = ? AND user_id = ?').get(goalId, userId) as Record<string, unknown> | undefined;
+  const bhag = await queryOne<Record<string, unknown>>('SELECT * FROM goals WHERE id = $1 AND user_id = $2', [goalId, userId]);
   if (!bhag) { res.status(404).json(fail('Goal not found')); return; }
 
   try {
     const claude = new ClaudeService();
-    const projects = db.prepare('SELECT name FROM projects WHERE user_id = ? AND archived = 0').all(userId) as Array<{ name: string }>;
+    const projects = await queryAll<{ name: string }>('SELECT name FROM projects WHERE user_id = $1 AND archived = 0', [userId]);
     const today = new Date().toISOString().split('T')[0]!;
     const result = await claude.decomposeBhag(
       bhag['title'] as string,
@@ -278,23 +283,26 @@ goalsRouter.post('/:id/decompose', async (req: AuthRequest, res: Response) => {
     const created: { milestones: number; tasks: number; meetings: number } = { milestones: 0, tasks: 0, meetings: 0 };
 
     for (const m of result.milestones) {
-      const mResult = db.prepare(
-        'INSERT INTO goals (title, type, parent_id, due_date, status, user_id) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(m.title, 'milestone', goalId, m.due_date ?? null, 'active', userId);
-      const milestoneId = Number(mResult.lastInsertRowid);
+      const mResult = await queryOne<{ id: number }>(
+        'INSERT INTO goals (title, type, parent_id, due_date, status, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+        [m.title, 'milestone', goalId, m.due_date ?? null, 'active', userId]
+      );
+      const milestoneId = mResult!.id;
       created.milestones++;
 
       for (const t of m.tasks ?? []) {
-        db.prepare(
-          'INSERT INTO tasks (title, status, priority, urgency, due_date, goal_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        ).run(t.title, 'todo', 3, 3, t.due_date ?? null, milestoneId, userId);
+        await execute(
+          'INSERT INTO tasks (title, status, priority, urgency, due_date, goal_id, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [t.title, 'todo', 3, 3, t.due_date ?? null, milestoneId, userId]
+        );
         created.tasks++;
       }
 
       for (const mt of m.meetings ?? []) {
-        db.prepare(
-          'INSERT INTO meetings (title, date, goal_id, user_id, processed) VALUES (?, ?, ?, ?, 0)'
-        ).run(mt.title, mt.date ?? today, milestoneId, userId);
+        await execute(
+          'INSERT INTO meetings (title, date, goal_id, user_id, processed) VALUES ($1, $2, $3, $4, $5)',
+          [mt.title, mt.date ?? today, milestoneId, userId, 0]
+        );
         created.meetings++;
       }
     }
@@ -305,10 +313,9 @@ goalsRouter.post('/:id/decompose', async (req: AuthRequest, res: Response) => {
   }
 });
 
-goalsRouter.patch('/:id/nodes', (req: AuthRequest, res: Response) => {
+goalsRouter.patch('/:id/nodes', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) { res.status(401).json(fail('Auth required')); return; }
-  const db = getDb();
   const moves = req.body['moves'] as Array<{ nodeId: string; newParent: string }> | undefined;
   if (!moves || !Array.isArray(moves)) { res.status(400).json(fail('moves array required')); return; }
 
@@ -320,48 +327,48 @@ goalsRouter.patch('/:id/nodes', (req: AuthRequest, res: Response) => {
     if (!nodeId || !parentId) continue;
 
     if (nodeType === 'task') {
-      db.prepare('UPDATE tasks SET goal_id = ? WHERE id = ? AND user_id = ?').run(parentId, nodeId, userId);
+      await execute('UPDATE tasks SET goal_id = $1 WHERE id = $2 AND user_id = $3', [parentId, nodeId, userId]);
     } else if (nodeType === 'meeting') {
-      db.prepare('UPDATE meetings SET goal_id = ? WHERE id = ? AND user_id = ?').run(parentId, nodeId, userId);
+      await execute('UPDATE meetings SET goal_id = $1 WHERE id = $2 AND user_id = $3', [parentId, nodeId, userId]);
     } else if (nodeType === 'goal') {
-      db.prepare('UPDATE goals SET parent_id = ? WHERE id = ? AND user_id = ?').run(parentId, nodeId, userId);
+      await execute('UPDATE goals SET parent_id = $1 WHERE id = $2 AND user_id = $3', [parentId, nodeId, userId]);
     }
   }
 
   res.json(ok({ moved: moves.length }));
 });
 
-goalsRouter.post('/:id/tasks-to-kanban', (req: AuthRequest, res: Response) => {
+goalsRouter.post('/:id/tasks-to-kanban', async (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);
   if (!userId) { res.status(401).json(fail('Auth required')); return; }
-  const db = getDb();
 
-  const goal = db.prepare('SELECT project_id FROM goals WHERE id = ? AND user_id = ?').get(goalId, userId) as { project_id: number | null } | undefined;
+  const goal = await queryOne<{ project_id: number | null }>('SELECT project_id FROM goals WHERE id = $1 AND user_id = $2', [goalId, userId]);
   if (!goal) { res.status(404).json(fail('Goal not found')); return; }
   const projectId = (req.body['project_id'] as number | null) ?? goal.project_id;
 
   const updates: string[] = ["status = CASE WHEN status = 'backlog' THEN 'todo' ELSE status END"];
   const params: unknown[] = [];
   if (projectId) {
-    updates.push('project_id = ?');
+    updates.push(`project_id = $${params.length + 1}`);
     params.push(projectId);
   }
 
-  const result = db.prepare(
-    `UPDATE tasks SET ${updates.join(', ')} WHERE goal_id = ? AND user_id = ? AND archived = 0`
-  ).run(...params, goalId, userId);
+  const result = await execute(
+    `UPDATE tasks SET ${updates.join(', ')} WHERE goal_id = $${params.length + 1} AND user_id = $${params.length + 2} AND archived = 0`,
+    [...params, goalId, userId]
+  );
 
-  res.json(ok({ updated: result.changes }));
+  res.json(ok({ updated: result }));
 });
 
-goalsRouter.delete('/:id', (req: AuthRequest, res: Response) => {
+goalsRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
   const goalId = Number(req.params['id']);
   const userId = getUserId(req);
-  const existing = getDb().prepare('SELECT id FROM goals WHERE id = ? AND user_id = ?').get(goalId, userId);
+  const existing = await queryOne('SELECT id FROM goals WHERE id = $1 AND user_id = $2', [goalId, userId]);
   if (!existing) { res.status(404).json(fail('Goal not found')); return; }
   // Delete key results first
-  getDb().prepare('DELETE FROM goals WHERE parent_id = ? AND user_id = ?').run(goalId, userId);
-  getDb().prepare('DELETE FROM goals WHERE id = ? AND user_id = ?').run(goalId, userId);
+  await execute('DELETE FROM goals WHERE parent_id = $1 AND user_id = $2', [goalId, userId]);
+  await execute('DELETE FROM goals WHERE id = $1 AND user_id = $2', [goalId, userId]);
   res.json(ok({ deleted: true }));
 });
