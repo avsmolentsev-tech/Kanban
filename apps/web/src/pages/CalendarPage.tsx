@@ -5,10 +5,10 @@ import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
 import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { useFiltersStore } from '../store';
 import { peopleApi } from '../api/people.api';
-import { apiGet } from '../api/client';
+import { apiGet, apiPost } from '../api/client';
 import type { Task, Person } from '@pis/shared';
 import { useLangStore } from '../store/lang.store';
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Link2, Unlink } from 'lucide-react';
 
 interface GCalEvent {
   id: string;
@@ -58,13 +58,18 @@ export function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<ViewMode>('month');
   const [gcalEvents, setGcalEvents] = useState<GCalEvent[]>([]);
+  const [gcalConnected, setGcalConnected] = useState(false);
+  const [showCalendarMenu, setShowCalendarMenu] = useState(false);
 
   // Reset to month view when navigating to calendar
   const location = useLocation();
   useEffect(() => { setView('month'); setCurrentDate(new Date()); }, [location.key]);
 
   useEffect(() => { fetchTasks(); fetchProjects(); peopleApi.list().then(setPeople).catch(() => {}); }, [fetchTasks, fetchProjects]);
-  useEffect(() => { apiGet<GCalEvent[]>('/google-calendar/events').then(setGcalEvents).catch(() => {}); }, []);
+  useEffect(() => {
+    apiGet<GCalEvent[]>('/google-calendar/events').then(setGcalEvents).catch(() => {});
+    apiGet<{ connected: boolean }>('/google-calendar/status').then(d => setGcalConnected(d.connected)).catch(() => {});
+  }, []);
 
   const today = fmt(new Date());
   const projectMap = new Map(projects.map(p => [p.id, p]));
@@ -165,7 +170,100 @@ export function CalendarPage() {
             <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 capitalize text-center min-w-[160px]">{headerLabel}</span>
             <button onClick={next} className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center transition-transform active:scale-90"><ChevronRight size={18} className="text-gray-500" /></button>
           </div>
-          <ProjectFilter projects={projects} />
+          <div className="flex items-center gap-2">
+            {/* Calendar integrations */}
+            <div className="relative">
+              <button
+                onClick={() => setShowCalendarMenu(v => !v)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all active:scale-95 ${
+                  gcalConnected
+                    ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-indigo-300 hover:text-indigo-600'
+                }`}
+              >
+                <Link2 size={14} />
+                <span className="hidden md:inline">{t('Интеграции', 'Integrations')}</span>
+                {gcalConnected && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+              </button>
+              {showCalendarMenu && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setShowCalendarMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-3 w-64 space-y-2">
+                    <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-1 mb-2">
+                      {t('Календари', 'Calendars')}
+                    </div>
+
+                    {/* Google Calendar */}
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-white dark:bg-gray-600 flex items-center justify-center shadow-sm">
+                          <span className="text-sm">📅</span>
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">Google Calendar</div>
+                          <div className="text-[10px] text-gray-400">{gcalConnected ? t('Подключён', 'Connected') : t('Не подключён', 'Not connected')}</div>
+                        </div>
+                      </div>
+                      {gcalConnected ? (
+                        <button
+                          onClick={async () => {
+                            await apiPost('/google-calendar/disconnect');
+                            setGcalConnected(false);
+                            setGcalEvents([]);
+                          }}
+                          className="text-[10px] text-red-500 hover:text-red-700 font-medium flex items-center gap-1 transition-colors"
+                        >
+                          <Unlink size={10} /> {t('Отключить', 'Disconnect')}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            const token = localStorage.getItem('auth_token') || '';
+                            window.open(`${window.location.origin}/v1/google-calendar/auth${token ? '?token=' + token : ''}`, '_blank');
+                          }}
+                          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 transition-colors"
+                        >
+                          <Link2 size={10} /> {t('Подключить', 'Connect')}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Yandex Calendar */}
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-white dark:bg-gray-600 flex items-center justify-center shadow-sm">
+                          <span className="text-sm">🟡</span>
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('Яндекс Календарь', 'Yandex Calendar')}</div>
+                          <div className="text-[10px] text-gray-400">{t('Скоро', 'Coming soon')}</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-gray-300 dark:text-gray-600 font-medium px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full">
+                        {t('Скоро', 'Soon')}
+                      </span>
+                    </div>
+
+                    {gcalConnected && (
+                      <button
+                        onClick={async () => {
+                          const res = await apiPost<{ synced: number }>('/google-calendar/sync');
+                          const events = await apiGet<GCalEvent[]>('/google-calendar/events');
+                          setGcalEvents(events);
+                          setShowCalendarMenu(false);
+                          alert(t(`Синхронизировано ${res.synced} встреч`, `Synced ${res.synced} meetings`));
+                        }}
+                        className="w-full text-xs font-medium text-center py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors"
+                      >
+                        {t('🔄 Синхронизировать встречи → Google', '🔄 Sync meetings → Google')}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            <ProjectFilter projects={projects} />
+          </div>
         </div>
         {/* Row 2: view switcher */}
         <div className="flex items-center gap-2 px-3 md:px-4 pb-2">
