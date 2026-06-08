@@ -58,9 +58,10 @@ async function checkOverdueTasks(): Promise<void> {
     if (!await shouldSendNotification(user.id, 'overdue_digest', 'all')) continue;
 
     // Start with achievements, then overdue
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const doneWeekRow = await queryOne<{ c: number }>(
-      "SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= (CURRENT_DATE - INTERVAL '7 days') AND user_id = $1",
-      [user.id]
+      "SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= $1 AND user_id = $2",
+      [sevenDaysAgo, user.id]
     );
     const doneWeek = doneWeekRow?.c ?? 0;
 

@@ -210,7 +210,7 @@ goalsRouter.get('/:id/mindmap', async (req: AuthRequest, res: Response) => {
     const depPlaceholders = allTaskIds.map((_, i) => `$${i + 1}`).join(',');
     const deps = await queryAll<{ task_id: number; depends_on_id: number }>(
       `SELECT task_id, depends_on_id FROM task_dependencies WHERE task_id IN (${depPlaceholders}) AND depends_on_id IN (${depPlaceholders})`,
-      [...allTaskIds, ...allTaskIds]
+      allTaskIds
     );
     for (const dep of deps) {
       edges.push({ source: `task-${dep.depends_on_id}`, target: `task-${dep.task_id}`, edgeType: 'dependency' });

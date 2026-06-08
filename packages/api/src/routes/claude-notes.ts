@@ -13,7 +13,7 @@ const CreateSchema = z.object({
 claudeNotesRouter.get('/', async (req: Request, res: Response) => {
   const onlyPending = req.query['pending'] === 'true';
   const sql = onlyPending
-    ? 'SELECT * FROM claude_notes WHERE processed = false ORDER BY created_at DESC'
+    ? 'SELECT * FROM claude_notes WHERE processed = 0 ORDER BY created_at DESC'
     : 'SELECT * FROM claude_notes ORDER BY created_at DESC LIMIT 100';
   const notes = await queryAll(sql);
   res.json(ok(notes));

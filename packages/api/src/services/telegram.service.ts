@@ -1224,9 +1224,11 @@ BHAG (Большая Дерзкая Цель на год):
       );
 
       // Achievements
+      const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+      const thirtyDaysAgoDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const doneRecently = await queryOne<{ c: string }>(
-        "SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= NOW() - INTERVAL '1 day' AND user_id = $1",
-        [userId]
+        "SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= $1 AND user_id = $2",
+        [oneDayAgo, userId]
       );
       const habitsDoneToday = await queryAll<{ title: string; icon: string }>(
         `SELECT h.title, h.icon FROM habits h
@@ -1237,9 +1239,9 @@ BHAG (Большая Дерзкая Цель на год):
       );
       const topStreaks = await queryAll<{ title: string; icon: string; cnt: string }>(
         `SELECT h.title, h.icon,
-          (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= (CURRENT_DATE - INTERVAL '30 days')::date) as cnt
+          (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= $2) as cnt
         FROM habits h WHERE h.archived = 0 AND h.user_id = $1 ORDER BY cnt DESC LIMIT 3`,
-        [userId]
+        [userId, thirtyDaysAgoDate]
       );
       const overdue = tasks.filter(t => t.due_date && t.due_date < today);
 

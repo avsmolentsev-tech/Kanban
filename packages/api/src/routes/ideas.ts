@@ -33,7 +33,7 @@ const UpdateSchema = z.object({
 
 ideasRouter.get('/', async (req: AuthRequest, res: Response) => {
   const scope = userScopeWhere(req);
-  let sql = `SELECT * FROM ideas WHERE archived = false AND ${scope.sql}`;
+  let sql = `SELECT * FROM ideas WHERE archived = 0 AND ${scope.sql}`;
   const params: unknown[] = [...scope.params];
   if (req.query['category']) { sql += ` AND category = $${params.length + 1}`; params.push(req.query['category']); }
   if (req.query['project']) { sql += ` AND project_id = $${params.length + 1}`; params.push(Number(req.query['project'])); }

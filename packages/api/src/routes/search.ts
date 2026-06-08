@@ -30,7 +30,7 @@ searchRouter.get('/', async (req: AuthRequest, res: Response) => {
       `SELECT 'task' AS type, id AS ref_id, title,
         ts_rank(search_vector, plainto_tsquery('russian', $1)) AS rank
        FROM tasks
-       WHERE archived = false
+       WHERE archived = 0
          AND search_vector @@ plainto_tsquery('russian', $1)
          ${userFilter}
        ORDER BY rank DESC
@@ -62,7 +62,7 @@ searchRouter.get('/', async (req: AuthRequest, res: Response) => {
     const ideas = await queryAll<SearchResult>(
       `SELECT 'idea' AS type, id AS ref_id, title, NULL AS rank
        FROM ideas
-       WHERE archived = false
+       WHERE archived = 0
          AND title ILIKE '%' || $1 || '%'
          ${userFilter}
        LIMIT 10`,

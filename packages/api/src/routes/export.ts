@@ -11,7 +11,7 @@ exportRouter.get('/tasks.csv', async (req: AuthRequest, res: Response) => {
   const userParams = userId != null ? [userId] : [];
 
   const tasks = await queryAll<Record<string, unknown>>(
-    `SELECT id, title, status, priority, due_date, project_id, created_at FROM tasks WHERE archived = false${userFilter}`,
+    `SELECT id, title, status, priority, due_date, project_id, created_at FROM tasks WHERE archived = 0${userFilter}`,
     userParams
   );
   const projects = await queryAll<{ id: number; name: string }>(

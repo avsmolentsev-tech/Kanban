@@ -147,13 +147,16 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
 
     // Achievements data for motivation
     const doneToday = tasks.filter(t => t.status === 'done' && t.due_date === today).length;
+    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const doneRecentlyRow = userId != null
-      ? await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= NOW() - INTERVAL '1 day' AND user_id = $1`, [userId])
-      : await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= NOW() - INTERVAL '1 day'`, []);
+      ? await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= $1 AND user_id = $2`, [oneDayAgo, userId])
+      : await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= $1`, [oneDayAgo]);
     const doneRecently = doneRecentlyRow ?? { c: 0 };
     const doneThisWeekRow = userId != null
-      ? await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= NOW() - INTERVAL '7 days' AND user_id = $1`, [userId])
-      : await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= NOW() - INTERVAL '7 days'`, []);
+      ? await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= $1 AND user_id = $2`, [sevenDaysAgo, userId])
+      : await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= $1`, [sevenDaysAgo]);
     const doneThisWeek = doneThisWeekRow ?? { c: 0 };
     const totalDone = tasks.filter(t => t.status === 'done').length;
     const inProgress = tasks.filter(t => t.status === 'in_progress').length;
@@ -162,8 +165,8 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
       : await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM meetings WHERE date = $1`, [today]);
     const todayMeetings = todayMeetingsRow ?? { c: 0 };
     const weekMeetingsRow = userId != null
-      ? await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM meetings WHERE date >= NOW() - INTERVAL '7 days' AND user_id = $1`, [userId])
-      : await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM meetings WHERE date >= NOW() - INTERVAL '7 days'`, []);
+      ? await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM meetings WHERE date >= $1 AND user_id = $2`, [sevenDaysAgo.split('T')[0], userId])
+      : await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM meetings WHERE date >= $1`, [sevenDaysAgo.split('T')[0]]);
     const weekMeetings = weekMeetingsRow ?? { c: 0 };
     const habitStreaks = userId != null
       ? await queryAll<{ title: string; icon: string }>(`
@@ -181,54 +184,129 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
     const streakCounts = userId != null
       ? await queryAll<{ id: number; title: string; icon: string; recent_count: number }>(`
           SELECT h.id, h.title, h.icon,
-            (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= NOW() - INTERVAL '30 days') as recent_count
+            (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= $2) as recent_count
           FROM habits h WHERE h.archived = 0 AND h.user_id = $1 ORDER BY recent_count DESC LIMIT 5
-        `, [userId])
+        `, [userId, thirtyDaysAgo.split('T')[0]])
       : await queryAll<{ id: number; title: string; icon: string; recent_count: number }>(`
           SELECT h.id, h.title, h.icon,
-            (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= NOW() - INTERVAL '30 days') as recent_count
+            (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= $1) as recent_count
           FROM habits h WHERE h.archived = 0 ORDER BY recent_count DESC LIMIT 5
-        `, []);
+        `, [thirtyDaysAgo.split('T')[0]]);
 
-    // Auto-detect if question is about meetings → include full content
-    const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
+    // --- Smart meeting search ---
+    const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|совещан|решили|договорил|итоги|выводы|план из|задачи из|о чём|о чем|кто сказал|что было|возражен|аргумент|консультац|лекци|обучен|созвон/i;
     const needsFullMeetings = meetingKeywords.test(parsed.data.text);
     const requestedMeetingId = parsed.data.meeting_id;
 
-    type MeetingWithContent = { id: number; title: string; date: string; project_id: number | null; summary_raw?: string };
-    let meetings: MeetingWithContent[];
+    // Detect time range from user's message
+    const timeRangeMatch = parsed.data.text.match(/за\s+(последн(?:юю|ий|ие|ее)|этот|эту|прошл(?:ую|ый|ое))\s+(недел[юиь]|месяц|год|квартал|полгода|2\s*недел)/i)
+      || parsed.data.text.match(/(последн(?:юю|ий|ие|ее))\s+(недел[юиь]|месяц|год|квартал)/i);
+    let meetingDateFrom: string | null = null;
+    if (timeRangeMatch) {
+      const unit = timeRangeMatch[2].toLowerCase();
+      const now = Date.now();
+      if (unit.startsWith('недел')) meetingDateFrom = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      else if (unit === '2 недел' || unit === '2 недели') meetingDateFrom = new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      else if (unit === 'месяц') meetingDateFrom = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      else if (unit === 'квартал') meetingDateFrom = new Date(now - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      else if (unit === 'полгода') meetingDateFrom = new Date(now - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      else if (unit === 'год') meetingDateFrom = new Date(now - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    }
+
+    // Detect project filter from query
+    const textLower = parsed.data.text.toLowerCase();
+    const matchedProject = projects.find(p => textLower.includes(p.name.toLowerCase()));
+    // Detect person filter from query
+    const matchedPerson = people.find(p => textLower.includes(p.name.toLowerCase()));
+
+    type MeetingFull = { id: number; title: string; date: string; project_id: number | null; summary_raw?: string; summary_structured?: string };
+
+    /** Extract best content from a meeting for AI context */
+    function getMeetingContext(m: MeetingFull, maxLen: number): string {
+      // Prefer structured notes (compact & useful), fall back to raw
+      if (m.summary_structured) {
+        try {
+          const s = JSON.parse(m.summary_structured) as { notes?: string; qa?: string; actions?: string };
+          const parts: string[] = [];
+          if (s.notes) parts.push(s.notes);
+          if (s.actions) parts.push('## Задачи\n' + s.actions);
+          if (parts.length > 0) return parts.join('\n\n').slice(0, maxLen);
+        } catch {}
+      }
+      return (m.summary_raw || '').slice(0, maxLen);
+    }
+
+    let meetings: MeetingFull[];
     let fullMeetingContent = '';
 
     // If specific meeting_id passed (user is viewing a meeting), always include its full transcript
     if (requestedMeetingId) {
       const currentMeeting = userId != null
-        ? await queryOne<MeetingWithContent>(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE id = $1 AND user_id = $2`, [requestedMeetingId, userId])
-        : await queryOne<MeetingWithContent>(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE id = $1`, [requestedMeetingId]);
+        ? await queryOne<MeetingFull>(`SELECT id, title, date, project_id, summary_raw, summary_structured FROM meetings WHERE id = $1 AND user_id = $2`, [requestedMeetingId, userId])
+        : await queryOne<MeetingFull>(`SELECT id, title, date, project_id, summary_raw, summary_structured FROM meetings WHERE id = $1`, [requestedMeetingId]);
       if (currentMeeting) {
-        fullMeetingContent = `## ТЕКУЩАЯ ВСТРЕЧА (пользователь сейчас её просматривает):\n## ${currentMeeting.title} (${currentMeeting.date})\n${(currentMeeting.summary_raw || '').slice(0, 12000)}`;
+        fullMeetingContent = `## ТЕКУЩАЯ ВСТРЕЧА (пользователь сейчас её просматривает):\n## ${currentMeeting.title} (${currentMeeting.date})\n${getMeetingContext(currentMeeting, 15000)}`;
       }
-      // Also include other recent meetings for broader context
+      // Also include other relevant meetings
       const otherMeetings = userId != null
-        ? await queryAll<MeetingWithContent>(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE id != $1 AND user_id = $2 ORDER BY date DESC LIMIT 4`, [requestedMeetingId, userId])
-        : await queryAll<MeetingWithContent>(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE id != $1 ORDER BY date DESC LIMIT 4`, [requestedMeetingId]);
-      if (otherMeetings.length > 0 && needsFullMeetings) {
+        ? await queryAll<MeetingFull>(`SELECT id, title, date, project_id, summary_raw, summary_structured FROM meetings WHERE id != $1 AND user_id = $2 AND (summary_raw != '' OR summary_structured != '') ORDER BY date DESC LIMIT 10`, [requestedMeetingId, userId])
+        : await queryAll<MeetingFull>(`SELECT id, title, date, project_id, summary_raw, summary_structured FROM meetings WHERE id != $1 AND (summary_raw != '' OR summary_structured != '') ORDER BY date DESC LIMIT 10`, [requestedMeetingId]);
+      if (otherMeetings.length > 0) {
         fullMeetingContent += '\n\n---\n\n' + otherMeetings.map(m =>
-          `## Встреча #${m.id}: ${m.title} (${m.date})\n${(m.summary_raw || '').slice(0, 8000)}`
+          `## Встреча #${m.id}: ${m.title} (${m.date})\n${getMeetingContext(m, 4000)}`
         ).join('\n\n---\n\n');
       }
-      meetings = [currentMeeting, ...otherMeetings].filter(Boolean) as MeetingWithContent[];
+      meetings = [currentMeeting, ...otherMeetings].filter(Boolean) as MeetingFull[];
     } else if (needsFullMeetings) {
-      const fullMeetings = userId != null
-        ? await queryAll<MeetingWithContent>(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE user_id = $1 ORDER BY date DESC LIMIT 5`, [userId])
-        : await queryAll<MeetingWithContent>(`SELECT id, title, date, project_id, summary_raw FROM meetings ORDER BY date DESC LIMIT 5`, []);
-      fullMeetingContent = fullMeetings.map(m =>
-        `## Встреча #${m.id}: ${m.title} (${m.date})\n${(m.summary_raw || '').slice(0, 8000)}`
-      ).join('\n\n---\n\n');
-      meetings = fullMeetings;
+      // Smart meeting query with filters
+      const conditions: string[] = ["(summary_raw IS NOT NULL AND summary_raw != '' OR summary_structured IS NOT NULL AND summary_structured != '')"];
+      const params: unknown[] = [];
+      let paramIdx = 1;
+
+      if (userId != null) { conditions.push(`user_id = $${paramIdx++}`); params.push(userId); }
+      if (meetingDateFrom) { conditions.push(`date >= $${paramIdx++}`); params.push(meetingDateFrom); }
+      if (matchedProject) { conditions.push(`project_id = $${paramIdx++}`); params.push(matchedProject.id); }
+
+      // If person filter, join with meeting_people
+      let query: string;
+      if (matchedPerson) {
+        query = `SELECT DISTINCT m.id, m.title, m.date, m.project_id, m.summary_raw, m.summary_structured
+          FROM meetings m
+          JOIN meeting_people mp ON m.id = mp.meeting_id
+          WHERE mp.person_id = $${paramIdx++} AND ${conditions.join(' AND ')}
+          ORDER BY m.date DESC LIMIT 50`;
+        params.push(matchedPerson.id);
+      } else {
+        query = `SELECT id, title, date, project_id, summary_raw, summary_structured
+          FROM meetings WHERE ${conditions.join(' AND ')}
+          ORDER BY date DESC LIMIT 50`;
+      }
+
+      const allMeetings = await queryAll<MeetingFull>(query, params);
+
+      // Budget: ~120K chars total for meeting context (fits in gpt-4.1-mini 1M context)
+      const MAX_TOTAL_CHARS = 120000;
+      let totalChars = 0;
+      const meetingParts: string[] = [];
+      // First pass: per-meeting budget depends on total count
+      const perMeetingBudget = Math.max(2000, Math.floor(MAX_TOTAL_CHARS / Math.max(allMeetings.length, 1)));
+
+      for (const m of allMeetings) {
+        const content = getMeetingContext(m, perMeetingBudget);
+        if (!content) continue;
+        const part = `## Встреча #${m.id}: ${m.title} (${m.date})\n${content}`;
+        if (totalChars + part.length > MAX_TOTAL_CHARS) break;
+        meetingParts.push(part);
+        totalChars += part.length;
+      }
+
+      fullMeetingContent = meetingParts.join('\n\n---\n\n');
+      meetings = allMeetings;
     } else {
+      // No meeting query — just include list for reference
       meetings = userId != null
-        ? await queryAll<MeetingWithContent>(`SELECT id, title, date, project_id FROM meetings WHERE user_id = $1 ORDER BY date DESC LIMIT 20`, [userId])
-        : await queryAll<MeetingWithContent>(`SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 20`, []);
+        ? await queryAll<MeetingFull>(`SELECT id, title, date, project_id FROM meetings WHERE user_id = $1 ORDER BY date DESC LIMIT 30`, [userId])
+        : await queryAll<MeetingFull>(`SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 30`, []);
     }
 
     const systemPrompt = `Ты — персональный ассистент и коуч. Умный, дружелюбный, вдумчивый, мотивирующий. Можешь разговаривать на любые темы, советовать, обсуждать идеи.
@@ -262,7 +340,7 @@ ${streakCounts.filter(h => h.recent_count >= 3).map(h => `🏆 ${h.icon || '✓'
 ${overdueTasks.length > 0 ? `\n⚠️ Просроченные (${overdueTasks.length}): ${JSON.stringify(overdueTasks.map(t => ({ id: t.id, title: t.title, due_date: t.due_date, project_id: t.project_id })))}\n` : ''}Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 ${parsed.data.last_contact ? `\n🧑 LAST_CONTACT (только что создан/обновлён): id=${parsed.data.last_contact.id}, name="${parsed.data.last_contact.name}". Любые команды про "к проекту", "добавь телефон/email", "привяжи" — относятся к ЭТОМУ контакту!\n` : ''}
-${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕДНИХ ВСТРЕЧ ===\n${fullMeetingContent}\n=== КОНЕЦ ===\n\nОтвечай конкретно на основе содержимого транскрипций выше. Цитируй фрагменты когда уместно.` : ''}
+${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} встреч${meetingDateFrom ? `, с ${meetingDateFrom}` : ''}${matchedProject ? `, проект: ${matchedProject.name}` : ''}${matchedPerson ? `, участник: ${matchedPerson.name}` : ''}) ===\n${fullMeetingContent}\n=== КОНЕЦ ДАННЫХ ВСТРЕЧ ===\n\nОтвечай конкретно на основе содержимого встреч выше. Цитируй фрагменты и указывай из какой встречи информация. Если пользователь спрашивает про конкретную тему — ищи по ВСЕМ предоставленным встречам, не только последним.` : ''}
 
 Статусы задач: backlog, todo, in_progress, done, someday
 Сейчас: ${moscowDateTimeString()}
