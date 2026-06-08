@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { Columns3, Plus } from 'lucide-react';
 import { useTasksStore, useProjectsStore, useFiltersStore } from '../store';
 import { KanbanBoard } from '../components/kanban/KanbanBoard';
@@ -114,9 +115,14 @@ function MobileKanbanView({ tasks, projects, people, onToggleDone, onRefresh }: 
               </div>
               {/* Task cards */}
               <div className="space-y-2">
-                {groupTasks.map(tk => (
-                  <TaskCard key={tk.id} task={tk} project={tk.project_id ? pMap.get(tk.project_id) : undefined}
-                    onClick={() => setSelected(tk)} onToggleDone={onToggleDone} dragMode="draggable" />
+                {groupTasks.map((tk, i) => (
+                  <motion.div key={tk.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.03 }}>
+                    <TaskCard task={tk} project={tk.project_id ? pMap.get(tk.project_id) : undefined}
+                      onClick={() => setSelected(tk)} onToggleDone={onToggleDone} dragMode="draggable" />
+                  </motion.div>
                 ))}
               </div>
             </div>
@@ -167,7 +173,7 @@ export function KanbanPage() {
 
   if (isMobile) {
     return (
-      <div className="relative overflow-hidden flex flex-col h-full">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative overflow-hidden flex flex-col h-full">
         <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
         <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
         <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -182,7 +188,7 @@ export function KanbanPage() {
             <div className="flex items-center gap-3">
               <ProjectFilter projects={projects} />
               <button onClick={() => setShowAddTask(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer">
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-all duration-200 active:scale-95 cursor-pointer">
                 <Plus size={14} />
               </button>
             </div>
@@ -203,33 +209,33 @@ export function KanbanPage() {
           onToggleDone={handleToggleDone}
           onRefresh={refresh}
         />
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="relative overflow-hidden flex flex-col h-full">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative overflow-hidden flex flex-col h-full">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="relative z-10 px-4 pt-4 pb-2 border-b bg-white dark:bg-gray-900 dark:border-gray-700">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
               <Columns3 size={20} className="text-white" />
             </div>
             <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Kanban-доска', 'Kanban Board')}</h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-shrink-0">
             <ProjectFilter projects={projects} />
             <button onClick={() => setShowAddTask(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer shadow-sm">
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-all duration-200 active:scale-95 cursor-pointer shadow-sm">
               <Plus size={16} />
               {t('Задача', 'Task')}
             </button>
           </div>
         </div>
-        <div className="mt-2 overflow-x-auto">
+        <div className="mt-2">
           <SavedFilters active={activeFilter?.id ?? null} onApply={setActiveFilter} />
         </div>
       </div>
@@ -249,6 +255,6 @@ export function KanbanPage() {
           onReorderProjects={reorderProjects}
         />
       </div>
-    </div>
+    </motion.div>
   );
 }

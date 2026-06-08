@@ -207,7 +207,7 @@ export function JournalPage() {
   const filledSections = [form.focus, form.gratitude, form.notes, form.results].filter(Boolean).length;
 
   return (
-    <div className="relative overflow-hidden flex flex-col h-full pb-20">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="relative overflow-hidden flex flex-col h-full pb-20">
       {/* Background decorations */}
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -439,6 +439,6 @@ export function JournalPage() {
           }}
         />
       )}
-    </div>
+    </motion.div>
   );
 }

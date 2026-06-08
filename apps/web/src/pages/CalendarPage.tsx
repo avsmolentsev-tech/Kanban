@@ -126,19 +126,23 @@ export function CalendarPage() {
   };
 
   // Render task item
-  const TaskItem = ({ tk }: { tk: Task }) => {
+  const TaskItem = ({ tk, idx = 0 }: { tk: Task; idx?: number }) => {
     const proj = tk.project_id ? projectMap.get(tk.project_id) : null;
     return (
       <div onClick={(e) => { e.stopPropagation(); setSelected(tk); }}
-        className={`text-xs px-1.5 py-1 rounded-md cursor-pointer truncate ${tk.status === 'done' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 line-through' : 'hover:opacity-80'}`}
-        style={tk.status !== 'done' && proj ? { backgroundColor: proj.color + '18', color: proj.color } : undefined}>
+        className={`text-xs px-1.5 py-1 rounded-md cursor-pointer truncate transition-all duration-200 hover:scale-[1.02] hover:shadow-sm active:scale-95 animate-[fadeSlideIn_0.3s_ease_both] ${tk.status === 'done' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 line-through' : 'hover:opacity-90'}`}
+        style={{
+          ...(tk.status !== 'done' && proj ? { backgroundColor: proj.color + '18', color: proj.color } : {}),
+          animationDelay: `${idx * 50}ms`,
+        }}>
         {tk.title}
       </div>
     );
   };
 
-  const GCalItem = ({ ev }: { ev: GCalEvent }) => (
-    <div className="text-xs px-1.5 py-1 rounded-md truncate bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300">
+  const GCalItem = ({ ev, idx = 0 }: { ev: GCalEvent; idx?: number }) => (
+    <div className="text-xs px-1.5 py-1 rounded-md truncate bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300 transition-all duration-200 hover:scale-[1.02] hover:shadow-sm active:scale-95 animate-[fadeSlideIn_0.3s_ease_both]"
+      style={{ animationDelay: `${idx * 50}ms` }}>
       {ev.summary}
     </div>
   );
@@ -157,9 +161,9 @@ export function CalendarPage() {
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-cyan-500/25">
               <CalendarDays size={18} className="text-white" />
             </div>
-            <button onClick={prev} className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center"><ChevronLeft size={18} className="text-gray-500" /></button>
-            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 capitalize text-center">{headerLabel}</span>
-            <button onClick={next} className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center"><ChevronRight size={18} className="text-gray-500" /></button>
+            <button onClick={prev} className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center transition-transform active:scale-90"><ChevronLeft size={18} className="text-gray-500" /></button>
+            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 capitalize text-center min-w-[160px]">{headerLabel}</span>
+            <button onClick={next} className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center transition-transform active:scale-90"><ChevronRight size={18} className="text-gray-500" /></button>
           </div>
           <ProjectFilter projects={projects} />
         </div>
@@ -180,7 +184,7 @@ export function CalendarPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto relative z-10">
+      <div key={`${view}-${fmt(currentDate)}`} className="flex-1 overflow-auto relative z-10 animate-[viewSlide_0.25s_ease]">
         {/* === DAY VIEW === */}
         {view === 'day' && (() => {
           const dateStr = fmt(currentDate);
@@ -200,17 +204,19 @@ export function CalendarPage() {
                   <div className="text-center text-gray-400 py-12 text-base">{t('Нет событий','No events')}</div>
                 )}
                 <div className="space-y-2 max-w-2xl mx-auto">
-                  {dayGcal.map(ev => (
-                    <div key={ev.id} className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30">
+                  {dayGcal.map((ev, i) => (
+                    <div key={ev.id} className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 animate-[fadeSlideIn_0.3s_ease_both] transition-all hover:shadow-md"
+                      style={{ animationDelay: `${i * 60}ms` }}>
                       <div className="text-base font-medium text-blue-700 dark:text-blue-300">{ev.summary}</div>
                       <div className="text-xs text-blue-500 mt-1">Google Calendar</div>
                     </div>
                   ))}
-                  {dayTasks.map(tk => {
+                  {dayTasks.map((tk, i) => {
                     const proj = tk.project_id ? projectMap.get(tk.project_id) : null;
                     return (
                       <div key={tk.id} onClick={() => setSelected(tk)}
-                        className={`p-4 rounded-xl border cursor-pointer transition-all active:scale-[0.98] ${
+                        style={{ animationDelay: `${(dayGcal.length + i) * 60}ms` }}
+                        className={`p-4 rounded-xl border cursor-pointer transition-all active:scale-[0.98] animate-[fadeSlideIn_0.3s_ease_both] hover:shadow-md ${
                           tk.status === 'done'
                             ? 'bg-green-50 dark:bg-green-900/15 border-green-200 dark:border-green-800/40'
                             : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700/50 hover:border-indigo-300 dark:hover:border-indigo-600'
@@ -393,7 +399,7 @@ export function CalendarPage() {
                         <span className="text-[10px] text-gray-400 font-medium">{weekNum}</span>
                       </div>
                       {week.map((day, di) => {
-                        if (!day) return <div key={`p-${wi}-${di}`} className="bg-gray-50 dark:bg-gray-800/30 aspect-square md:aspect-auto md:min-h-[110px]" />;
+                        if (!day) return <div key={`p-${wi}-${di}`} className="bg-gray-50 dark:bg-gray-800/30 aspect-square md:aspect-auto md:min-h-[110px] min-w-0" />;
                         const dateStr = fmt(day);
                         const dayTasks = tasksByDate.get(dateStr) ?? [];
                         const dayGcal = gcalByDate.get(dateStr) ?? [];
@@ -404,15 +410,16 @@ export function CalendarPage() {
                         return (
                           <div key={dateStr}
                             onClick={() => { setCurrentDate(new Date(day)); setView('day'); }}
-                            className={`aspect-square md:aspect-auto md:min-h-[110px] p-1 md:p-1.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 active:bg-gray-100 dark:active:bg-gray-700/50 transition-colors ${
-                              isToday ? 'bg-indigo-50 dark:bg-indigo-900/20' : isWeekend ? 'bg-gray-50 dark:bg-gray-800/50' : 'bg-white dark:bg-gray-800'
-                            }`}>
+                            className={`aspect-square md:aspect-auto md:min-h-[110px] min-w-0 overflow-hidden p-1 md:p-1.5 cursor-pointer transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-700/30 hover:shadow-inner active:scale-[0.98] animate-[calendarCellIn_0.3s_ease_both] ${
+                              isToday ? 'bg-indigo-50 dark:bg-indigo-900/20 ring-1 ring-indigo-300 dark:ring-indigo-600' : isWeekend ? 'bg-gray-50 dark:bg-gray-800/50' : 'bg-white dark:bg-gray-800'
+                            }`}
+                            style={{ animationDelay: `${wi * 40 + di * 20}ms` }}>
                             {/* Day number */}
                             <div className={`text-sm font-semibold text-center md:text-left md:px-0.5 md:mb-1 ${
                               isToday ? 'text-indigo-600' : 'text-gray-600 dark:text-gray-300'
                             }`}>
                               {isToday ? (
-                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold">{day.getDate()}</span>
+                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold animate-[todayPulse_2s_ease-in-out_infinite]">{day.getDate()}</span>
                               ) : (
                                 day.getDate()
                               )}
@@ -437,8 +444,8 @@ export function CalendarPage() {
 
                             {/* Desktop: text items */}
                             <div className="hidden md:block space-y-0.5">
-                              {dayGcal.slice(0, 1).map(ev => <GCalItem key={ev.id} ev={ev} />)}
-                              {dayTasks.slice(0, maxDesktopItems - Math.min(dayGcal.length, 1)).map(tk => <TaskItem key={tk.id} tk={tk} />)}
+                              {dayGcal.slice(0, 1).map((ev, i) => <GCalItem key={ev.id} ev={ev} idx={i} />)}
+                              {dayTasks.slice(0, maxDesktopItems - Math.min(dayGcal.length, 1)).map((tk, i) => <TaskItem key={tk.id} tk={tk} idx={i} />)}
                               {totalItems > maxDesktopItems && (
                                 <div className="text-[10px] text-gray-400 px-0.5">+{totalItems - maxDesktopItems}</div>
                               )}

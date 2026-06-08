@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { apiGet, apiPost } from '../api/client';
 import { useLangStore } from '../store/lang.store';
 import { LayoutDashboard } from 'lucide-react';
@@ -41,23 +42,31 @@ function WidgetCard({
   title,
   linkTo,
   children,
+  index = 0,
 }: {
   title: string;
   linkTo: string;
   children: React.ReactNode;
+  index?: number;
 }) {
   const { t } = useLangStore();
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.03 }}
+      whileHover={{ y: -2 }}
+      className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 transition-shadow duration-200 hover:shadow-lg"
+    >
       <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3">{title}</h2>
       <div className="space-y-2">{children}</div>
       <NavLink
         to={linkTo}
-        className="inline-block mt-3 text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+        className="inline-block mt-3 text-sm text-indigo-600 dark:text-indigo-400 hover:underline transition-all duration-200"
       >
         {t('посмотреть все', 'view all')} &rarr;
       </NavLink>
-    </div>
+    </motion.div>
   );
 }
 
@@ -155,7 +164,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="relative overflow-hidden p-4 md:p-6 max-w-5xl mx-auto">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative overflow-hidden p-4 md:p-6 max-w-5xl mx-auto">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -168,7 +177,11 @@ export function DashboardPage() {
 
       <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* AI Daily Plan */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0 }}
+          className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
           <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3">
             {'\uD83D\uDCC5'} {t('План на день', 'Daily Plan')}
           </h2>
@@ -192,7 +205,7 @@ export function DashboardPage() {
                   <button
                     onClick={handleGeneratePlan}
                     disabled={dailyPlanLoading}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors flex-shrink-0 disabled:opacity-50"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-all duration-200 active:scale-95 flex-shrink-0 disabled:opacity-50"
                   >
                     {dailyPlan ? t('Обновить', 'Refresh') : t('Сгенерировать', 'Generate')}
                   </button>
@@ -210,10 +223,14 @@ export function DashboardPage() {
               </div>
             )}
           </div>
-        </div>
+        </motion.div>
 
         {/* AI Productivity Analysis */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.03 }}
+          className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
           <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3">
             {'\uD83D\uDCCA'} {t('Анализ продуктивности', 'Productivity Analysis')}
           </h2>
@@ -221,7 +238,7 @@ export function DashboardPage() {
             {!productivityAnalysis && !productivityLoading && (
               <button
                 onClick={handleProductivityAnalysis}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-all duration-200 active:scale-95"
               >
                 {t('Анализировать', 'Analyse')}
               </button>
@@ -246,10 +263,10 @@ export function DashboardPage() {
               </>
             )}
           </div>
-        </div>
+        </motion.div>
 
         {/* Today tasks */}
-        <WidgetCard title={t('Задачи на сегодня', 'Today\'s Tasks')} linkTo="/kanban">
+        <WidgetCard title={t('Задачи на сегодня', 'Today\'s Tasks')} linkTo="/kanban" index={2}>
           {todayTasks.length === 0 && (
             <p className="text-sm text-gray-400 dark:text-gray-500">{t('Нет задач', 'No tasks')}</p>
           )}
@@ -273,7 +290,7 @@ export function DashboardPage() {
         </WidgetCard>
 
         {/* Upcoming meetings */}
-        <WidgetCard title={t('Ближайшие встречи', 'Upcoming Meetings')} linkTo="/meetings">
+        <WidgetCard title={t('Ближайшие встречи', 'Upcoming Meetings')} linkTo="/meetings" index={3}>
           {meetings.length === 0 && (
             <p className="text-sm text-gray-400 dark:text-gray-500">{t('Нет встреч', 'No meetings')}</p>
           )}
@@ -294,7 +311,7 @@ export function DashboardPage() {
         </WidgetCard>
 
         {/* Recent ideas */}
-        <WidgetCard title={t('Новые идеи', 'New Ideas')} linkTo="/documents">
+        <WidgetCard title={t('Новые идеи', 'New Ideas')} linkTo="/documents" index={4}>
           {ideas.length === 0 && (
             <p className="text-sm text-gray-400 dark:text-gray-500">{t('Нет идей', 'No ideas')}</p>
           )}
@@ -309,7 +326,7 @@ export function DashboardPage() {
         </WidgetCard>
 
         {/* Project progress */}
-        <WidgetCard title={t('Прогресс по проектам', 'Project Progress')} linkTo="/timeline">
+        <WidgetCard title={t('Прогресс по проектам', 'Project Progress')} linkTo="/timeline" index={5}>
           {progress.length === 0 && (
             <p className="text-sm text-gray-400 dark:text-gray-500">{t('Нет проектов', 'No projects')}</p>
           )}
@@ -349,6 +366,6 @@ export function DashboardPage() {
           })}
         </WidgetCard>
       </div>
-    </div>
+    </motion.div>
   );
 }

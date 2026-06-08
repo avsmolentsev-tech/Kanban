@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../api/client';
 import { useProjectsStore } from '../store/projects.store';
 import { useLangStore } from '../store/lang.store';
@@ -149,7 +150,7 @@ function GoalCard({ goal, projects, onRefresh }: { goal: Goal; projects: { id: n
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 space-y-4">
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 space-y-4 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] transition-all duration-200">
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
@@ -263,7 +264,7 @@ export function GoalsPage() {
   const completedGoals = goals.filter((g) => g.status !== 'active');
 
   return (
-    <div className="relative overflow-hidden p-4 md:p-6 max-w-4xl mx-auto">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative overflow-hidden p-4 md:p-6 max-w-4xl mx-auto">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -314,8 +315,10 @@ export function GoalsPage() {
             <div className="space-y-8">
               {activeGoals.length > 0 && (
                 <div className="space-y-4">
-                  {activeGoals.map((g) => (
-                    <GoalCard key={g.id} goal={g} projects={projects} onRefresh={load} />
+                  {activeGoals.map((g, i) => (
+                    <motion.div key={g.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
+                      <GoalCard goal={g} projects={projects} onRefresh={load} />
+                    </motion.div>
                   ))}
                 </div>
               )}
@@ -324,8 +327,10 @@ export function GoalsPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-gray-500 dark:text-gray-400 mb-3">{t('Завершённые', 'Completed')}</h2>
                   <div className="space-y-4 opacity-60">
-                    {completedGoals.map((g) => (
-                      <GoalCard key={g.id} goal={g} projects={projects} onRefresh={load} />
+                    {completedGoals.map((g, i) => (
+                      <motion.div key={g.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: (activeGoals.length + i) * 0.03 }}>
+                        <GoalCard goal={g} projects={projects} onRefresh={load} />
+                      </motion.div>
                     ))}
                   </div>
                 </div>
@@ -346,6 +351,6 @@ export function GoalsPage() {
         onClose={() => setShowCreateBhag(false)}
         onCreated={() => { load(); setActiveTab('mindmap'); setShowCreateBhag(false); }}
       />
-    </div>
+    </motion.div>
   );
 }

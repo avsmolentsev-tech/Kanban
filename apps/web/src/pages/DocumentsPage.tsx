@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   DndContext,
   rectIntersection,
@@ -81,7 +82,7 @@ function DraggableDocumentCard({
       {...attributes}
       {...listeners}
       onClick={onClick}
-      className="bg-white rounded-xl border border-gray-200 p-4 w-64 cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all group relative"
+      className="bg-white rounded-xl border border-gray-200 p-4 w-64 cursor-pointer hover:border-indigo-300 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98] group relative"
     >
       <button
         onClick={onDelete}
@@ -292,7 +293,7 @@ export function DocumentsPage() {
   if (unassigned && unassigned.length > 0) rows.push({ project: null, docs: unassigned });
 
   return (
-    <div className="relative overflow-hidden flex flex-col h-full">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="relative overflow-hidden flex flex-col h-full">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -455,6 +456,6 @@ export function DocumentsPage() {
         }}
         onDeleted={() => { setSelected(null); load(); }}
       />
-    </div>
+    </motion.div>
   );
 }

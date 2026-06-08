@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import { DndContext, rectIntersection, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable, useDraggable, DragOverlay } from '@dnd-kit/core';
 import { peopleApi } from '../api/people.api';
@@ -17,7 +18,7 @@ function DraggablePersonCard({ person, project, onClick }: { person: Person; pro
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={onClick}
-      className="bg-white rounded-lg border border-gray-200 p-3 w-56 cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all">
+      className="bg-white rounded-lg border border-gray-200 p-3 w-56 cursor-pointer hover:border-indigo-300 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] transition-all duration-200">
       <div className="flex items-center gap-2 mb-1.5">
         <Avatar name={person.name} size="sm" />
         <div className="font-medium text-sm text-gray-800 truncate">{person.name}</div>
@@ -68,8 +69,10 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
         {asapPeople.length === 0 && (
           <div className="text-xs text-sky-500 self-center px-2">⭐ ASAP</div>
         )}
-        {asapPeople.map(p => (
-          <DraggablePersonCard key={`asap-${projectId}-${p.id}`} person={p} project={project} onClick={() => onClickPerson(p)} />
+        {asapPeople.map((p, i) => (
+          <motion.div key={`asap-${projectId}-${p.id}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
+            <DraggablePersonCard person={p} project={project} onClick={() => onClickPerson(p)} />
+          </motion.div>
         ))}
       </div>
 
@@ -78,8 +81,10 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
         ref={setRegularRef}
         className={`flex gap-3 flex-wrap flex-1 min-h-[60px] rounded-xl p-2 transition-colors ${isOverRegular ? 'bg-indigo-50 border-4 border-dashed border-indigo-300' : ''}`}
       >
-        {regularPeople.map((p) => (
-          <DraggablePersonCard key={`${projectId}-${p.id}`} person={p} project={project} onClick={() => onClickPerson(p)} />
+        {regularPeople.map((p, i) => (
+          <motion.div key={`${projectId}-${p.id}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
+            <DraggablePersonCard person={p} project={project} onClick={() => onClickPerson(p)} />
+          </motion.div>
         ))}
         {regularPeople.length === 0 && <div className="text-gray-300 text-xs self-center">{t('Перетащи сюда', 'Drop here')}</div>}
       </div>
@@ -247,7 +252,7 @@ export function PeoplePage() {
   };
 
   return (
-    <div className="relative overflow-hidden flex flex-col h-full">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative overflow-hidden flex flex-col h-full">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -357,6 +362,6 @@ export function PeoplePage() {
       </DndContext>
       </div>
       <PersonDetailPanel person={selected} projects={projects} onClose={() => setSelected(null)} onUpdated={load} onDeleted={() => { setSelected(null); load(); }} />
-    </div>
+    </motion.div>
   );
 }

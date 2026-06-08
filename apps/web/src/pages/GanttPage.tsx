@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { apiGet } from '../api/client';
 import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
 import { peopleApi } from '../api/people.api';
@@ -110,7 +111,7 @@ export function GanttPage() {
   };
 
   return (
-    <div className="relative overflow-hidden h-full flex flex-col">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="relative overflow-hidden h-full flex flex-col">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -252,7 +253,7 @@ export function GanttPage() {
                     </div>
                     <div className="relative" style={{ width: TOTAL_DAYS * DAY_WIDTH }}>
                       <div
-                        className="absolute top-1 rounded-md cursor-pointer hover:brightness-110 hover:shadow-md transition-all flex items-start px-2 py-0.5 overflow-hidden"
+                        className="absolute top-1 rounded-md cursor-pointer hover:brightness-110 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98] flex items-start px-2 py-0.5 overflow-hidden"
                         style={{
                           left: Math.max(0, barLeft),
                           width: Math.max(DAY_WIDTH - 4, barWidth),
@@ -293,6 +294,6 @@ export function GanttPage() {
         onClose={() => setSelected(null)}
         onUpdated={refresh}
       />
-    </div>
+    </motion.div>
   );
 }

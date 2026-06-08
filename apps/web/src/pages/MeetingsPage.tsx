@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { meetingsApi } from '../api/meetings.api';
 import { projectsApi } from '../api/projects.api';
 import { apiClient } from '../api/client';
@@ -60,13 +61,17 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   failed: { label: '⚠️ Ошибка', color: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-200' },
 };
 
-function MeetingCard({ meeting, project, onClick }: { meeting: Meeting; project?: Project; onClick: () => void }) {
+function MeetingCard({ meeting, project, onClick, index = 0 }: { meeting: Meeting; project?: Project; onClick: () => void; index?: number }) {
   const status = (meeting as unknown as Record<string, unknown>)['processing_status'] as string | undefined;
   const statusInfo = status && status !== 'done' ? STATUS_LABELS[status] : null;
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.03 }}
+      whileHover={{ y: -2 }}
       onClick={onClick}
-      className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-sm transition-all"
+      className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-lg transition-all duration-200 active:scale-[0.98]"
     >
       <div className="flex items-center gap-2 mb-1">
         {project && <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: project.color }} />}
@@ -81,7 +86,7 @@ function MeetingCard({ meeting, project, onClick }: { meeting: Meeting; project?
       {meeting.summary_raw && !statusInfo && (
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 line-clamp-2 leading-relaxed">{meeting.summary_raw.slice(0, 100)}</p>
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -92,8 +97,8 @@ function MeetingColumn({ label, meetings, projectMap, onClickMeeting }: {
     <div className="flex flex-col w-56 min-w-[224px] bg-gray-100 rounded-xl p-3">
       <div className="text-xs font-semibold text-gray-500 mb-2 text-center">{label}</div>
       <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
-        {meetings.map((m) => (
-          <MeetingCard key={m.id} meeting={m} project={m.project_id ? projectMap.get(m.project_id) : undefined} onClick={() => onClickMeeting(m)} />
+        {meetings.map((m, i) => (
+          <MeetingCard key={m.id} meeting={m} project={m.project_id ? projectMap.get(m.project_id) : undefined} onClick={() => onClickMeeting(m)} index={i} />
         ))}
         {meetings.length === 0 && <div className="text-gray-300 text-xs text-center py-4">—</div>}
       </div>
@@ -180,7 +185,7 @@ function MobileMeetingsView({ meetings, projects, projectMap, onClickMeeting, on
           </button>
         ))}
         {!adding && (
-          <button onClick={onAddClick} className="ml-auto flex-shrink-0 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700">
+          <button onClick={onAddClick} className="ml-auto flex-shrink-0 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-all duration-200 active:scale-95">
             {t('+ Встреча', '+ Meeting')}
           </button>
         )}
@@ -203,9 +208,9 @@ function MobileMeetingsView({ meetings, projects, projectMap, onClickMeeting, on
             </div>
             {/* Meeting cards */}
             <div className="space-y-2">
-              {groupMeetings.map(m => (
+              {groupMeetings.map((m, i) => (
                 <MeetingCard key={m.id} meeting={m} project={m.project_id ? projectMap.get(m.project_id) : undefined}
-                  onClick={() => onClickMeeting(m)} />
+                  onClick={() => onClickMeeting(m)} index={i} />
               ))}
             </div>
           </div>
@@ -381,7 +386,7 @@ export function MeetingsPage() {
   const periods: Array<TimePeriod | 'none'> = ['today', 'week', 'month', 'year', 'none'];
 
   return (
-    <div className="relative overflow-hidden flex flex-col h-full">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative overflow-hidden flex flex-col h-full">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -395,7 +400,7 @@ export function MeetingsPage() {
         <div className="flex items-center gap-3">
           <ProjectFilter projects={projects} />
           {!adding && !isMobile && (
-            <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
+            <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-all duration-200 active:scale-95">
               {t('+ Встреча', '+ Meeting')}
             </button>
           )}
@@ -480,7 +485,7 @@ export function MeetingsPage() {
                   {t('✕ Закрыть без сохранения', '✕ Close without saving')}
                 </button>
                 <button onClick={submit} disabled={!newTitle.trim() || submitting}
-                  className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                  className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-all duration-200 active:scale-95">
                   {submitting ? '...' : t('✓ Создать', '✓ Create')}
                 </button>
               </div>
@@ -556,6 +561,6 @@ export function MeetingsPage() {
           transcribing={transcribing}
         />
       )}
-    </div>
+    </motion.div>
   );
 }

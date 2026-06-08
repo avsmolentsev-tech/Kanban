@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { DndContext, rectIntersection, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable, DragOverlay } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -18,10 +19,10 @@ const STAGES: ProjectStatus[] = ['active', 'completed', 'archived'];
 
 function getStageLabels(t: (ru: string, en: string) => string): Record<ProjectStatus, string> {
   return {
-    active: t('🚀 Активные', '🚀 Active'),
-    paused: t('⏸ На паузе', '⏸ Paused'),
-    completed: t('🔄 В работе', '🔄 In Progress'),
-    archived: t('✅ Завершены', '✅ Completed'),
+    active: t('\uD83D\uDE80 \u0410\u043A\u0442\u0438\u0432\u043D\u044B\u0435', '\uD83D\uDE80 Active'),
+    paused: t('\u23F8 \u041D\u0430 \u043F\u0430\u0443\u0437\u0435', '\u23F8 Paused'),
+    completed: t('\uD83D\uDD04 \u0412 \u0440\u0430\u0431\u043E\u0442\u0435', '\uD83D\uDD04 In Progress'),
+    archived: t('\u2705 \u0417\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u044B', '\u2705 Completed'),
   };
 }
 
@@ -33,7 +34,7 @@ interface TaskStats {
   lastMeeting?: string;
 }
 
-function DraggableProjectCard({ project, stats, onClick }: { project: Project; stats?: TaskStats; onClick: () => void }) {
+function DraggableProjectCard({ project, stats, onClick, index = 0 }: { project: Project; stats?: TaskStats; onClick: () => void; index?: number }) {
   const { t } = useLangStore();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `proj-${project.id}` });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
@@ -41,32 +42,39 @@ function DraggableProjectCard({ project, stats, onClick }: { project: Project; s
   const progress = stats && stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={onClick}
-      className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all">
-      <div className="flex items-center gap-2 mb-2">
-        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project.color }} />
-        <span className="font-medium text-gray-800 dark:text-gray-100 truncate">{project.name}</span>
-      </div>
-      {project.description && <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 line-clamp-2">{project.description}</p>}
-
-      {/* Task progress bar */}
-      {stats && stats.total > 0 && (
-        <div>
-          <div className="flex items-center justify-between text-[10px] text-gray-400 mb-1">
-            <span>{stats.done}/{stats.total} {t('задач', 'tasks')}</span>
-            <span>{progress}%</span>
-          </div>
-          <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, backgroundColor: project.color }} />
-          </div>
-          <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-400">
-            {stats.in_progress > 0 && <span>🔄 {stats.in_progress} {t('в работе', 'active')}</span>}
-            {stats.overdue > 0 && <span className="text-red-500 font-semibold">⚠ {stats.overdue} {t('просрочено', 'overdue')}</span>}
-            {stats.lastMeeting && <span className="ml-auto">📅 {stats.lastMeeting.slice(5)}</span>}
-          </div>
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.03 }}
+      whileHover={{ y: -2 }}
+    >
+      <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={onClick}
+        className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 cursor-pointer hover:border-indigo-300 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: project.color }} />
+          <span className="font-medium text-gray-800 dark:text-gray-100 truncate">{project.name}</span>
         </div>
-      )}
-    </div>
+        {project.description && <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 line-clamp-2">{project.description}</p>}
+
+        {/* Task progress bar */}
+        {stats && stats.total > 0 && (
+          <div>
+            <div className="flex items-center justify-between text-[10px] text-gray-400 mb-1">
+              <span>{stats.done}/{stats.total} {t('\u0437\u0430\u0434\u0430\u0447', 'tasks')}</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, backgroundColor: project.color }} />
+            </div>
+            <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-400">
+              {stats.in_progress > 0 && <span>\uD83D\uDD04 {stats.in_progress} {t('\u0432 \u0440\u0430\u0431\u043E\u0442\u0435', 'active')}</span>}
+              {stats.overdue > 0 && <span className="text-red-500 font-semibold">\u26A0 {stats.overdue} {t('\u043F\u0440\u043E\u0441\u0440\u043E\u0447\u0435\u043D\u043E', 'overdue')}</span>}
+              {stats.lastMeeting && <span className="ml-auto">\uD83D\uDCC5 {stats.lastMeeting.slice(5)}</span>}
+            </div>
+          </div>
+        )}
+      </div>
+    </motion.div>
   );
 }
 
@@ -80,10 +88,10 @@ function StageColumn({ stage, projects, statsMap, onClickProject }: {
       className={`flex flex-col w-64 min-w-[256px] bg-gray-100 dark:bg-gray-800/50 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
       <SortableContext items={projects.map(p => `proj-${p.id}`)} strategy={verticalListSortingStrategy}>
         <div className="flex flex-col gap-3 flex-1 min-h-[80px]">
-          {projects.map(p => (
-            <DraggableProjectCard key={p.id} project={p} stats={statsMap.get(p.id)} onClick={() => onClickProject(p)} />
+          {projects.map((p, i) => (
+            <DraggableProjectCard key={p.id} project={p} stats={statsMap.get(p.id)} onClick={() => onClickProject(p)} index={i} />
           ))}
-          {projects.length === 0 && <div className="text-gray-300 dark:text-gray-600 text-xs text-center py-4">—</div>}
+          {projects.length === 0 && <div className="text-gray-300 dark:text-gray-600 text-xs text-center py-4">&mdash;</div>}
         </div>
       </SortableContext>
     </div>
@@ -175,14 +183,14 @@ export function ProjectsPage() {
       const overProj = projects.find(p => p.id === overProjId);
       if (!activeProj || !overProj) return;
 
-      // If different status → move to that status
+      // If different status -> move to that status
       if (activeProj.status !== overProj.status) {
         await projectsApi.update(projId, { status: overProj.status as ProjectStatus });
         fetchProjects();
         return;
       }
 
-      // Same status → reorder
+      // Same status -> reorder
       const sameStatus = projects.filter(p => p.status === activeProj.status);
       const fromIdx = sameStatus.findIndex(p => p.id === projId);
       const toIdx = sameStatus.findIndex(p => p.id === overProjId);
@@ -201,7 +209,7 @@ export function ProjectsPage() {
   }
 
   return (
-    <div className="relative overflow-hidden flex flex-col h-full">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative overflow-hidden flex flex-col h-full">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -210,11 +218,11 @@ export function ProjectsPage() {
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center shadow-lg shadow-violet-500/25">
             <FolderKanban size={20} className="text-white" />
           </div>
-          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Проекты', 'Projects')}</h1>
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('\u041F\u0440\u043E\u0435\u043A\u0442\u044B', 'Projects')}</h1>
         </div>
         {!adding && (
-          <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
-            {t('+ Новый проект', '+ New Project')}
+          <button onClick={() => setAdding(true)} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-all duration-200 active:scale-95">
+            {t('+ \u041D\u043E\u0432\u044B\u0439 \u043F\u0440\u043E\u0435\u043A\u0442', '+ New Project')}
           </button>
         )}
       </div>
@@ -223,23 +231,23 @@ export function ProjectsPage() {
         <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 p-4">
           <div className="max-w-md space-y-3">
             <input autoFocus className="w-full text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
-              placeholder={t('Название проекта...', 'Project name...')} value={name} onChange={(e) => setName(e.target.value)}
+              placeholder={t('\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430...', 'Project name...')} value={name} onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false); }} />
             <input className="w-full text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-indigo-300 dark:focus:border-indigo-500 placeholder-gray-400 dark:placeholder-gray-500"
-              placeholder={t('Описание (необязательно)', 'Description (optional)')} value={description} onChange={(e) => setDescription(e.target.value)} />
+              placeholder={t('\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 (\u043D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E)', 'Description (optional)')} value={description} onChange={(e) => setDescription(e.target.value)} />
             <div className="flex items-center gap-1">
-              <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">{t('Цвет:', 'Color:')}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">{t('\u0426\u0432\u0435\u0442:', 'Color:')}</span>
               {COLORS.map((c) => (
                 <button key={c} onClick={() => setColor(c)}
-                  className={`w-6 h-6 rounded-full border-2 transition-all ${color === c ? 'border-gray-800 dark:border-gray-200 scale-110' : 'border-transparent'}`}
+                  className={`w-6 h-6 rounded-full border-2 transition-all duration-200 ${color === c ? 'border-gray-800 dark:border-gray-200 scale-110' : 'border-transparent'}`}
                   style={{ backgroundColor: c }} />
               ))}
             </div>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 px-3 py-1.5">{t('Отмена', 'Cancel')}</button>
+              <button onClick={() => setAdding(false)} className="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 px-3 py-1.5 transition-all duration-200">{t('\u041E\u0442\u043C\u0435\u043D\u0430', 'Cancel')}</button>
               <button onClick={submit} disabled={!name.trim() || submitting}
-                className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                {submitting ? '...' : t('Создать', 'Create')}
+                className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-all duration-200 active:scale-95">
+                {submitting ? '...' : t('\u0421\u043E\u0437\u0434\u0430\u0442\u044C', 'Create')}
               </button>
             </div>
           </div>
@@ -280,7 +288,7 @@ export function ProjectsPage() {
         </DndContext>
       </div>
 
-      {loading && <div className="absolute inset-0 flex items-center justify-center text-gray-400">{t('Загрузка...', 'Loading...')}</div>}
+      {loading && <div className="absolute inset-0 flex items-center justify-center text-gray-400">{t('\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...', 'Loading...')}</div>}
 
       <ProjectDetailPanel
         project={selected}
@@ -288,6 +296,6 @@ export function ProjectsPage() {
         onUpdated={() => { fetchProjects(); setSelected((prev) => prev ? (projects.find((p) => p.id === prev.id) ?? prev) : null); }}
         onDeleted={() => { setSelected(null); fetchProjects(); }}
       />
-    </div>
+    </motion.div>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { DndContext, rectIntersection, type DragEndEvent, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable, useDraggable, DragOverlay } from '@dnd-kit/core';
 import { apiGet, apiPost, apiPatch } from '../api/client';
 import { ProjectFilter } from '../components/filters/ProjectFilter';
@@ -35,7 +36,7 @@ function DraggableIdeaCard({ idea, project, onClick }: { idea: Idea; project: Pr
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={onClick}
-      className="bg-white rounded-lg border border-gray-200 p-3 hover:border-indigo-300 hover:shadow-sm transition-all cursor-pointer">
+      className="bg-white rounded-lg border border-gray-200 p-3 hover:border-indigo-300 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] transition-all duration-200 cursor-pointer">
       <div className="text-sm font-medium text-gray-800 mb-1">{idea.title}</div>
       {idea.body && <div className="text-xs text-gray-500 line-clamp-2 mb-1.5">{idea.body}</div>}
       <div className="text-[10px] text-gray-400">{idea.created_at.split('T')[0]}</div>
@@ -57,8 +58,10 @@ function IdeaColumn({ projectId, status, ideas, projects, onClickIdea }: {
     <div ref={setNodeRef}
       className={`flex flex-col w-56 min-w-[224px] bg-gray-100 rounded-xl p-3 transition-colors ${isOver ? 'bg-indigo-50' : ''}`}>
       <div className="flex flex-col gap-2 flex-1 min-h-[60px]">
-        {ideas.map(i => (
-          <DraggableIdeaCard key={i.id} idea={i} project={i.project_id ? (pMap.get(i.project_id) ?? null) : null} onClick={() => onClickIdea(i)} />
+        {ideas.map((i, idx) => (
+          <motion.div key={i.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
+            <DraggableIdeaCard idea={i} project={i.project_id ? (pMap.get(i.project_id) ?? null) : null} onClick={() => onClickIdea(i)} />
+          </motion.div>
         ))}
         {ideas.length === 0 && <div className="text-gray-300 text-xs text-center py-4">—</div>}
       </div>
@@ -157,7 +160,7 @@ export function IdeasPage() {
   }
 
   return (
-    <div className="relative overflow-hidden flex flex-col h-full">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative overflow-hidden flex flex-col h-full">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -267,6 +270,6 @@ export function IdeasPage() {
         onUpdated={() => { load(); setSelected(null); }}
         onDeleted={() => { setSelected(null); load(); }}
       />
-    </div>
+    </motion.div>
   );
 }

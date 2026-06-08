@@ -331,7 +331,7 @@ export function HabitsPage() {
   }
 
   return (
-    <div className="relative overflow-hidden p-4 pb-24">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative overflow-hidden p-4 pb-24">
       {/* Background decorations — same as rest of app */}
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -423,14 +423,14 @@ export function HabitsPage() {
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-4"
               >
-                {habits.map((habit) => {
+                {habits.map((habit, idx) => {
                   const logged = logMap[habit.id] || new Set();
                   const completedInGrid = grid.flat().filter(d => d <= today && logged.has(d)).length;
                   const totalInGrid = grid.flat().filter(d => d <= today).length;
                   const rate = totalInGrid > 0 ? Math.round(completedInGrid / totalInGrid * 100) : 0;
 
                   return (
-                    <div key={habit.id} className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4">
+                    <motion.div key={habit.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }} className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] transition-all duration-200">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                           <HIcon icon={habit.icon} size={20} />
@@ -482,7 +482,7 @@ export function HabitsPage() {
                           ))}
                         </div>
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 })}
               </motion.div>
@@ -581,6 +581,6 @@ export function HabitsPage() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }

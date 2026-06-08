@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { aiApi } from '../api/ai.api';
 import { useTasksStore, useProjectsStore } from '../store';
 import { useLangStore } from '../store/lang.store';
@@ -72,7 +73,7 @@ export function DailyBriefPage() {
   );
 
   return (
-    <div className="relative overflow-hidden p-3 md:p-6 max-w-5xl">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="relative overflow-hidden p-3 md:p-6 max-w-5xl">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -100,31 +101,31 @@ export function DailyBriefPage() {
 
       <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-6">
         {overdue.length > 0 && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-xl p-4">
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 }} className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-xl p-4 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
             <h3 className="text-sm font-semibold text-red-700 dark:text-red-400 mb-3">{t('Просрочено', 'Overdue')} ({overdue.length})</h3>
             <TaskList items={overdue} emptyText="" />
-          </div>
+          </motion.div>
         )}
 
-        <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-xl p-4">
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }} className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-xl p-4 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">{t('Сегодня', 'Today')} ({todayTasks.length})</h3>
           <TaskList items={todayTasks} emptyText={t('Нет задач на сегодня', 'No tasks for today')} />
-        </div>
+        </motion.div>
 
-        <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-xl p-4">
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.09 }} className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-xl p-4 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">{t('В работе', 'In Progress')} ({inProgress.length})</h3>
           <TaskList items={inProgress} emptyText={t('Нет задач в работе', 'No tasks in progress')} />
-        </div>
+        </motion.div>
 
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-xl p-4">
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }} className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-xl p-4 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
           <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400 mb-3">{t('На неделе', 'This Week')} ({weekTasks.length})</h3>
           <TaskList items={weekTasks} emptyText={t('Нет задач на неделю', 'No tasks this week')} />
-        </div>
+        </motion.div>
 
-        <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-xl p-4">
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-xl p-4 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">{t('Высокий приоритет', 'High Priority')} ({highPriority.length})</h3>
           <TaskList items={highPriority} emptyText={t('Нет задач с высоким приоритетом', 'No high priority tasks')} />
-        </div>
+        </motion.div>
       </div>
 
       <TaskDetailPanel
@@ -135,6 +136,6 @@ export function DailyBriefPage() {
         onUpdated={handleTaskUpdated}
         onDeleted={() => { setSelectedTask(null); fetchTasks(); }}
       />
-    </div>
+    </motion.div>
   );
 }

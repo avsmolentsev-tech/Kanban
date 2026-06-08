@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { apiClient } from '../api/client';
 import { useLangStore } from '../store/lang.store';
 import { PieChart } from 'lucide-react';
@@ -175,7 +176,7 @@ export function StatsPage() {
   const journalMap = new Map(journal.map((j) => [j.date, j.mood]));
 
   return (
-    <div className="relative overflow-hidden p-4 md:p-6 max-w-4xl mx-auto space-y-8">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="relative overflow-hidden p-4 md:p-6 max-w-4xl mx-auto space-y-8">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -206,7 +207,7 @@ export function StatsPage() {
       </div>
 
       {/* Velocity — tasks completed per week (last 8 weeks) */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 relative z-10">
+      <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 }} className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 relative z-10 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
           {t('Velocity', 'Velocity')}
         </h2>
@@ -254,10 +255,10 @@ export function StatsPage() {
             </>
           );
         })()}
-      </section>
+      </motion.section>
 
       {/* Burndown — remaining active tasks over last 30 days */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 relative z-10">
+      <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }} className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 relative z-10 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
           {t('Burndown', 'Burndown')}
         </h2>
@@ -314,10 +315,10 @@ export function StatsPage() {
             </>
           );
         })()}
-      </section>
+      </motion.section>
 
       {/* 1. Tasks per week (bar chart) */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+      <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.09 }} className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
           {t('Задачи за неделю', 'Tasks this week')}
         </h2>
@@ -340,10 +341,10 @@ export function StatsPage() {
             </div>
           ))}
         </div>
-      </section>
+      </motion.section>
 
       {/* 2. Habits completion rate */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+      <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }} className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
           {t('Привычки', 'Habits')}
         </h2>
@@ -374,10 +375,10 @@ export function StatsPage() {
             ))}
           </div>
         )}
-      </section>
+      </motion.section>
 
       {/* 3. Meetings per week */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+      <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
           {t('Встречи', 'Meetings')}
         </h2>
@@ -400,10 +401,10 @@ export function StatsPage() {
             </div>
           ))}
         </div>
-      </section>
+      </motion.section>
 
       {/* 4. Activity by project */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+      <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }} className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
           {t('Активность по проектам', 'Activity by project')}
         </h2>
@@ -443,10 +444,10 @@ export function StatsPage() {
             </div>
           </div>
         )}
-      </section>
+      </motion.section>
 
       {/* 5. Habit streaks */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+      <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.21 }} className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
           {t('Streak привычек', 'Habit streaks')}
         </h2>
@@ -454,10 +455,13 @@ export function StatsPage() {
           <p className="text-gray-500 dark:text-gray-400 text-sm">{t('Нет привычек', 'No habits')}</p>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {habits.map((h) => (
-              <div
+            {habits.map((h, i) => (
+              <motion.div
                 key={h.id}
-                className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.03 }}
+                className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200"
               >
                 <span className="text-xl">{h.icon}</span>
                 <div className="min-w-0 flex-1">
@@ -468,14 +472,14 @@ export function StatsPage() {
                     {h.streak > 0 ? `${h.streak} \u{1F525}` : '0'}
                   </div>
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
         )}
-      </section>
+      </motion.section>
 
       {/* 6. Mood timeline */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+      <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }} className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 active:scale-[0.98]">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
           {t('Настроение', 'Mood')}
         </h2>
@@ -494,7 +498,7 @@ export function StatsPage() {
             );
           })}
         </div>
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
   );
 }
