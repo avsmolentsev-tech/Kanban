@@ -187,14 +187,14 @@ export function CalendarPage() {
               </button>
               {showCalendarMenu && (
                 <>
-                  <div className="fixed inset-0 z-30" onClick={() => setShowCalendarMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-3 w-64 space-y-2">
+                  <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowCalendarMenu(false)} />
+                  <div className="fixed md:absolute left-4 right-4 md:left-auto md:right-0 top-auto md:top-full bottom-24 md:bottom-auto mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-4 md:w-72 space-y-3" onClick={e => e.stopPropagation()}>
                     <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-1 mb-2">
                       {t('Календари', 'Calendars')}
                     </div>
 
                     {/* Google Calendar */}
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg bg-white dark:bg-gray-600 flex items-center justify-center shadow-sm">
                           <span className="text-sm">📅</span>
@@ -206,30 +206,34 @@ export function CalendarPage() {
                       </div>
                       {gcalConnected ? (
                         <button
-                          onClick={async () => {
+                          onClick={async (e) => {
+                            e.stopPropagation();
                             await apiPost('/google-calendar/disconnect');
                             setGcalConnected(false);
                             setGcalEvents([]);
+                            setShowCalendarMenu(false);
                           }}
-                          className="text-[10px] text-red-500 hover:text-red-700 font-medium flex items-center gap-1 transition-colors"
+                          className="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-all active:scale-95"
                         >
-                          <Unlink size={10} /> {t('Отключить', 'Disconnect')}
+                          <Unlink size={12} /> {t('Отключить', 'Disconnect')}
                         </button>
                       ) : (
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             const token = localStorage.getItem('auth_token') || '';
                             window.open(`${window.location.origin}/v1/google-calendar/auth${token ? '?token=' + token : ''}`, '_blank');
+                            setShowCalendarMenu(false);
                           }}
-                          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 transition-colors"
+                          className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all active:scale-95"
                         >
-                          <Link2 size={10} /> {t('Подключить', 'Connect')}
+                          <Link2 size={12} /> {t('Подключить', 'Connect')}
                         </button>
                       )}
                     </div>
 
                     {/* Yandex Calendar */}
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg bg-white dark:bg-gray-600 flex items-center justify-center shadow-sm">
                           <span className="text-sm">🟡</span>
