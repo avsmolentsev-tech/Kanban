@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { apiGet, apiPatch } from '../api/client';
 import { useAuthStore, type AuthUser } from '../store/auth.store';
 import { useLangStore } from '../store/lang.store';
@@ -256,7 +257,7 @@ export function ProfilePage() {
   };
 
   return (
-    <div className="relative overflow-hidden flex flex-col h-full pb-20">
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: 'easeOut' }} className="relative overflow-hidden flex flex-col h-full pb-20">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
@@ -342,6 +343,6 @@ export function ProfilePage() {
            : <><Save size={16} /> {t('Сохранить', 'Save')}</>}
         </button>
       </div>
-    </div>
+    </motion.div>
   );
 }

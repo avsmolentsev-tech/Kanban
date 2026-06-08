@@ -59,9 +59,9 @@ export function CalendarPage() {
   const [view, setView] = useState<ViewMode>('month');
   const [gcalEvents, setGcalEvents] = useState<GCalEvent[]>([]);
 
-  // Reset to 3day view when navigating to calendar
+  // Reset to month view when navigating to calendar
   const location = useLocation();
-  useEffect(() => { setView('3day'); setCurrentDate(new Date()); }, [location.key]);
+  useEffect(() => { setView('month'); setCurrentDate(new Date()); }, [location.key]);
 
   useEffect(() => { fetchTasks(); fetchProjects(); peopleApi.list().then(setPeople).catch(() => {}); }, [fetchTasks, fetchProjects]);
   useEffect(() => { apiGet<GCalEvent[]>('/google-calendar/events').then(setGcalEvents).catch(() => {}); }, []);

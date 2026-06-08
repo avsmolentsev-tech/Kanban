@@ -70,7 +70,7 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
           <div className="text-xs text-sky-500 self-center px-2">⭐ ASAP</div>
         )}
         {asapPeople.map((p, i) => (
-          <motion.div key={`asap-${projectId}-${p.id}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
+          <motion.div key={`asap-${projectId}-${p.id}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
             <DraggablePersonCard person={p} project={project} onClick={() => onClickPerson(p)} />
           </motion.div>
         ))}
@@ -82,7 +82,7 @@ function PeopleDropZone({ projectId, project, groupPeople, onClickPerson }: { pr
         className={`flex gap-3 flex-wrap flex-1 min-h-[60px] rounded-xl p-2 transition-colors ${isOverRegular ? 'bg-indigo-50 border-4 border-dashed border-indigo-300' : ''}`}
       >
         {regularPeople.map((p, i) => (
-          <motion.div key={`${projectId}-${p.id}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
+          <motion.div key={`${projectId}-${p.id}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
             <DraggablePersonCard person={p} project={project} onClick={() => onClickPerson(p)} />
           </motion.div>
         ))}
@@ -252,7 +252,7 @@ export function PeoplePage() {
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative overflow-hidden flex flex-col h-full">
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="relative overflow-hidden flex flex-col h-full">
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
