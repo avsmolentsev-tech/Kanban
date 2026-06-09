@@ -39,7 +39,7 @@ async function getTodoistToken(userId: number): Promise<string | null> {
 }
 
 async function todoistFetch(token: string, path: string, options?: RequestInit): Promise<any> {
-  const res = await fetch(`https://api.todoist.com/rest/v2/${path}`, {
+  const res = await fetch(`https://api.todoist.com/api/v1/${path}`, {
     ...options,
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -52,7 +52,12 @@ async function todoistFetch(token: string, path: string, options?: RequestInit):
     throw new Error(`Todoist API ${res.status}: ${text}`);
   }
   if (res.status === 204) return null;
-  return res.json();
+  const data = await res.json();
+  // v1 API wraps lists in { results: [...] }
+  if (data && Array.isArray(data.results) && !path.includes('/close') && !path.includes('/reopen')) {
+    return data.results;
+  }
+  return data;
 }
 
 // ── OAuth ──
@@ -101,6 +106,28 @@ todoistRouter.get('/callback', async (req: AuthRequest, res: Response) => {
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'OAuth error'));
   }
+});
+
+// ── Connect by token (no OAuth) ──
+
+todoistRouter.post('/connect-token', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Not authenticated')); return; }
+  const { token } = req.body as { token?: string };
+  if (!token) { res.status(400).json(fail('Token required')); return; }
+
+  // Verify token works
+  try {
+    const resp = await fetch('https://api.todoist.com/api/v1/projects', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!resp.ok) { res.status(400).json(fail('Неверный токен Todoist')); return; }
+  } catch {
+    res.status(400).json(fail('Ошибка проверки токена')); return;
+  }
+
+  await setUserSetting(userId, 'todoist_access_token', token);
+  res.json(ok({ connected: true }));
 });
 
 // ── Status / Disconnect ──
@@ -197,9 +224,62 @@ todoistRouter.post('/sync', async (req: AuthRequest, res: Response) => {
       reverseMap.set(cid, tid);
     }
 
-    if (projectMap.size === 0) {
-      res.json(ok({ pulled: 0, pushed: 0, message: 'Нет привязанных проектов. Настройте маппинг.' }));
-      return;
+    // ── Get Todoist projects ──
+    const todoistProjects: any[] = await todoistFetch(token, 'projects');
+    const todoistProjectByName = new Map<string, string>(); // name → todoist_id
+    const todoistProjectById = new Map<string, string>(); // todoist_id → name
+    for (const tp of todoistProjects) {
+      todoistProjectByName.set(tp.name.toLowerCase(), tp.id);
+      todoistProjectById.set(tp.id, tp.name);
+    }
+
+    // ── Get Clarity Space projects ──
+    const clarityProjects = await queryAll<{ id: number; name: string }>(
+      'SELECT id, name FROM projects WHERE user_id = $1 AND archived = 0',
+      [userId]
+    );
+    const clarityProjectById = new Map<number, string>(); // id → name
+    for (const cp of clarityProjects) {
+      clarityProjectById.set(cp.id, cp.name);
+    }
+
+    // ── Auto-create Todoist projects for Clarity projects that don't exist ──
+    // clarity_id → todoist_project_id
+    const clarityToTodoist = new Map<number, string>();
+    let projectsCreated = 0;
+
+    for (const cp of clarityProjects) {
+      // Check saved mapping first
+      const savedTodoistId = reverseMap.get(cp.id);
+      if (savedTodoistId) {
+        clarityToTodoist.set(cp.id, savedTodoistId);
+        continue;
+      }
+      // Find by name
+      const existingTodoistId = todoistProjectByName.get(cp.name.toLowerCase());
+      if (existingTodoistId) {
+        clarityToTodoist.set(cp.id, existingTodoistId);
+        // Save mapping for next time
+        await setUserSetting(userId, `todoist_project_map_${existingTodoistId}`, String(cp.id));
+        projectMap.set(existingTodoistId, cp.id);
+        reverseMap.set(cp.id, existingTodoistId);
+        continue;
+      }
+      // Create in Todoist
+      try {
+        const created = await todoistFetch(token, 'projects', {
+          method: 'POST',
+          body: JSON.stringify({ name: cp.name }),
+        });
+        if (created?.id) {
+          clarityToTodoist.set(cp.id, created.id);
+          await setUserSetting(userId, `todoist_project_map_${created.id}`, String(cp.id));
+          projectMap.set(created.id, cp.id);
+          reverseMap.set(cp.id, created.id);
+          todoistProjectByName.set(cp.name.toLowerCase(), created.id);
+          projectsCreated++;
+        }
+      } catch {}
     }
 
     // ── PULL: Todoist → Clarity Space ──
@@ -207,26 +287,23 @@ todoistRouter.post('/sync', async (req: AuthRequest, res: Response) => {
     let pulled = 0;
 
     for (const tt of todoistTasks) {
-      const clarityProjectId = projectMap.get(tt.project_id);
-      if (clarityProjectId === undefined) continue; // unmapped project, skip
+      if (tt.is_completed) continue;
 
-      // Check if already synced (by todoist_id in settings)
+      // Find clarity project from mapping
+      const clarityProjectId = projectMap.get(tt.project_id) ?? null;
+
       const existingLink = await getUserSetting(userId, `todoist_task_${tt.id}`);
       if (existingLink) {
-        // Update existing task status
         const clarityTaskId = Number(existingLink);
-        const newStatus = tt.is_completed ? 'done' : 'todo';
         await execute(
-          "UPDATE tasks SET title = $1, status = $2, due_date = $3, updated_at = NOW() WHERE id = $4 AND user_id = $5",
-          [tt.content, newStatus, tt.due?.date || null, clarityTaskId, userId]
+          "UPDATE tasks SET title = $1, due_date = $2, updated_at = NOW() WHERE id = $3 AND user_id = $4",
+          [tt.content, tt.deadline?.date || tt.due?.date || null, clarityTaskId, userId]
         );
       } else {
-        // Create new task in Clarity Space
-        const status = tt.is_completed ? 'done' : 'todo';
-        const priority = Math.min(5, Math.max(1, 5 - (tt.priority - 1))); // Todoist: 1=normal,4=urgent → invert
+        const priority = Math.min(5, Math.max(1, 5 - (tt.priority - 1)));
         const inserted = await queryOne<{ id: number }>(
           'INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-          [clarityProjectId, tt.content, tt.description || '', status, priority, tt.due?.date || null, userId]
+          [clarityProjectId, tt.content, tt.description || '', 'todo', priority, tt.deadline?.date || tt.due?.date || null, userId]
         );
         if (inserted) {
           await setUserSetting(userId, `todoist_task_${tt.id}`, String(inserted.id));
@@ -237,70 +314,50 @@ todoistRouter.post('/sync', async (req: AuthRequest, res: Response) => {
     }
 
     // ── PUSH: Clarity Space → Todoist ──
-    // Get all tasks from mapped projects that don't have todoist link
-    const clarityProjectIds = [...reverseMap.keys()];
     let pushed = 0;
+    const allTasks = await queryAll<{ id: number; title: string; description: string; status: string; priority: number; due_date: string | null; project_id: number | null }>(
+      "SELECT id, title, description, status, priority, due_date, project_id FROM tasks WHERE user_id = $1 AND archived = 0",
+      [userId]
+    );
 
-    if (clarityProjectIds.length > 0) {
-      const placeholders = clarityProjectIds.map((_, i) => `$${i + 1}`).join(',');
-      const clarityTasks = await queryAll<{ id: number; title: string; description: string; status: string; priority: number; due_date: string | null; project_id: number }>(
-        `SELECT id, title, description, status, priority, due_date, project_id FROM tasks WHERE project_id IN (${placeholders}) AND user_id = $${clarityProjectIds.length + 1} AND archived = 0`,
-        [...clarityProjectIds, userId]
-      );
+    const todoistOpenIds = new Set(todoistTasks.filter((t: any) => !t.is_completed).map((t: any) => String(t.id)));
 
-      for (const ct of clarityTasks) {
-        const existingLink = await getUserSetting(userId, `clarity_task_todoist_${ct.id}`);
-        if (existingLink) {
-          // Update existing Todoist task
-          try {
-            const isCompleted = ct.status === 'done';
-            await todoistFetch(token, `tasks/${existingLink}`, {
-              method: 'POST',
-              body: JSON.stringify({
-                content: ct.title,
-                description: ct.description || '',
-                priority: Math.min(4, Math.max(1, 5 - ct.priority + 1)),
-                ...(ct.due_date ? { due_date: ct.due_date } : {}),
-              }),
-            });
-            // Handle completion
-            if (isCompleted) {
-              try { await todoistFetch(token, `tasks/${existingLink}/close`, { method: 'POST' }); } catch {}
-            } else {
-              try { await todoistFetch(token, `tasks/${existingLink}/reopen`, { method: 'POST' }); } catch {}
-            }
-          } catch {}
-          continue;
+    for (const ct of allTasks) {
+      const existingLink = await getUserSetting(userId, `clarity_task_todoist_${ct.id}`);
+
+      if (existingLink) {
+        // Task already linked — sync completion
+        if (ct.status === 'done' && todoistOpenIds.has(existingLink)) {
+          try { await todoistFetch(token, `tasks/${existingLink}/close`, { method: 'POST' }); pushed++; } catch {}
         }
-
-        // Create in Todoist
-        const todoistProjectId = reverseMap.get(ct.project_id!);
-        if (!todoistProjectId) continue;
-
-        try {
-          const created = await todoistFetch(token, 'tasks', {
-            method: 'POST',
-            body: JSON.stringify({
-              content: ct.title,
-              description: ct.description || '',
-              project_id: todoistProjectId,
-              priority: Math.min(4, Math.max(1, 5 - ct.priority + 1)),
-              ...(ct.due_date ? { due_date: ct.due_date } : {}),
-            }),
-          });
-          if (created?.id) {
-            await setUserSetting(userId, `todoist_task_${created.id}`, String(ct.id));
-            await setUserSetting(userId, `clarity_task_todoist_${ct.id}`, created.id);
-            pushed++;
-            if (ct.status === 'done') {
-              try { await todoistFetch(token, `tasks/${created.id}/close`, { method: 'POST' }); } catch {}
-            }
-          }
-        } catch {}
+        continue;
       }
+
+      // New task — push to Todoist
+      if (ct.status === 'done') continue; // don't push already done tasks
+
+      const todoistProjectId = ct.project_id ? clarityToTodoist.get(ct.project_id) : undefined;
+
+      try {
+        const created = await todoistFetch(token, 'tasks', {
+          method: 'POST',
+          body: JSON.stringify({
+            content: ct.title,
+            description: ct.description || '',
+            priority: Math.min(4, Math.max(1, 5 - ct.priority + 1)),
+            ...(todoistProjectId ? { project_id: todoistProjectId } : {}),
+            ...(ct.due_date ? { deadline: { date: ct.due_date } } : {}),
+          }),
+        });
+        if (created?.id) {
+          await setUserSetting(userId, `todoist_task_${created.id}`, String(ct.id));
+          await setUserSetting(userId, `clarity_task_todoist_${ct.id}`, created.id);
+          pushed++;
+        }
+      } catch {}
     }
 
-    res.json(ok({ pulled, pushed }));
+    res.json(ok({ pulled, pushed, projectsCreated }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Sync error'));
   }

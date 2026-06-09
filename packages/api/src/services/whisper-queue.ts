@@ -7,7 +7,7 @@ type TranscribeJob = {
   addedAt: number;
 };
 
-const MAX_CONCURRENT = 2; // max local whisper processes at once
+const MAX_CONCURRENT = 4; // max local whisper processes at once (optimized for 4-core server)
 let activeCount = 0;
 const queue: TranscribeJob[] = [];
 

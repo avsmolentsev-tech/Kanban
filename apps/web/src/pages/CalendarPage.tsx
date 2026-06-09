@@ -19,6 +19,143 @@ interface GCalEvent {
 
 type ViewMode = 'day' | '3day' | 'week' | 'month';
 
+function IntegrationsPanel({ gcalConnected, yandexConnected, todoistConnected, setGcalConnected, setYandexConnected, setTodoistConnected, setGcalEvents, setYandexEvents, syncMsg, setSyncMsg, t }: any) {
+  return (
+    <>
+      <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-1 mb-2">{t('Интеграции', 'Integrations')}</div>
+
+      {/* Google Calendar */}
+      <div className="flex items-center justify-between p-3 rounded-xl bg-white/50 dark:bg-gray-700/50">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">📅</span>
+          <div>
+            <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">Google Calendar</div>
+            <div className="text-[10px] text-gray-400">{gcalConnected ? t('Подключён', 'Connected') : t('Не подключён', 'Not connected')}</div>
+          </div>
+        </div>
+        {gcalConnected ? (
+          <a href="#" onClick={async (e) => { e.preventDefault(); await apiPost('/google-calendar/disconnect'); setGcalConnected(false); setGcalEvents([]); }}
+            className="text-xs text-red-500 font-semibold">{t('Отключить', 'Disconnect')}</a>
+        ) : (
+          <a href={`${window.location.origin}/v1/google-calendar/auth?token=${localStorage.getItem('auth_token') || ''}`} target="_blank" rel="noopener noreferrer"
+            className="text-xs text-indigo-600 font-bold">{t('Подключить', 'Connect')}</a>
+        )}
+      </div>
+
+      {/* Yandex Calendar */}
+      <div className="flex items-center justify-between p-3 rounded-xl bg-white/50 dark:bg-gray-700/50">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">🟡</span>
+          <div>
+            <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('Яндекс Календарь', 'Yandex Calendar')}</div>
+            <div className="text-[10px] text-gray-400">{yandexConnected ? t('Подключён', 'Connected') : t('Не подключён', 'Not connected')}</div>
+          </div>
+        </div>
+        {yandexConnected ? (
+          <a href="#" onClick={async (e) => { e.preventDefault(); await apiPost('/yandex-calendar/disconnect'); setYandexConnected(false); setYandexEvents([]); }}
+            className="text-xs text-red-500 font-semibold">{t('Отключить', 'Disconnect')}</a>
+        ) : (
+          <a href={`${window.location.origin}/v1/yandex-calendar/auth?token=${localStorage.getItem('auth_token') || ''}`} target="_blank" rel="noopener noreferrer"
+            className="text-xs text-indigo-600 font-bold">{t('Подключить', 'Connect')}</a>
+        )}
+      </div>
+
+      {/* Todoist */}
+      <div className="flex items-center justify-between p-3 rounded-xl bg-white/50 dark:bg-gray-700/50">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">✅</span>
+          <div>
+            <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">Todoist</div>
+            <div className="text-[10px] text-gray-400">{todoistConnected ? t('Подключён', 'Connected') : t('Не подключён', 'Not connected')}</div>
+          </div>
+        </div>
+        {todoistConnected ? (
+          <a href="#" onClick={async (e) => { e.preventDefault(); await apiPost('/todoist/disconnect'); setTodoistConnected(false); }}
+            className="text-xs text-red-500 font-semibold">{t('Отключить', 'Disconnect')}</a>
+        ) : (
+          <a href="#" onClick={async (e) => {
+            e.preventDefault();
+            const token = prompt(t('Вставь API-токен Todoist\n(Настройки → Интеграции → Developer)', 'Paste Todoist API token'));
+            if (!token?.trim()) return;
+            try { await apiPost('/todoist/connect-token', { token: token.trim() }); setTodoistConnected(true); }
+            catch { alert(t('Неверный токен', 'Invalid token')); }
+          }} className="text-xs text-indigo-600 font-bold">{t('Подключить', 'Connect')}</a>
+        )}
+      </div>
+
+      {/* Sync */}
+      {syncMsg && <div className="text-xs text-center text-green-600 dark:text-green-400 font-medium">{syncMsg}</div>}
+      {gcalConnected && (
+        <a href="#" onClick={async (e) => { e.preventDefault(); setSyncMsg(t('Синхронизация...','Syncing...')); const res = await apiPost<{synced:number}>('/google-calendar/sync'); const events = await apiGet<any[]>('/google-calendar/events'); setGcalEvents(events); setSyncMsg(t(`Google: ${res.synced} встреч`,`Google: ${res.synced} meetings`)); setTimeout(()=>setSyncMsg(''),3000); }}
+          className="block w-full text-xs font-medium text-center py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400">
+          {t('🔄 Встречи → Google Calendar', '🔄 Meetings → Google Calendar')}
+        </a>
+      )}
+      {todoistConnected && (
+        <a href="#" onClick={async (e) => { e.preventDefault(); setSyncMsg(t('Синхронизация...','Syncing...')); const res = await apiPost<{pulled:number;pushed:number}>('/todoist/sync'); setSyncMsg(t(`Todoist: ↓${res.pulled} ↑${res.pushed}`,`Todoist: ↓${res.pulled} ↑${res.pushed}`)); setTimeout(()=>setSyncMsg(''),3000); }}
+          className="block w-full text-xs font-medium text-center py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400">
+          {t('🔄 Синхронизация с Todoist', '🔄 Sync with Todoist')}
+        </a>
+      )}
+    </>
+  );
+}
+
+function TodoistTokenModal({ onConnect, onClose, t }: { onConnect: (token: string) => Promise<void>; onClose: () => void; t: (ru: string, en: string) => string }) {
+  const [val, setVal] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async () => {
+    if (!val.trim() || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      await onConnect(val.trim());
+      onClose();
+    } catch {
+      setError(t('Неверный токен Todoist', 'Invalid Todoist token'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6" onClick={onClose}>
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-bold text-gray-800 dark:text-gray-100">{t('Подключить Todoist', 'Connect Todoist')}</h3>
+        <p className="text-xs text-gray-500">
+          {t('Введи API-токен из', 'Enter API token from')}{' '}
+          <a href="https://app.todoist.com/app/settings/integrations/developer" target="_blank" rel="noopener noreferrer" className="text-indigo-500 underline">
+            {t('Настроек Todoist', 'Todoist Settings')}
+          </a>
+        </p>
+        <input
+          type="text"
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          placeholder={t('API токен...', 'API token...')}
+          className="w-full text-sm px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          onKeyDown={e => { if (e.key === 'Enter') submit(); }}
+          autoFocus
+          autoComplete="off"
+        />
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 text-sm font-semibold text-gray-500 dark:text-gray-400">
+            {t('Отмена', 'Cancel')}
+          </button>
+          <button onClick={submit} disabled={loading || !val.trim()}
+            className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold disabled:opacity-50">
+            {loading ? '...' : t('Подключить', 'Connect')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function fmt(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -63,6 +200,7 @@ export function CalendarPage() {
   const [todoistConnected, setTodoistConnected] = useState(false);
   const [yandexConnected, setYandexConnected] = useState(false);
   const [showCalendarMenu, setShowCalendarMenu] = useState(false);
+  const [showTodoistModal, setShowTodoistModal] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
 
   // Reset to month view when navigating to calendar
@@ -192,166 +330,11 @@ export function CalendarPage() {
                 <span className="hidden md:inline">{t('Интеграции', 'Integrations')}</span>
                 {gcalConnected && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
               </button>
+              {/* Inline integrations panel (no overlay, no z-index issues) */}
               {showCalendarMenu && (
-                <>
-                  <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowCalendarMenu(false)} />
-                  <div className="fixed md:absolute left-4 right-4 md:left-auto md:right-0 top-auto md:top-full bottom-24 md:bottom-auto mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-4 md:w-72 space-y-3" onClick={e => e.stopPropagation()}>
-                    <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-1 mb-2">
-                      {t('Календари', 'Calendars')}
-                    </div>
-
-                    {/* Google Calendar */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-white dark:bg-gray-600 flex items-center justify-center shadow-sm">
-                          <span className="text-sm">📅</span>
-                        </div>
-                        <div>
-                          <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">Google Calendar</div>
-                          <div className="text-[10px] text-gray-400">{gcalConnected ? t('Подключён', 'Connected') : t('Не подключён', 'Not connected')}</div>
-                        </div>
-                      </div>
-                      {gcalConnected ? (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            await apiPost('/google-calendar/disconnect');
-                            setGcalConnected(false);
-                            setGcalEvents([]);
-                            setShowCalendarMenu(false);
-                          }}
-                          className="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-all active:scale-95"
-                        >
-                          <Unlink size={12} /> {t('Отключить', 'Disconnect')}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const token = localStorage.getItem('auth_token') || '';
-                            window.open(`${window.location.origin}/v1/google-calendar/auth${token ? '?token=' + token : ''}`, '_blank');
-                            setShowCalendarMenu(false);
-                          }}
-                          className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all active:scale-95"
-                        >
-                          <Link2 size={12} /> {t('Подключить', 'Connect')}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Yandex Calendar */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-white dark:bg-gray-600 flex items-center justify-center shadow-sm">
-                          <span className="text-sm">🟡</span>
-                        </div>
-                        <div>
-                          <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('Яндекс Календарь', 'Yandex Calendar')}</div>
-                          <div className="text-[10px] text-gray-400">{yandexConnected ? t('Подключён', 'Connected') : t('Не подключён', 'Not connected')}</div>
-                        </div>
-                      </div>
-                      {yandexConnected ? (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            await apiPost('/yandex-calendar/disconnect');
-                            setYandexConnected(false);
-                            setYandexEvents([]);
-                            setShowCalendarMenu(false);
-                          }}
-                          className="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-all active:scale-95"
-                        >
-                          <Unlink size={12} /> {t('Отключить', 'Disconnect')}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const token = localStorage.getItem('auth_token') || '';
-                            window.open(`${window.location.origin}/v1/yandex-calendar/auth${token ? '?token=' + token : ''}`, '_blank');
-                            setShowCalendarMenu(false);
-                          }}
-                          className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all active:scale-95"
-                        >
-                          <Link2 size={12} /> {t('Подключить', 'Connect')}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Todoist */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-white dark:bg-gray-600 flex items-center justify-center shadow-sm">
-                          <span className="text-sm">✅</span>
-                        </div>
-                        <div>
-                          <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">Todoist</div>
-                          <div className="text-[10px] text-gray-400">{todoistConnected ? t('Подключён', 'Connected') : t('Не подключён', 'Not connected')}</div>
-                        </div>
-                      </div>
-                      {todoistConnected ? (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            await apiPost('/todoist/disconnect');
-                            setTodoistConnected(false);
-                            setShowCalendarMenu(false);
-                          }}
-                          className="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-all active:scale-95"
-                        >
-                          <Unlink size={12} /> {t('Отключить', 'Disconnect')}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const token = localStorage.getItem('auth_token') || '';
-                            window.open(`${window.location.origin}/v1/todoist/auth${token ? '?token=' + token : ''}`, '_blank');
-                            setShowCalendarMenu(false);
-                          }}
-                          className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all active:scale-95"
-                        >
-                          <Link2 size={12} /> {t('Подключить', 'Connect')}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Sync buttons */}
-                    {syncMsg && <div className="text-xs text-center text-green-600 dark:text-green-400 font-medium">{syncMsg}</div>}
-                    <div className="space-y-1.5">
-                      {gcalConnected && (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            setSyncMsg(t('Синхронизация...', 'Syncing...'));
-                            const res = await apiPost<{ synced: number }>('/google-calendar/sync');
-                            const events = await apiGet<GCalEvent[]>('/google-calendar/events');
-                            setGcalEvents(events);
-                            setSyncMsg(t(`Google: ${res.synced} встреч`, `Google: ${res.synced} meetings`));
-                            setTimeout(() => setSyncMsg(''), 3000);
-                          }}
-                          className="w-full text-xs font-medium text-center py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors active:scale-95"
-                        >
-                          {t('🔄 Встречи → Google Calendar', '🔄 Meetings → Google Calendar')}
-                        </button>
-                      )}
-                      {todoistConnected && (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            setSyncMsg(t('Синхронизация...', 'Syncing...'));
-                            const res = await apiPost<{ pulled: number; pushed: number }>('/todoist/sync');
-                            setSyncMsg(t(`Todoist: ↓${res.pulled} ↑${res.pushed}`, `Todoist: ↓${res.pulled} ↑${res.pushed}`));
-                            setTimeout(() => setSyncMsg(''), 3000);
-                          }}
-                          className="w-full text-xs font-medium text-center py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors active:scale-95"
-                        >
-                          {t('🔄 Синхронизация с Todoist', '🔄 Sync with Todoist')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </>
+                <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-4 w-72 space-y-3 hidden md:block">
+                  <IntegrationsPanel gcalConnected={gcalConnected} yandexConnected={yandexConnected} todoistConnected={todoistConnected} setGcalConnected={setGcalConnected} setYandexConnected={setYandexConnected} setTodoistConnected={setTodoistConnected} setGcalEvents={setGcalEvents} setYandexEvents={setYandexEvents} syncMsg={syncMsg} setSyncMsg={setSyncMsg} t={t} />
+                </div>
               )}
             </div>
             <ProjectFilter projects={projects} />
@@ -372,6 +355,13 @@ export function CalendarPage() {
           <button onClick={goToday} className="text-xs text-indigo-600 font-medium px-2 py-1.5">{t('Сегодня','Today')}</button>
         </div>
       </div>
+
+      {/* Mobile integrations (inline, no overlay) */}
+      {showCalendarMenu && (
+        <div className="md:hidden mx-3 mb-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 space-y-3">
+          <IntegrationsPanel gcalConnected={gcalConnected} yandexConnected={yandexConnected} todoistConnected={todoistConnected} setGcalConnected={setGcalConnected} setYandexConnected={setYandexConnected} setTodoistConnected={setTodoistConnected} setGcalEvents={setGcalEvents} setYandexEvents={setYandexEvents} syncMsg={syncMsg} setSyncMsg={setSyncMsg} t={t} />
+        </div>
+      )}
 
       {/* Content */}
       <div key={`${view}-${fmt(currentDate)}`} className="flex-1 overflow-auto relative z-10 animate-[viewSlide_0.25s_ease]">
@@ -653,6 +643,17 @@ export function CalendarPage() {
       </div>
 
       <TaskDetailPanel task={selected} projects={projects} people={people} onClose={() => setSelected(null)} onUpdated={() => fetchTasks()} onDeleted={() => { setSelected(null); fetchTasks(); }} />
+
+      {showTodoistModal && (
+        <TodoistTokenModal
+          onConnect={async (token) => {
+            await apiPost('/todoist/connect-token', { token });
+            setTodoistConnected(true);
+          }}
+          onClose={() => setShowTodoistModal(false)}
+          t={t}
+        />
+      )}
     </div>
   );
 }
