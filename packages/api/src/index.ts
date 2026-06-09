@@ -63,6 +63,9 @@ async function start(): Promise<void> {
   searchService.startVaultWatcher();
   telegramService.start();
   startNotificationScheduler();
+  // Todoist background sync
+  const { startTodoistBackgroundSync } = await import('./routes/todoist');
+  startTodoistBackgroundSync();
   app.listen(config.port, () => {
     console.log(`[Clarity Space API] running on port ${config.port}`);
     // Start Obsidian vault watcher for bidirectional sync

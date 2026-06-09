@@ -362,3 +362,67 @@ todoistRouter.post('/sync', async (req: AuthRequest, res: Response) => {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Sync error'));
   }
 });
+
+// ── Background Sync ──
+
+const SYNC_INTERVAL = 30 * 60 * 1000; // 30 min
+
+async function backgroundSyncAll() {
+  const usersWithToken = await queryAll<{ user_id: number; value: string }>(
+    "SELECT user_id, value FROM settings WHERE key = 'todoist_access_token'"
+  );
+
+  for (const row of usersWithToken) {
+    try {
+      const token = row.value;
+      const userId = row.user_id;
+
+      const todoistTasks: any[] = await todoistFetch(token, 'tasks');
+      if (!todoistTasks) continue;
+
+      let pulled = 0;
+      for (const tt of todoistTasks) {
+        if (tt.is_completed) continue;
+        const existingLink = await getUserSetting(userId, `todoist_task_${tt.id}`);
+        if (existingLink) continue; // already synced
+
+        const priority = Math.min(5, Math.max(1, 5 - (tt.priority - 1)));
+        const inserted = await queryOne<{ id: number }>(
+          'INSERT INTO tasks (title, description, status, priority, due_date, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+          [tt.content, tt.description || '', 'todo', priority, tt.deadline?.date || tt.due?.date || null, userId]
+        );
+        if (inserted) {
+          await setUserSetting(userId, `todoist_task_${tt.id}`, String(inserted.id));
+          await setUserSetting(userId, `clarity_task_todoist_${inserted.id}`, tt.id);
+          pulled++;
+        }
+      }
+
+      // Close completed tasks in Todoist
+      const doneTasks = await queryAll<{ id: number }>(
+        "SELECT id FROM tasks WHERE user_id = $1 AND status = 'done' AND archived = 0",
+        [userId]
+      );
+      const todoistOpenIds = new Set(todoistTasks.filter((t: any) => !t.is_completed).map((t: any) => String(t.id)));
+      let pushed = 0;
+
+      for (const ct of doneTasks) {
+        const todoistId = await getUserSetting(userId, `clarity_task_todoist_${ct.id}`);
+        if (!todoistId || !todoistOpenIds.has(todoistId)) continue;
+        try { await todoistFetch(token, `tasks/${todoistId}/close`, { method: 'POST' }); pushed++; } catch {}
+      }
+
+      if (pulled > 0 || pushed > 0) {
+        console.log(`[todoist-bg-sync] user ${userId}: ↓${pulled} ↑${pushed}`);
+      }
+    } catch (err) {
+      console.error(`[todoist-bg-sync] user ${row.user_id} error:`, err);
+    }
+  }
+}
+
+export function startTodoistBackgroundSync() {
+  console.log(`[todoist-bg-sync] every ${SYNC_INTERVAL / 60000} min`);
+  setTimeout(() => backgroundSyncAll().catch(console.error), 60_000);
+  setInterval(() => backgroundSyncAll().catch(console.error), SYNC_INTERVAL);
+}
