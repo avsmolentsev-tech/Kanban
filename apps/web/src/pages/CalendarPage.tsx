@@ -58,8 +58,12 @@ export function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<ViewMode>('month');
   const [gcalEvents, setGcalEvents] = useState<GCalEvent[]>([]);
+  const [yandexEvents, setYandexEvents] = useState<GCalEvent[]>([]);
   const [gcalConnected, setGcalConnected] = useState(false);
+  const [todoistConnected, setTodoistConnected] = useState(false);
+  const [yandexConnected, setYandexConnected] = useState(false);
   const [showCalendarMenu, setShowCalendarMenu] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
 
   // Reset to month view when navigating to calendar
   const location = useLocation();
@@ -68,7 +72,10 @@ export function CalendarPage() {
   useEffect(() => { fetchTasks(); fetchProjects(); peopleApi.list().then(setPeople).catch(() => {}); }, [fetchTasks, fetchProjects]);
   useEffect(() => {
     apiGet<GCalEvent[]>('/google-calendar/events').then(setGcalEvents).catch(() => {});
+    apiGet<GCalEvent[]>('/yandex-calendar/events').then(setYandexEvents).catch(() => {});
     apiGet<{ connected: boolean }>('/google-calendar/status').then(d => setGcalConnected(d.connected)).catch(() => {});
+    apiGet<{ connected: boolean }>('/todoist/status').then(d => setTodoistConnected(d.connected)).catch(() => {});
+    apiGet<{ connected: boolean }>('/yandex-calendar/status').then(d => setYandexConnected(d.connected)).catch(() => {});
   }, []);
 
   const today = fmt(new Date());
@@ -86,7 +93,7 @@ export function CalendarPage() {
     }
   }
   const gcalByDate = new Map<string, GCalEvent[]>();
-  for (const ev of gcalEvents) {
+  for (const ev of [...gcalEvents, ...yandexEvents]) {
     const d = ev.start.date || (ev.start.dateTime ? ev.start.dateTime.slice(0, 10) : '');
     if (d) { if (!gcalByDate.has(d)) gcalByDate.set(d, []); gcalByDate.get(d)!.push(ev); }
   }
@@ -240,28 +247,109 @@ export function CalendarPage() {
                         </div>
                         <div>
                           <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('Яндекс Календарь', 'Yandex Calendar')}</div>
-                          <div className="text-[10px] text-gray-400">{t('Скоро', 'Coming soon')}</div>
+                          <div className="text-[10px] text-gray-400">{yandexConnected ? t('Подключён', 'Connected') : t('Не подключён', 'Not connected')}</div>
                         </div>
                       </div>
-                      <span className="text-[10px] text-gray-300 dark:text-gray-600 font-medium px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full">
-                        {t('Скоро', 'Soon')}
-                      </span>
+                      {yandexConnected ? (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await apiPost('/yandex-calendar/disconnect');
+                            setYandexConnected(false);
+                            setYandexEvents([]);
+                            setShowCalendarMenu(false);
+                          }}
+                          className="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-all active:scale-95"
+                        >
+                          <Unlink size={12} /> {t('Отключить', 'Disconnect')}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const token = localStorage.getItem('auth_token') || '';
+                            window.open(`${window.location.origin}/v1/yandex-calendar/auth${token ? '?token=' + token : ''}`, '_blank');
+                            setShowCalendarMenu(false);
+                          }}
+                          className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all active:scale-95"
+                        >
+                          <Link2 size={12} /> {t('Подключить', 'Connect')}
+                        </button>
+                      )}
                     </div>
 
-                    {gcalConnected && (
-                      <button
-                        onClick={async () => {
-                          const res = await apiPost<{ synced: number }>('/google-calendar/sync');
-                          const events = await apiGet<GCalEvent[]>('/google-calendar/events');
-                          setGcalEvents(events);
-                          setShowCalendarMenu(false);
-                          alert(t(`Синхронизировано ${res.synced} встреч`, `Synced ${res.synced} meetings`));
-                        }}
-                        className="w-full text-xs font-medium text-center py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors"
-                      >
-                        {t('🔄 Синхронизировать встречи → Google', '🔄 Sync meetings → Google')}
-                      </button>
-                    )}
+                    {/* Todoist */}
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-white dark:bg-gray-600 flex items-center justify-center shadow-sm">
+                          <span className="text-sm">✅</span>
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">Todoist</div>
+                          <div className="text-[10px] text-gray-400">{todoistConnected ? t('Подключён', 'Connected') : t('Не подключён', 'Not connected')}</div>
+                        </div>
+                      </div>
+                      {todoistConnected ? (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await apiPost('/todoist/disconnect');
+                            setTodoistConnected(false);
+                            setShowCalendarMenu(false);
+                          }}
+                          className="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-all active:scale-95"
+                        >
+                          <Unlink size={12} /> {t('Отключить', 'Disconnect')}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const token = localStorage.getItem('auth_token') || '';
+                            window.open(`${window.location.origin}/v1/todoist/auth${token ? '?token=' + token : ''}`, '_blank');
+                            setShowCalendarMenu(false);
+                          }}
+                          className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all active:scale-95"
+                        >
+                          <Link2 size={12} /> {t('Подключить', 'Connect')}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Sync buttons */}
+                    {syncMsg && <div className="text-xs text-center text-green-600 dark:text-green-400 font-medium">{syncMsg}</div>}
+                    <div className="space-y-1.5">
+                      {gcalConnected && (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            setSyncMsg(t('Синхронизация...', 'Syncing...'));
+                            const res = await apiPost<{ synced: number }>('/google-calendar/sync');
+                            const events = await apiGet<GCalEvent[]>('/google-calendar/events');
+                            setGcalEvents(events);
+                            setSyncMsg(t(`Google: ${res.synced} встреч`, `Google: ${res.synced} meetings`));
+                            setTimeout(() => setSyncMsg(''), 3000);
+                          }}
+                          className="w-full text-xs font-medium text-center py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors active:scale-95"
+                        >
+                          {t('🔄 Встречи → Google Calendar', '🔄 Meetings → Google Calendar')}
+                        </button>
+                      )}
+                      {todoistConnected && (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            setSyncMsg(t('Синхронизация...', 'Syncing...'));
+                            const res = await apiPost<{ pulled: number; pushed: number }>('/todoist/sync');
+                            setSyncMsg(t(`Todoist: ↓${res.pulled} ↑${res.pushed}`, `Todoist: ↓${res.pulled} ↑${res.pushed}`));
+                            setTimeout(() => setSyncMsg(''), 3000);
+                          }}
+                          className="w-full text-xs font-medium text-center py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors active:scale-95"
+                        >
+                          {t('🔄 Синхронизация с Todoist', '🔄 Sync with Todoist')}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </>
               )}

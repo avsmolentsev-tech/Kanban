@@ -21,6 +21,8 @@ import { templatesRouter } from './templates';
 import { emailWebhookRouter } from './email-webhook';
 import { widgetRouter } from './widget';
 import { googleCalendarRouter } from './google-calendar';
+import { todoistRouter } from './todoist';
+import { yandexCalendarRouter } from './yandex-calendar';
 import { authRouter } from './auth';
 import { requireAuth } from '../middleware/auth';
 import { adminRouter } from './admin';
@@ -32,6 +34,8 @@ router.use('/auth', authRouter);
 router.use('/widget', widgetRouter);
 router.use('/email-webhook', emailWebhookRouter);
 router.use('/google-calendar', googleCalendarRouter);
+router.use('/todoist', todoistRouter);
+router.use('/yandex-calendar', yandexCalendarRouter);
 
 // Public: serve attachment files (images in documents) without auth — filenames are random/unguessable
 router.get('/documents/attachments/file/:filename', (req, res) => {
