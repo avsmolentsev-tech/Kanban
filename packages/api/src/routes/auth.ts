@@ -7,6 +7,7 @@ import { ok, fail } from '@pis/shared';
 import type { AuthRequest, AuthUser } from '../middleware/auth';
 import { requireAuth } from '../middleware/auth';
 import { sendVerificationEmail, generateCode } from '../services/email.service';
+import { getUserPlan, getAiUsageToday } from '../middleware/plan';
 
 export const authRouter = Router();
 
@@ -35,6 +36,7 @@ interface UserRow {
   name: string;
   password_hash: string;
   role: string;
+  plan: string;
   created_at: string;
 }
 
@@ -91,7 +93,7 @@ authRouter.post('/register', rateLimitLogin, async (req: AuthRequest, res: Respo
     const user = await queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [inserted!.id]);
     const token = signToken(user!);
 
-    res.json(ok({ token, user: { id: user!.id, email: user!.email, name: user!.name, role: user!.role }, needsVerification: true }));
+    res.json(ok({ token, user: { id: user!.id, email: user!.email, name: user!.name, role: user!.role, plan: user!.plan || 'free' }, needsVerification: true }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Registration error'));
   }
@@ -118,15 +120,16 @@ authRouter.post('/login', rateLimitLogin, async (req: AuthRequest, res: Response
     }
 
     const token = signToken(user);
-    res.json(ok({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } }));
+    res.json(ok({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, plan: user.plan || 'free' } }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Login error'));
   }
 });
 
 // GET /auth/me
-authRouter.get('/me', requireAuth, (req: AuthRequest, res: Response) => {
-  res.json(ok(req.user));
+authRouter.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
+  const plan = await getUserPlan(req.user!.id);
+  res.json(ok({ ...req.user, plan }));
 });
 
 // PATCH /auth/me — update profile
@@ -148,7 +151,7 @@ authRouter.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => 
 
     const user = await queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [req.user!.id]);
     const token = signToken(user!);
-    res.json(ok({ token, user: { id: user!.id, email: user!.email, name: user!.name, role: user!.role } }));
+    res.json(ok({ token, user: { id: user!.id, email: user!.email, name: user!.name, role: user!.role, plan: user!.plan || 'free' } }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Update error'));
   }
@@ -232,9 +235,39 @@ authRouter.post('/reset-password', async (req: AuthRequest, res: Response) => {
     await execute('UPDATE users SET password_hash = $1, email_verified = 1 WHERE email = $2', [hash, normalEmail]);
     const user = await queryOne<UserRow>('SELECT * FROM users WHERE email = $1', [normalEmail]);
     const token = signToken(user!);
-    res.json(ok({ token, user: { id: user!.id, email: user!.email, name: user!.name, role: user!.role } }));
+    res.json(ok({ token, user: { id: user!.id, email: user!.email, name: user!.name, role: user!.role, plan: user!.plan || 'free' } }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Reset error'));
+  }
+});
+
+// GET /auth/plan — returns current plan and AI usage
+authRouter.get('/plan', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const plan = await getUserPlan(userId);
+    const aiUsedToday = await getAiUsageToday(userId);
+    const aiLimit = plan === 'pro_max' ? null : 50;
+    res.json(ok({ plan, ai_used_today: aiUsedToday, ai_limit: aiLimit }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Plan error'));
+  }
+});
+
+// POST /auth/plan — switch plan (no payment for now)
+authRouter.post('/plan', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { plan } = req.body as { plan?: string };
+    if (!plan || !['free', 'pro_max'].includes(plan)) {
+      res.status(400).json(fail('Invalid plan. Use "free" or "pro_max"'));
+      return;
+    }
+    await execute('UPDATE users SET plan = $1 WHERE id = $2', [plan, req.user!.id]);
+    const aiUsedToday = await getAiUsageToday(req.user!.id);
+    const aiLimit = plan === 'pro_max' ? null : 50;
+    res.json(ok({ plan, ai_used_today: aiUsedToday, ai_limit: aiLimit }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Plan update error'));
   }
 });
 
