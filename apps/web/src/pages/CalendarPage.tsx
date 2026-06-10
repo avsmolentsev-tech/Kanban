@@ -330,11 +330,14 @@ export function CalendarPage() {
                 <span className="hidden md:inline">{t('Интеграции', 'Integrations')}</span>
                 {gcalConnected && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
               </button>
-              {/* Inline integrations panel (no overlay, no z-index issues) */}
+              {/* Desktop integrations dropdown — fixed to viewport to avoid clipping */}
               {showCalendarMenu && (
-                <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-4 w-72 space-y-3 hidden md:block">
-                  <IntegrationsPanel gcalConnected={gcalConnected} yandexConnected={yandexConnected} todoistConnected={todoistConnected} setGcalConnected={setGcalConnected} setYandexConnected={setYandexConnected} setTodoistConnected={setTodoistConnected} setGcalEvents={setGcalEvents} setYandexEvents={setYandexEvents} syncMsg={syncMsg} setSyncMsg={setSyncMsg} t={t} />
-                </div>
+                <>
+                  <div className="fixed inset-0 z-[90] hidden md:block" onClick={() => setShowCalendarMenu(false)} />
+                  <div className="fixed right-4 top-16 z-[100] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-4 w-80 space-y-3 hidden md:block max-h-[80vh] overflow-y-auto">
+                    <IntegrationsPanel gcalConnected={gcalConnected} yandexConnected={yandexConnected} todoistConnected={todoistConnected} setGcalConnected={setGcalConnected} setYandexConnected={setYandexConnected} setTodoistConnected={setTodoistConnected} setGcalEvents={setGcalEvents} setYandexEvents={setYandexEvents} syncMsg={syncMsg} setSyncMsg={setSyncMsg} t={t} />
+                  </div>
+                </>
               )}
             </div>
             <ProjectFilter projects={projects} />
