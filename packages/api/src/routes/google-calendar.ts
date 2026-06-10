@@ -286,7 +286,31 @@ googleCalendarRouter.delete('/events/:eventId', async (req: AuthRequest, res: Re
   }
 });
 
-// GET /google-calendar/events — list events from user's Google Calendar
+// GET /google-calendar/calendars — list user's calendars
+googleCalendarRouter.get('/calendars', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.json(ok([])); return; }
+  const token = await getAccessTokenForUser(userId);
+  if (!token) { res.json(ok([])); return; }
+
+  try {
+    const gcRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await gcRes.json();
+    const calendars = (data.items || []).map((c: any) => ({
+      id: c.id,
+      summary: c.summary,
+      accessRole: c.accessRole,
+      backgroundColor: c.backgroundColor,
+    }));
+    res.json(ok(calendars));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Fetch error'));
+  }
+});
+
+// GET /google-calendar/events — list events from ALL user's calendars (owner/writer)
 googleCalendarRouter.get('/events', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) { res.json(ok([])); return; }
@@ -295,11 +319,40 @@ googleCalendarRouter.get('/events', async (req: AuthRequest, res: Response) => {
 
   try {
     const today = new Date().toISOString();
-    const gcRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${today}&maxResults=20&singleEvents=true&orderBy=startTime`, {
+    const maxDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Get all calendars
+    const calRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
       headers: { 'Authorization': `Bearer ${token}` },
     });
-    const data = await gcRes.json();
-    res.json(ok(data.items || []));
+    const calData = await calRes.json();
+    const calendars = (calData.items || []).filter((c: any) => c.accessRole === 'owner' || c.accessRole === 'writer');
+
+    // Fetch events from all calendars in parallel
+    const allEvents: any[] = [];
+    await Promise.all(calendars.map(async (cal: any) => {
+      try {
+        const evRes = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events?timeMin=${today}&timeMax=${maxDate}&maxResults=50&singleEvents=true&orderBy=startTime`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        const evData = await evRes.json();
+        for (const ev of (evData.items || [])) {
+          ev._calendarName = cal.summary;
+          ev._calendarId = cal.id;
+          allEvents.push(ev);
+        }
+      } catch {}
+    }));
+
+    // Sort by start time
+    allEvents.sort((a, b) => {
+      const aTime = a.start?.dateTime || a.start?.date || '';
+      const bTime = b.start?.dateTime || b.start?.date || '';
+      return aTime.localeCompare(bTime);
+    });
+
+    res.json(ok(allEvents));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Fetch error'));
   }
