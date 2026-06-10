@@ -19,7 +19,7 @@ apiClient.interceptors.response.use(
     if (err.response?.status === 401 && !window.location.pathname.includes('/login')) {
       const url = err.config?.url || '';
       // Don't logout on google-calendar or other endpoints that use 401 for "not connected"
-      const isAuthFailure = !url.includes('google-calendar') && !url.includes('widget');
+      const isAuthFailure = !url.includes('google-calendar') && !url.includes('yandex-calendar') && !url.includes('todoist') && !url.includes('widget');
       const token = localStorage.getItem('auth_token');
       if (token && isAuthFailure) {
         // Verify token is actually invalid by checking /auth/me

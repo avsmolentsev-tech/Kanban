@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { apiGet, apiPatch, apiPost } from '../api/client';
 import { useAuthStore, type AuthUser } from '../store/auth.store';
 import { useLangStore } from '../store/lang.store';
-import { User, Lock, MessageCircle, Save, CheckCircle, Smartphone, Copy, Check, HelpCircle, X, Code, Sparkles, Zap, Crown } from 'lucide-react';
+import { User, Lock, MessageCircle, Save, CheckCircle, Smartphone, Copy, Check, HelpCircle, X, Code, Sparkles, Zap, Crown, Link2, Unlink, RefreshCw } from 'lucide-react';
 
 function getWidgetScript(key: string) {
   return `const API_KEY = '${key}';
@@ -364,6 +364,224 @@ function WidgetKeySection() {
   );
 }
 
+interface IntegrationStatus {
+  google: boolean;
+  yandex: boolean;
+  todoist: boolean;
+}
+
+function IntegrationsSection() {
+  const { t } = useLangStore();
+  const [status, setStatus] = useState<IntegrationStatus>({ google: false, yandex: false, todoist: false });
+  const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [todoistToken, setTodoistToken] = useState('');
+  const [showTodoistInput, setShowTodoistInput] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchStatuses = async () => {
+      const [g, y, td] = await Promise.allSettled([
+        apiGet<{ connected: boolean }>('/google-calendar/status'),
+        apiGet<{ connected: boolean }>('/yandex-calendar/status'),
+        apiGet<{ connected: boolean }>('/todoist/status'),
+      ]);
+      setStatus({
+        google: g.status === 'fulfilled' ? g.value.connected : false,
+        yandex: y.status === 'fulfilled' ? y.value.connected : false,
+        todoist: td.status === 'fulfilled' ? td.value.connected : false,
+      });
+    };
+    fetchStatuses();
+  }, []);
+
+  const disconnect = async (service: 'google' | 'yandex' | 'todoist') => {
+    const urlMap = { google: '/google-calendar/disconnect', yandex: '/yandex-calendar/disconnect', todoist: '/todoist/disconnect' };
+    setLoading(prev => ({ ...prev, [service]: true }));
+    try {
+      await apiPost(urlMap[service]);
+      setStatus(prev => ({ ...prev, [service]: false }));
+    } catch {} finally {
+      setLoading(prev => ({ ...prev, [service]: false }));
+    }
+  };
+
+  const connectOAuth = (path: string) => {
+    const token = localStorage.getItem('auth_token');
+    window.open(`${window.location.origin}/v1/${path}/auth?token=${token}`, '_blank');
+  };
+
+  const connectTodoist = async () => {
+    if (!todoistToken.trim()) return;
+    setLoading(prev => ({ ...prev, todoist: true }));
+    try {
+      await apiPost('/todoist/connect', { token: todoistToken.trim() });
+      setStatus(prev => ({ ...prev, todoist: true }));
+      setShowTodoistInput(false);
+      setTodoistToken('');
+    } catch {} finally {
+      setLoading(prev => ({ ...prev, todoist: false }));
+    }
+  };
+
+  const syncTodoist = async () => {
+    setLoading(prev => ({ ...prev, todoistSync: true }));
+    setSyncResult(null);
+    try {
+      const res = await apiPost<{ imported: number; exported: number }>('/todoist/sync');
+      setSyncResult(`↓${res.imported} ↑${res.exported}`);
+      setTimeout(() => setSyncResult(null), 4000);
+    } catch {} finally {
+      setLoading(prev => ({ ...prev, todoistSync: false }));
+    }
+  };
+
+  const StatusDot = ({ connected }: { connected: boolean }) => (
+    <span className={`inline-block w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-gray-400'}`} />
+  );
+
+  const integrations = [
+    {
+      key: 'google' as const,
+      icon: '\u{1F4C5}',
+      name: 'Google Calendar',
+      connected: status.google,
+      instruction: t(
+        'Подключите Google Calendar чтобы видеть события в календаре Clarity Space. Нажмите «Подключить» и разрешите доступ к календарю.',
+        'Connect Google Calendar to see events in Clarity Space calendar. Click "Connect" and grant calendar access.'
+      ),
+      onConnect: () => connectOAuth('google-calendar'),
+      onDisconnect: () => disconnect('google'),
+    },
+    {
+      key: 'yandex' as const,
+      icon: '\u{1F7E1}',
+      name: t('Яндекс Календарь', 'Yandex Calendar'),
+      connected: status.yandex,
+      instruction: t(
+        'Подключите Яндекс Календарь для синхронизации событий. Нажмите «Подключить» и войдите в Яндекс аккаунт.',
+        'Connect Yandex Calendar to sync events. Click "Connect" and sign in to your Yandex account.'
+      ),
+      onConnect: () => connectOAuth('yandex-calendar'),
+      onDisconnect: () => disconnect('yandex'),
+    },
+    {
+      key: 'todoist' as const,
+      icon: '\u2705',
+      name: 'Todoist',
+      connected: status.todoist,
+      instruction: t(
+        'Двусторонняя синхронизация задач с Todoist. Получите API-токен в Настройках Todoist \u2192 Интеграции \u2192 Developer.',
+        'Two-way task sync with Todoist. Get your API token in Todoist Settings \u2192 Integrations \u2192 Developer.'
+      ),
+      onConnect: () => setShowTodoistInput(true),
+      onDisconnect: () => disconnect('todoist'),
+    },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay: 0.05 }}
+      className="space-y-3"
+    >
+      <div className="flex items-center gap-2">
+        <Link2 size={14} className="text-indigo-500" />
+        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+          {t('Интеграции', 'Integrations')}
+        </span>
+      </div>
+
+      {integrations.map((svc) => (
+        <motion.div
+          key={svc.key}
+          whileHover={{ y: -2 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+          className="p-4 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50 space-y-2"
+        >
+          {/* Header row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">{svc.icon}</span>
+              <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">{svc.name}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <StatusDot connected={svc.connected} />
+              <span className={`text-xs ${svc.connected ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>
+                {svc.connected ? t('Подключён', 'Connected') : t('Не подключён', 'Not connected')}
+              </span>
+            </div>
+          </div>
+
+          {/* Instruction */}
+          <p className="text-xs text-gray-500 dark:text-gray-400">{svc.instruction}</p>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 pt-1">
+            {svc.connected ? (
+              <>
+                <button
+                  onClick={svc.onDisconnect}
+                  disabled={!!loading[svc.key]}
+                  className="flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 transition-colors disabled:opacity-50"
+                >
+                  <Unlink size={12} />
+                  {loading[svc.key] ? '...' : t('Отключить', 'Disconnect')}
+                </button>
+                {svc.key === 'todoist' && (
+                  <button
+                    onClick={syncTodoist}
+                    disabled={!!loading['todoistSync']}
+                    className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={loading['todoistSync'] ? 'animate-spin' : ''} />
+                    {syncResult ?? (loading['todoistSync'] ? '...' : t('Синхронизировать', 'Sync'))}
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                onClick={svc.onConnect}
+                disabled={!!loading[svc.key]}
+                className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors disabled:opacity-50"
+              >
+                <Link2 size={12} />
+                {loading[svc.key] ? '...' : t('Подключить', 'Connect')}
+              </button>
+            )}
+          </div>
+
+          {/* Todoist token input */}
+          {svc.key === 'todoist' && showTodoistInput && !svc.connected && (
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="text"
+                value={todoistToken}
+                onChange={(e) => setTodoistToken(e.target.value)}
+                placeholder="API token"
+                className="flex-1 px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700/50 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+              <button
+                onClick={connectTodoist}
+                disabled={!!loading['todoist'] || !todoistToken.trim()}
+                className="px-3 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl disabled:opacity-50 transition-colors"
+              >
+                {loading['todoist'] ? '...' : 'OK'}
+              </button>
+              <button
+                onClick={() => { setShowTodoistInput(false); setTodoistToken(''); }}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+        </motion.div>
+      ))}
+    </motion.div>
+  );
+}
+
 export function ProfilePage() {
   const { t } = useLangStore();
   const { user, updateUser, logout } = useAuthStore();
@@ -451,6 +669,9 @@ export function ProfilePage() {
 
         {/* iPhone Widget */}
         <WidgetKeySection />
+
+        {/* Integrations */}
+        <IntegrationsSection />
 
         {/* Plan / Тариф */}
         <PlanSection />
