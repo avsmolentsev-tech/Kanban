@@ -35,7 +35,7 @@ export class ClaudeService {
     ].filter(Boolean).join('\n');
   }
 
-  async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = '', model?: string, useTools = false, jsonMode = false): Promise<string> {
+  async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = '', model?: string, useTools = false, jsonMode = false, userId?: number | null): Promise<string> {
     const chatMessages: Array<Record<string, unknown>> = [
       { role: 'system', content: this.buildSystemPrompt(systemPrompt) },
       ...messages,
@@ -92,9 +92,10 @@ export class ClaudeService {
       const usage = response.usage;
       if (usage) {
         const { execute } = require('../db/db');
+        const detail = userId ? `user:${userId}` : '';
         await execute(
-          "INSERT INTO usage_logs (type, model, tokens_in, tokens_out, detail) VALUES ($1, $2, $3, $4, $5)",
-          ['ai_chat', selectedModel, usage.prompt_tokens || 0, usage.completion_tokens || 0, '']
+          "INSERT INTO usage_logs (type, model, tokens_in, tokens_out, detail, user_id) VALUES ($1, $2, $3, $4, $5, $6)",
+          ['ai_chat', selectedModel, usage.prompt_tokens || 0, usage.completion_tokens || 0, detail, userId ?? null]
         );
       }
     } catch {}

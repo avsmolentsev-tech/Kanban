@@ -9,6 +9,7 @@ import { moscowDateString, moscowDateTimeString } from '../utils/time';
 import { generateBundle, findProjectByName } from '../services/bundle.service';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId } from '../middleware/user-scope';
+import { checkAiLimit } from '../middleware/plan';
 
 export const aiRouter = Router();
 const claude = new ClaudeService();
@@ -23,6 +24,11 @@ aiRouter.post('/chat', async (req: AuthRequest, res: Response) => {
   const parsed = ChatSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   try {
+    const limit = await checkAiLimit(req);
+    if (!limit.allowed) {
+      res.status(429).json(fail(`Лимит AI-сообщений: ${limit.used}/${limit.limit} в день. Перейдите на Pro Max для безлимита.`));
+      return;
+    }
     // Build vault context for AI (scoped to user)
     let vaultContext = '';
     try { vaultContext = obsidian.forUser(getUserId(req)).readAllForContext(); } catch {}
@@ -32,7 +38,7 @@ aiRouter.post('/chat', async (req: AuthRequest, res: Response) => {
       vaultContext ? `\n\nДанные из Obsidian Vault (проекты, задачи, встречи, идеи, люди):\n\n${vaultContext}` : '',
     ].filter(Boolean).join('\n');
 
-    const reply = await claude.chat(parsed.data.messages, systemPrompt, 'gpt-4.1-mini');
+    const reply = await claude.chat(parsed.data.messages, systemPrompt, 'gpt-4.1-mini', false, false, getUserId(req));
     res.json(ok({ reply }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
@@ -94,7 +100,7 @@ ${JSON.stringify(upcomingMeetings)}
 4. Рекомендации на следующую неделю
 5. Общие наблюдения и тренды`;
 
-    const brief = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
+    const brief = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini', false, false, userId);
     res.json(ok({ brief }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
@@ -114,6 +120,11 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
 
   try {
+    const limit = await checkAiLimit(req);
+    if (!limit.allowed) {
+      res.status(429).json(fail(`Лимит AI-сообщений: ${limit.used}/${limit.limit} в день. Перейдите на Pro Max для безлимита.`));
+      return;
+    }
     const userId = getUserId(req);
     const userFilterSuffix = (offset: number) => userId != null ? ` AND user_id = $${offset}` : '';
     const userParams: unknown[] = userId != null ? [userId] : [];
@@ -396,7 +407,7 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
       { role: 'user', content: parsed.data.text },
     ];
 
-    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1-mini', false, true);
+    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1-mini', false, true, userId);
 
     let command: { actions: Array<Record<string, unknown>>; response: string };
     try {
@@ -725,7 +736,7 @@ aiRouter.post('/daily-plan', async (req: AuthRequest, res: Response) => {
 Цели и прогресс: ${JSON.stringify(goals)}${priorityLine}
 Дата: ${today}`;
 
-    const plan = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
+    const plan = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini', false, false, userId);
     res.json(ok({ plan }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
@@ -809,7 +820,7 @@ aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) 
 5. 🎯 Прогресс по целям
 6. 💡 Рекомендации по улучшению продуктивности`;
 
-    const analysis = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
+    const analysis = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini', false, false, userId);
     res.json(ok({ analysis }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
