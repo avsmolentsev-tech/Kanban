@@ -187,6 +187,105 @@ googleCalendarRouter.post('/sync', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// POST /google-calendar/events — create a new event
+googleCalendarRouter.post('/events', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Not authenticated')); return; }
+  const token = await getAccessTokenForUser(userId);
+  if (!token) { res.status(400).json(fail('Google Calendar не подключён')); return; }
+
+  try {
+    const { summary, date, startTime, endTime, description } = req.body as {
+      summary: string; date: string; startTime?: string; endTime?: string; description?: string;
+    };
+    if (!summary || !date) { res.status(400).json(fail('summary and date are required')); return; }
+
+    const event: any = { summary };
+    if (description) event.description = description;
+
+    if (startTime && endTime) {
+      event.start = { dateTime: `${date}T${startTime}:00`, timeZone: 'Europe/Moscow' };
+      event.end = { dateTime: `${date}T${endTime}:00`, timeZone: 'Europe/Moscow' };
+    } else {
+      event.start = { date };
+      event.end = { date };
+    }
+
+    const gcRes = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(event),
+    });
+    const gcEvent = await gcRes.json();
+    if (!gcRes.ok) { res.status(gcRes.status).json(fail(gcEvent.error?.message || 'Create failed')); return; }
+    res.json(ok(gcEvent));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Create error'));
+  }
+});
+
+// PATCH /google-calendar/events/:eventId — update an event
+googleCalendarRouter.patch('/events/:eventId', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Not authenticated')); return; }
+  const token = await getAccessTokenForUser(userId);
+  if (!token) { res.status(400).json(fail('Google Calendar не подключён')); return; }
+
+  try {
+    const { eventId } = req.params;
+    const { summary, date, startTime, endTime, description } = req.body as {
+      summary?: string; date?: string; startTime?: string; endTime?: string; description?: string;
+    };
+
+    const patch: any = {};
+    if (summary !== undefined) patch.summary = summary;
+    if (description !== undefined) patch.description = description;
+
+    if (date && startTime && endTime) {
+      patch.start = { dateTime: `${date}T${startTime}:00`, timeZone: 'Europe/Moscow' };
+      patch.end = { dateTime: `${date}T${endTime}:00`, timeZone: 'Europe/Moscow' };
+    } else if (date) {
+      patch.start = { date };
+      patch.end = { date };
+    }
+
+    const gcRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    const gcEvent = await gcRes.json();
+    if (!gcRes.ok) { res.status(gcRes.status).json(fail(gcEvent.error?.message || 'Update failed')); return; }
+    res.json(ok(gcEvent));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Update error'));
+  }
+});
+
+// DELETE /google-calendar/events/:eventId — delete an event
+googleCalendarRouter.delete('/events/:eventId', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Not authenticated')); return; }
+  const token = await getAccessTokenForUser(userId);
+  if (!token) { res.status(400).json(fail('Google Calendar не подключён')); return; }
+
+  try {
+    const { eventId } = req.params;
+    const gcRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!gcRes.ok && gcRes.status !== 204) {
+      const body = await gcRes.json().catch(() => ({}));
+      res.status(gcRes.status).json(fail((body as any).error?.message || 'Delete failed'));
+      return;
+    }
+    res.json(ok({ deleted: true }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Delete error'));
+  }
+});
+
 // GET /google-calendar/events — list events from user's Google Calendar
 googleCalendarRouter.get('/events', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);

@@ -5,10 +5,10 @@ import { TaskDetailPanel } from '../components/kanban/TaskDetailPanel';
 import { ProjectFilter } from '../components/filters/ProjectFilter';
 import { useFiltersStore } from '../store';
 import { peopleApi } from '../api/people.api';
-import { apiGet, apiPost } from '../api/client';
+import { apiGet, apiPost, apiPatch, apiDelete } from '../api/client';
 import type { Task, Person } from '@pis/shared';
 import { useLangStore } from '../store/lang.store';
-import { CalendarDays, ChevronLeft, ChevronRight, Link2, Unlink } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Link2, Unlink, Plus, Trash2 } from 'lucide-react';
 
 interface GCalEvent {
   id: string;
@@ -160,6 +160,123 @@ function fmt(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function GCalEventModal({ event, date, onClose, onSaved, t }: {
+  event: GCalEvent | null; // null = create mode
+  date: string;
+  onClose: () => void;
+  onSaved: () => void;
+  t: (ru: string, en: string) => string;
+}) {
+  const isEdit = !!event;
+  const [summary, setSummary] = useState(event?.summary ?? '');
+  const [eventDate, setEventDate] = useState(() => {
+    if (event?.start.date) return event.start.date;
+    if (event?.start.dateTime) return event.start.dateTime.slice(0, 10);
+    return date;
+  });
+  const [startTime, setStartTime] = useState(() => event?.start.dateTime?.slice(11, 16) ?? '');
+  const [endTime, setEndTime] = useState(() => event?.end?.dateTime?.slice(11, 16) ?? '');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleSave = async () => {
+    if (!summary.trim() || saving) return;
+    setSaving(true);
+    try {
+      const body: any = { summary: summary.trim(), date: eventDate };
+      if (startTime && endTime) { body.startTime = startTime; body.endTime = endTime; }
+      if (isEdit) {
+        await apiPatch(`/google-calendar/events/${event!.id}`, body);
+      } else {
+        await apiPost('/google-calendar/events', body);
+      }
+      onSaved();
+      onClose();
+    } catch (err) {
+      alert(t('Ошибка сохранения', 'Save error'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!event || deleting) return;
+    if (!confirm(t('Удалить событие?', 'Delete event?'))) return;
+    setDeleting(true);
+    try {
+      await apiDelete(`/google-calendar/events/${event.id}`);
+      onSaved();
+      onClose();
+    } catch {
+      alert(t('Ошибка удаления', 'Delete error'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6" onClick={onClose}>
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-bold text-gray-800 dark:text-gray-100">
+          {isEdit ? t('Редактировать событие', 'Edit event') : t('Новое событие', 'New event')}
+        </h3>
+        <input
+          type="text"
+          value={summary}
+          onChange={e => setSummary(e.target.value)}
+          placeholder={t('Название...', 'Title...')}
+          className="w-full text-sm px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          autoFocus
+          onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+        />
+        <input
+          type="date"
+          value={eventDate}
+          onChange={e => setEventDate(e.target.value)}
+          className="w-full text-sm px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">{t('Начало', 'Start')}</label>
+            <input
+              type="time"
+              value={startTime}
+              onChange={e => setStartTime(e.target.value)}
+              className="w-full text-sm px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">{t('Конец', 'End')}</label>
+            <input
+              type="time"
+              value={endTime}
+              onChange={e => setEndTime(e.target.value)}
+              className="w-full text-sm px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+        </div>
+        <div className="text-[10px] text-gray-400">{t('Оставь время пустым для события на весь день', 'Leave time empty for all-day event')}</div>
+        <div className="flex gap-2">
+          {isEdit && (
+            <button onClick={handleDelete} disabled={deleting}
+              className="px-3 py-2.5 rounded-xl border border-red-200 dark:border-red-800 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+              <Trash2 size={16} />
+            </button>
+          )}
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 text-sm font-semibold text-gray-500 dark:text-gray-400">
+            {t('Отмена', 'Cancel')}
+          </button>
+          <button onClick={handleSave} disabled={saving || !summary.trim()}
+            className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold disabled:opacity-50">
+            {saving ? '...' : t('Сохранить', 'Save')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function getDaysInMonth(year: number, month: number): Date[] {
   const days: Date[] = [];
   const d = new Date(year, month, 1);
@@ -202,6 +319,12 @@ export function CalendarPage() {
   const [showCalendarMenu, setShowCalendarMenu] = useState(false);
   const [showTodoistModal, setShowTodoistModal] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
+  const [editingGcalEvent, setEditingGcalEvent] = useState<GCalEvent | null>(null);
+  const [showCreateGcalEvent, setShowCreateGcalEvent] = useState(false);
+
+  const refreshGcalEvents = () => {
+    apiGet<GCalEvent[]>('/google-calendar/events').then(setGcalEvents).catch(() => {});
+  };
 
   // Reset to month view when navigating to calendar
   const location = useLocation();
@@ -330,11 +453,11 @@ export function CalendarPage() {
                 <span className="hidden md:inline">{t('Интеграции', 'Integrations')}</span>
                 {gcalConnected && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
               </button>
-              {/* Desktop integrations dropdown — fixed to viewport to avoid clipping */}
+              {/* Desktop integrations dropdown — centered modal to avoid any clipping */}
               {showCalendarMenu && (
                 <>
-                  <div className="fixed inset-0 z-[90] hidden md:block" onClick={() => setShowCalendarMenu(false)} />
-                  <div className="fixed right-4 top-16 z-[100] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-4 w-80 space-y-3 hidden md:block max-h-[80vh] overflow-y-auto">
+                  <div className="fixed inset-0 z-[90] hidden md:block bg-black/10 backdrop-blur-[1px]" onClick={() => setShowCalendarMenu(false)} />
+                  <div className="fixed right-8 top-1/2 -translate-y-1/2 z-[100] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-5 w-80 space-y-3 hidden md:block max-h-[85vh] overflow-y-auto">
                     <IntegrationsPanel gcalConnected={gcalConnected} yandexConnected={yandexConnected} todoistConnected={todoistConnected} setGcalConnected={setGcalConnected} setYandexConnected={setYandexConnected} setTodoistConnected={setTodoistConnected} setGcalEvents={setGcalEvents} setYandexEvents={setYandexEvents} syncMsg={syncMsg} setSyncMsg={setSyncMsg} t={t} />
                   </div>
                 </>
@@ -367,7 +490,7 @@ export function CalendarPage() {
       )}
 
       {/* Content */}
-      <div key={`${view}-${fmt(currentDate)}`} className="flex-1 overflow-auto relative z-10 animate-[viewSlide_0.25s_ease]">
+      <div key={`${view}-${fmt(currentDate)}`} className="flex-1 overflow-auto relative animate-[viewSlide_0.25s_ease]">
         {/* === DAY VIEW === */}
         {view === 'day' && (() => {
           const dateStr = fmt(currentDate);
@@ -381,37 +504,70 @@ export function CalendarPage() {
                 <div className="text-4xl font-bold">{currentDate.getDate()}</div>
                 <div className="text-base capitalize">{currentDate.toLocaleDateString(t('ru-RU','en-US'), { weekday: 'long', month: 'long' })}</div>
               </div>
-              {/* Events list — full width */}
+              {/* Two-column layout: meetings left, tasks right */}
               <div className="flex-1 overflow-auto px-3 md:px-6 py-3">
                 {dayGcal.length === 0 && dayTasks.length === 0 && (
                   <div className="text-center text-gray-400 py-12 text-base">{t('Нет событий','No events')}</div>
                 )}
-                <div className="space-y-2 max-w-2xl mx-auto">
-                  {dayGcal.map((ev, i) => (
-                    <div key={ev.id} className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 animate-[fadeSlideIn_0.3s_ease_both] transition-all hover:shadow-md"
-                      style={{ animationDelay: `${i * 60}ms` }}>
-                      <div className="text-base font-medium text-blue-700 dark:text-blue-300">{ev.summary}</div>
-                      <div className="text-xs text-blue-500 mt-1">Google Calendar</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl mx-auto">
+                  {/* Left: Calendar events (meetings) */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 mb-3 px-1">
+                      <span className="w-2 h-2 rounded-full bg-blue-500" />
+                      <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t('Встречи', 'Meetings')}</span>
+                      <span className="text-xs text-gray-300 dark:text-gray-600">{dayGcal.length}</span>
+                      {gcalConnected && (
+                        <button onClick={() => setShowCreateGcalEvent(true)}
+                          className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center hover:bg-blue-200 dark:hover:bg-blue-800/40 transition-colors ml-auto">
+                          <Plus size={12} />
+                        </button>
+                      )}
                     </div>
-                  ))}
-                  {dayTasks.map((tk, i) => {
-                    const proj = tk.project_id ? projectMap.get(tk.project_id) : null;
-                    return (
-                      <div key={tk.id} onClick={() => setSelected(tk)}
-                        style={{ animationDelay: `${(dayGcal.length + i) * 60}ms` }}
-                        className={`p-4 rounded-xl border cursor-pointer transition-all active:scale-[0.98] animate-[fadeSlideIn_0.3s_ease_both] hover:shadow-md ${
-                          tk.status === 'done'
-                            ? 'bg-green-50 dark:bg-green-900/15 border-green-200 dark:border-green-800/40'
-                            : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700/50 hover:border-indigo-300 dark:hover:border-indigo-600'
-                        }`}>
-                        <div className={`text-base font-medium ${tk.status === 'done' ? 'line-through text-green-700 dark:text-green-400' : 'text-gray-800 dark:text-gray-100'}`}>{tk.title}</div>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          {proj && <div className="flex items-center gap-1.5 text-xs text-gray-400"><span className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: proj.color}} />{proj.name}</div>}
-                          {tk.priority > 0 && <div className="text-xs text-gray-400">{'⭐'.repeat(Math.min(tk.priority, 5))}</div>}
-                        </div>
+                    {dayGcal.length === 0 && (
+                      <div className="text-sm text-gray-300 dark:text-gray-600 px-1">{t('Нет встреч', 'No meetings')}</div>
+                    )}
+                    {dayGcal.map((ev, i) => (
+                      <div key={ev.id} onClick={() => setEditingGcalEvent(ev)}
+                        className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 animate-[fadeSlideIn_0.3s_ease_both] transition-all hover:shadow-md cursor-pointer"
+                        style={{ animationDelay: `${i * 60}ms` }}>
+                        <div className="text-sm font-medium text-blue-700 dark:text-blue-300">{ev.summary}</div>
+                        {ev.start.dateTime && (
+                          <div className="text-xs text-blue-400 mt-1">{ev.start.dateTime.slice(11, 16)}{ev.end?.dateTime ? ` – ${ev.end.dateTime.slice(11, 16)}` : ''}</div>
+                        )}
+                        <div className="text-[10px] text-blue-400/70 mt-0.5">Google Calendar</div>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
+
+                  {/* Right: Tasks */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 mb-3 px-1">
+                      <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                      <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t('Задачи', 'Tasks')}</span>
+                      <span className="text-xs text-gray-300 dark:text-gray-600">{dayTasks.length}</span>
+                    </div>
+                    {dayTasks.length === 0 && (
+                      <div className="text-sm text-gray-300 dark:text-gray-600 px-1">{t('Нет задач', 'No tasks')}</div>
+                    )}
+                    {dayTasks.map((tk, i) => {
+                      const proj = tk.project_id ? projectMap.get(tk.project_id) : null;
+                      return (
+                        <div key={tk.id} onClick={() => setSelected(tk)}
+                          style={{ animationDelay: `${i * 60}ms` }}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all active:scale-[0.98] animate-[fadeSlideIn_0.3s_ease_both] hover:shadow-md ${
+                            tk.status === 'done'
+                              ? 'bg-green-50 dark:bg-green-900/15 border-green-200 dark:border-green-800/40'
+                              : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700/50 hover:border-indigo-300 dark:hover:border-indigo-600'
+                          }`}>
+                          <div className={`text-sm font-medium ${tk.status === 'done' ? 'line-through text-green-700 dark:text-green-400' : 'text-gray-800 dark:text-gray-100'}`}>{tk.title}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            {proj && <div className="flex items-center gap-1.5 text-xs text-gray-400"><span className="w-2 h-2 rounded-full" style={{backgroundColor: proj.color}} />{proj.name}</div>}
+                            {tk.priority > 0 && <div className="text-xs text-gray-400">{'⭐'.repeat(Math.min(tk.priority, 5))}</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
@@ -654,6 +810,26 @@ export function CalendarPage() {
             setTodoistConnected(true);
           }}
           onClose={() => setShowTodoistModal(false)}
+          t={t}
+        />
+      )}
+
+      {editingGcalEvent && (
+        <GCalEventModal
+          event={editingGcalEvent}
+          date={fmt(currentDate)}
+          onClose={() => setEditingGcalEvent(null)}
+          onSaved={refreshGcalEvents}
+          t={t}
+        />
+      )}
+
+      {showCreateGcalEvent && (
+        <GCalEventModal
+          event={null}
+          date={fmt(currentDate)}
+          onClose={() => setShowCreateGcalEvent(false)}
+          onSaved={refreshGcalEvents}
           t={t}
         />
       )}
