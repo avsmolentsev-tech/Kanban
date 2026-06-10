@@ -365,7 +365,7 @@ todoistRouter.post('/sync', async (req: AuthRequest, res: Response) => {
 
 // ── Background Sync ──
 
-const SYNC_INTERVAL = 30 * 60 * 1000; // 30 min
+const SYNC_INTERVAL = 15 * 60 * 1000; // 15 min
 
 async function backgroundSyncAll() {
   const usersWithToken = await queryAll<{ user_id: number; value: string }>(
