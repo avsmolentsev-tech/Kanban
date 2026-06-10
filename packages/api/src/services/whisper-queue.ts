@@ -144,6 +144,17 @@ export async function transcribeWithOpenAI(buffer: Buffer, filename: string): Pr
   return result.text;
 }
 
+// Plan-aware transcription: pro_max → OpenAI directly (fast), free → local queue
+export async function transcribeForUser(buffer: Buffer, filename: string, userId: number): Promise<string> {
+  const { shouldUseFastTranscription } = require('../middleware/plan');
+  const useFast = await shouldUseFastTranscription(userId);
+  if (useFast) {
+    console.log(`[whisper-queue] user ${userId} is pro_max, using OpenAI directly`);
+    return transcribeWithOpenAI(buffer, filename);
+  }
+  return queueTranscription(buffer, filename);
+}
+
 // For overflow: if queue is long, route directly to OpenAI
 export async function transcribeWithOverflow(buffer: Buffer, filename: string): Promise<string> {
   const status = getQueueStatus();
