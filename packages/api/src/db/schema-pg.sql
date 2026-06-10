@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
   role           TEXT    NOT NULL DEFAULT 'user' CHECK(role IN ('admin','user')),
   email_verified INTEGER NOT NULL DEFAULT 0,
   tg_id          TEXT    UNIQUE,
-  created_at     TEXT    NOT NULL DEFAULT NOW()
+  created_at     TEXT    NOT NULL DEFAULT NOW(),
+  plan           TEXT    NOT NULL DEFAULT 'free'
 );
 
 -- ─── Projects ────────────────────────────────────────────────────────────────
@@ -411,3 +412,7 @@ DROP TRIGGER IF EXISTS tasks_search_vector_trigger ON tasks;
 CREATE TRIGGER tasks_search_vector_trigger
   BEFORE INSERT OR UPDATE ON tasks
   FOR EACH ROW EXECUTE FUNCTION tasks_search_update();
+
+-- ─── Migrations (idempotent) ────────────────────────────────────────────────
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free';
