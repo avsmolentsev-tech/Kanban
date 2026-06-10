@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { apiGet, apiPatch } from '../api/client';
+import { apiGet, apiPatch, apiPost } from '../api/client';
 import { useAuthStore, type AuthUser } from '../store/auth.store';
 import { useLangStore } from '../store/lang.store';
-import { User, Lock, MessageCircle, Save, CheckCircle, Smartphone, Copy, Check, HelpCircle, X, Code } from 'lucide-react';
+import { User, Lock, MessageCircle, Save, CheckCircle, Smartphone, Copy, Check, HelpCircle, X, Code, Sparkles, Zap, Crown } from 'lucide-react';
 
 function getWidgetScript(key: string) {
   return `const API_KEY = '${key}';
@@ -90,6 +90,146 @@ footer.rightAlignText();
 Script.setWidget(w);
 w.presentSmall();
 Script.complete();`;
+}
+
+interface PlanData {
+  plan: 'free' | 'pro_max';
+  ai_used_today: number;
+  ai_limit: number | null;
+}
+
+function PlanSection() {
+  const { t } = useLangStore();
+  const [data, setData] = useState<PlanData | null>(null);
+  const [switching, setSwitching] = useState(false);
+
+  const load = async () => {
+    try {
+      const res = await apiGet<PlanData>('/auth/plan');
+      setData(res);
+    } catch {}
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const switchPlan = async (plan: 'free' | 'pro_max') => {
+    if (switching || data?.plan === plan) return;
+    setSwitching(true);
+    try {
+      await apiPost('/auth/plan', { plan });
+      await load();
+    } catch {} finally {
+      setSwitching(false);
+    }
+  };
+
+  if (!data) return null;
+
+  const isFree = data.plan === 'free';
+  const isProMax = data.plan === 'pro_max';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay: 0.1 }}
+      className="space-y-3"
+    >
+      {/* Section header + badge */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Crown size={14} className="text-indigo-500" />
+          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            {t('Тариф', 'Plan')}
+          </span>
+        </div>
+        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isProMax ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+          {isProMax ? 'Pro Max' : 'Free'}
+        </span>
+      </div>
+
+      {/* AI usage counter */}
+      <div className="p-3 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50">
+        <div className="flex items-center gap-2">
+          <Sparkles size={14} className="text-amber-500" />
+          <span className="text-sm text-gray-700 dark:text-gray-200">
+            {isProMax
+              ? t('AI: Безлимит', 'AI: Unlimited')
+              : `AI: ${data.ai_used_today} / ${data.ai_limit ?? 50} ${t('сообщений сегодня', 'messages today')}`}
+          </span>
+        </div>
+        {isFree && data.ai_limit && (
+          <div className="mt-2 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.min((data.ai_used_today / data.ai_limit) * 100, 100)}%` }}
+              transition={{ duration: 0.6, ease: 'easeOut' }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Plan cards */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* Free card */}
+        <motion.div
+          whileHover={{ y: -4, scale: 1.01 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+          className={`relative p-4 rounded-2xl border-2 transition-colors cursor-pointer ${isFree ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-gray-100 dark:border-gray-700/50 bg-white dark:bg-gray-800/80'}`}
+          onClick={() => switchPlan('free')}
+        >
+          {isFree && (
+            <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center">
+              <Check size={12} className="text-white" />
+            </div>
+          )}
+          <div className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-2">Free</div>
+          <ul className="space-y-1.5 text-xs text-gray-500 dark:text-gray-400 mb-3">
+            <li className="flex items-start gap-1.5">
+              <Zap size={10} className="text-gray-400 mt-0.5 flex-shrink-0" />
+              {t('50 AI-сообщений/день', '50 AI messages/day')}
+            </li>
+            <li className="flex items-start gap-1.5">
+              <Zap size={10} className="text-gray-400 mt-0.5 flex-shrink-0" />
+              {t('Локальная транскрибация', 'Local transcription')}
+            </li>
+          </ul>
+          <div className="text-sm font-bold text-gray-800 dark:text-gray-100">
+            {t('Бесплатно', 'Free')}
+          </div>
+        </motion.div>
+
+        {/* Pro Max card */}
+        <motion.div
+          whileHover={{ y: -4, scale: 1.01 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+          className={`relative p-4 rounded-2xl border-2 transition-colors cursor-pointer ${isProMax ? 'border-indigo-500 bg-gradient-to-br from-indigo-50/80 to-purple-50/80 dark:from-indigo-900/30 dark:to-purple-900/30' : 'border-gray-100 dark:border-gray-700/50 bg-white dark:bg-gray-800/80'}`}
+          onClick={() => switchPlan('pro_max')}
+        >
+          {isProMax && (
+            <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full flex items-center justify-center">
+              <Check size={12} className="text-white" />
+            </div>
+          )}
+          <div className="text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">Pro Max</div>
+          <ul className="space-y-1.5 text-xs text-gray-500 dark:text-gray-400 mb-3">
+            <li className="flex items-start gap-1.5">
+              <Sparkles size={10} className="text-indigo-400 mt-0.5 flex-shrink-0" />
+              {t('Безлимит AI', 'Unlimited AI')}
+            </li>
+            <li className="flex items-start gap-1.5">
+              <Sparkles size={10} className="text-indigo-400 mt-0.5 flex-shrink-0" />
+              {t('Быстрая транскрибация (OpenAI)', 'Fast transcription (OpenAI)')}
+            </li>
+          </ul>
+          <div className="text-sm font-bold text-gray-500 dark:text-gray-400">
+            {t('Скоро', 'Coming soon')}
+          </div>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
 }
 
 function WidgetKeySection() {
@@ -311,6 +451,9 @@ export function ProfilePage() {
 
         {/* iPhone Widget */}
         <WidgetKeySection />
+
+        {/* Plan / Тариф */}
+        <PlanSection />
 
         {/* Telegram ID */}
         <div className="p-4 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50">
