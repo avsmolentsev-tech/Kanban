@@ -64,11 +64,13 @@ export function SlidePanel({ open, onClose, title, children, expandable }: Slide
     ? 'fixed inset-0 bg-white dark:bg-gray-900 z-[55]'
     : 'fixed top-0 right-0 h-full w-full md:w-[480px] bg-white dark:bg-gray-900 shadow-xl z-[55] transition-transform duration-300';
 
-  const translateX = !fullscreen && open ? swipeX : (!fullscreen && !open ? window.innerWidth : 0);
+  if (!open) return null;
+
+  const translateX = !fullscreen ? swipeX : 0;
 
   return (
     <>
-      {open && !fullscreen && (
+      {!fullscreen && (
         <div
           className="fixed inset-0 bg-black/20 z-40 transition-opacity"
           style={{ opacity: swipeX > 0 ? Math.max(0, 1 - swipeX / 200) : 1 }}
@@ -77,7 +79,7 @@ export function SlidePanel({ open, onClose, title, children, expandable }: Slide
       )}
       <div
         className={panelClass}
-        style={!fullscreen ? { transform: `translateX(${translateX}px)`, transition: swipeX > 0 ? 'none' : 'transform 0.3s ease-out' } : undefined}
+        style={!fullscreen ? { transform: translateX ? `translateX(${translateX}px)` : undefined, transition: swipeX > 0 ? 'none' : 'transform 0.3s ease-out' } : undefined}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}

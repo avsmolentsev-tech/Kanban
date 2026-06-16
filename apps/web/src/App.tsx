@@ -146,7 +146,24 @@ export default function App() {
   // Also treat narrow screens as mobile layout
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768);
+    const onResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      // Apply body position:fixed on mobile to prevent iOS keyboard viewport push
+      // (not on desktop — it causes horizontal content shift due to scrollbar width)
+      if (mobile) {
+        document.body.style.position = 'fixed';
+        document.body.style.width = '100%';
+      } else {
+        document.body.style.position = '';
+        document.body.style.width = '';
+      }
+    };
+    // Set initial state
+    if (window.innerWidth < 768) {
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+    }
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
@@ -198,7 +215,7 @@ export default function App() {
       >
         {/* Desktop sidebar */}
         {!useMobileLayout && isAuthenticated && (
-          <nav className="w-56 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-r border-gray-200/50 dark:border-gray-700/50 flex flex-col">
+          <nav className="w-56 flex-shrink-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-r border-gray-200/50 dark:border-gray-700/50 flex flex-col">
             {/* Logo */}
             <div className="flex items-center gap-3 px-5 py-5">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">

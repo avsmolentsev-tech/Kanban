@@ -27,9 +27,10 @@ html, body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Smooth touch scrolling */
+/* Smooth touch scrolling + block Chrome back/forward swipe gesture */
 .overflow-auto {
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 /* Prevent pull-to-refresh in Telegram WebView */
@@ -45,12 +46,11 @@ html {
 body {
   height: 100%;
   overflow: hidden;
-  position: fixed;
-  width: 100%;
 }
 #root {
   height: 100%;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
 

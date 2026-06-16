@@ -20,6 +20,12 @@ export function initTelegramApp(): void {
   tg.expand();
   tg.enableClosingConfirmation();
 
+  // Apply body position:fixed only in Telegram/mobile context
+  // (prevents iOS keyboard viewport push, but causes horizontal
+  // shift on desktop due to scrollbar width interactions)
+  document.body.style.position = 'fixed';
+  document.body.style.width = '100%';
+
   // Apply Telegram theme
   const root = document.documentElement;
   if (tg.themeParams) {
