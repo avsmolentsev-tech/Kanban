@@ -39,9 +39,13 @@ router.use('/yandex-calendar', yandexCalendarRouter);
 
 // Public: serve attachment files (images in documents) without auth — filenames are random/unguessable
 router.get('/documents/attachments/file/:filename', (req, res) => {
-  const attachDir = path.join(config.vaultPath, 'Attachments');
-  const filePath = path.join(attachDir, req.params['filename']!);
-  if (!fs.existsSync(filePath)) { res.status(404).json({ success: false, error: 'File not found' }); return; }
+  const attachDir = path.resolve(config.vaultPath, 'Attachments');
+  const filename = path.basename(req.params['filename']!); // strip any ../ sequences
+  const filePath = path.join(attachDir, filename);
+  if (!filePath.startsWith(attachDir) || !fs.existsSync(filePath)) {
+    res.status(404).json({ success: false, error: 'File not found' });
+    return;
+  }
   res.sendFile(filePath);
 });
 

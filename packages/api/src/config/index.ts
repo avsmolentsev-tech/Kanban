@@ -28,5 +28,9 @@ export const config = {
 } as const;
 
 if (config.jwtSecret === 'pis-default-secret-change-me') {
+  if (config.nodeEnv === 'production') {
+    console.error('[SECURITY] FATAL: JWT_SECRET not set in production! Refusing to start.');
+    process.exit(1);
+  }
   console.warn('[SECURITY] WARNING: Using default JWT secret! Set JWT_SECRET in .env');
 }

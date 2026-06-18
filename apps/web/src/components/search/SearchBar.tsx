@@ -133,7 +133,7 @@ export function SearchBar() {
                       className="w-full text-left px-4 py-2 hover:bg-indigo-50 transition-colors flex flex-col">
                       <span className="text-sm font-medium text-gray-800">{hit.title}</span>
                       {hit.snippet && (
-                        <span className="text-xs text-gray-500 line-clamp-1" dangerouslySetInnerHTML={{ __html: hit.snippet }} />
+                        <span className="text-xs text-gray-500 line-clamp-1">{hit.snippet.replace(/<[^>]*>/g, '')}</span>
                       )}
                     </button>
                   ))}

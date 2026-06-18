@@ -8,7 +8,7 @@ export const emailWebhookRouter = Router();
 // Works with: Zapier, Make.com, n8n, or direct webhook
 emailWebhookRouter.post('/', async (req: Request, res: Response) => {
   const secret = req.query['token'] || req.headers['x-webhook-secret'];
-  if (secret !== process.env['WEBHOOK_SECRET'] && secret !== 'pis-webhook-2026') {
+  if (!process.env['WEBHOOK_SECRET'] || secret !== process.env['WEBHOOK_SECRET']) {
     res.status(403).json(fail('Invalid webhook token'));
     return;
   }
