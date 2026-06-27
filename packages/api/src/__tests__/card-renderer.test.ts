@@ -10,6 +10,7 @@ const card: DraftCard = {
   tags: ['type/meeting', 'project/roboty', 'company/keenon', 'прототип'],
   summary: 'Summary', transcript: 'x',
   sourceKind: 'voice', sourceLocalPath: null,
+  tasks: [], meetingType: 'meeting',
   awaitingEdit: false, cardMessageId: null,
 };
 

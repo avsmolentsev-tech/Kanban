@@ -105,8 +105,8 @@ export class TelegramService {
         projectId = proj?.id ?? null;
       }
       const inserted = await queryOne<{ id: number }>(
-        'INSERT INTO meetings (user_id, title, date, project_id, summary_raw, summary_structured, source_file, processed) VALUES ($1, $2, $3, $4, $5, $6, $7, 1) RETURNING id',
-        [draft.userId, draft.title, draft.date, projectId, summaryBody, JSON.stringify({ transcript: draft.transcript }), draft.sourceKind]
+        'INSERT INTO meetings (user_id, title, date, project_id, summary_raw, summary_structured, source_file, processed, meeting_type) VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8) RETURNING id',
+        [draft.userId, draft.title, draft.date, projectId, summaryBody, JSON.stringify({ transcript: draft.transcript }), draft.sourceKind, draft.meetingType || 'meeting']
       );
       const meetingId = inserted!.id;
       // Link people
@@ -135,7 +135,7 @@ export class TelegramService {
       // Async: generate pro summaries (Notes, Q&A)
       if (draft.transcript && draft.transcript.length > 200) {
         const claude = new ClaudeService();
-        claude.generateProSummaries(draft.transcript, draft.title, draft.people).then(async (summaries) => {
+        claude.generateProSummaries(draft.transcript, draft.title, draft.people, draft.meetingType || 'meeting').then(async (summaries) => {
           // Read-merge-write to avoid overwriting user edits
           const existingRow = await queryOne<{ summary_structured: string | null }>('SELECT summary_structured FROM meetings WHERE id = $1', [meetingId]);
           let merged: Record<string, unknown> = {};
@@ -295,7 +295,8 @@ export class TelegramService {
     // Pass existing project names to Claude so it picks from the list
     const existingProjects = await queryAll<{ name: string }>('SELECT name FROM projects WHERE user_id = $1 AND archived = 0', [userId]);
     const projectNames = existingProjects.map(p => p.name);
-    const typeHint = cType === 'lecture' ? 'lecture' : undefined;
+    const meetingType = (cType === 'lecture' || cType === 'interview') ? cType : 'meeting';
+    const typeHint = cType === 'lecture' ? 'lecture' : (cType === 'interview' ? 'interview' : undefined);
     const extraction: ExtractionResult = await claude.extractDraft(transcript, typeHint, projectNames);
 
     // Safety net: save raw transcript to vault inbox immediately (survives PM2 restart)
@@ -310,7 +311,7 @@ export class TelegramService {
       console.error('[draft] failed to save transcript to inbox:', e);
     }
 
-    const card = this.drafts.create(tgId, userId, extraction, sourceKind, transcript, sourceLocalPath);
+    const card = this.drafts.create(tgId, userId, extraction, sourceKind, transcript, sourceLocalPath, meetingType as any);
     // Fuzzy-match project against DB
     if (card.projectName) {
       const hint = card.projectName.toLowerCase();
@@ -426,6 +427,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 7. НЕ создавай задачи/проекты если не просят явно
 8. ДАТЫ: если пользователь упоминает дату ("5 мая", "вчера", "в прошлую пятницу", "2 недели назад") — вычисли правильную дату в YYYY-MM-DD. Сегодня = ${today}. НЕ ставь сегодняшнюю дату если пользователь явно назвал другую!
    Примеры: "встреча была 5 мая" → date="2026-05-05", "вчерашняя встреча" → date вчерашнего дня, "задача на следующий понедельник" → due_date следующего понедельника
+9. ЗАДАЧИ НА НЕДЕЛЮ: если пользователь создаёт несколько задач и говорит "на неделю" / "на эту неделю" / "задачи на неделю" / "планы на неделю" / "распредели по дням" — АВТОМАТИЧЕСКИ применяй логику из раздела ЕЖЕНЕДЕЛЬНЫЕ ЦЕЛИ: распредели задачи по дням Пн-Вс текущей недели, ставь due_date каждой задаче, status="todo". НИКОГДА не создавай задачи без due_date если пользователь упомянул неделю!
 
 🚨 ЖЕЛЕЗНОЕ ПРАВИЛО про создание сущностей:
 - Списки «Проекты», «Задачи», «Встречи», «Люди», «Цели» выше — это ПОЛНЫЙ список того, что есть у пользователя в БД прямо сейчас.
@@ -436,7 +438,7 @@ ${fullMeetingContent ? `\n\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕ
 - Принцип: если в response пишешь «создал ✅ X» — в actions ОБЯЗАТЕЛЬНО должна быть соответствующая create_* запись.
 
 ЕЖЕНЕДЕЛЬНЫЕ ЦЕЛИ:
-Когда пользователь отвечает на вопрос о целях на неделю (или сам пишет "цели на неделю: ..."):
+Когда пользователь отвечает на вопрос о целях/задачах на неделю (или сам пишет "цели на неделю: ...", "задачи на неделю", "задачи на эту неделю", "вот планы на неделю", "вот мои задачи на неделю", или просто перечисляет задачи после упоминания "неделя"):
 1. Распредели по дням Пн-Вс (не больше 1-2 задач на день, оставь Сб-Вс легче).
 2. Привяжи к проектам из списка если совпадают.
 3. Создай задачи через actions: type="create_task", title=<цель>, description="[🎯 Цель недели] <контекст>", due_date=<YYYY-MM-DD>, status="todo".
@@ -1342,12 +1344,19 @@ BHAG (Большая Дерзкая Цель на год):
       ctx.reply('🎓 Режим лекции активирован.\n\nСледующая запись будет оформлена как учебный материал:\n• Оглавление по темам\n• Тезисы и ключевые идеи\n• Определения и термины\n• Выводы\n\nОтправьте аудио или голосовое.');
     });
 
+    // /interview — next audio transcription formatted as interview
+    this.bot.command('interview', (ctx) => {
+      const tgId = ctx.from?.id ?? 0;
+      this.contentType.set(tgId, 'interview');
+      ctx.reply('🎙️ Режим интервью активирован.\n\nСледующая запись будет оформлена как интервью:\n• Профиль гостя\n• Ключевые инсайты и цитаты\n• Советы и рекомендации\n• Что применить\n\nОтправьте аудио или голосовое.');
+    });
+
     // /menu — show action menu
     this.bot.command('menu', (ctx) => {
       ctx.reply('📋 Выберите действие:', {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '🎤 Транскрибация встречи', callback_data: 'menu_meeting' }, { text: '🎓 Лекция', callback_data: 'menu_lecture' }],
+            [{ text: '🎤 Встреча', callback_data: 'menu_meeting' }, { text: '🎓 Лекция', callback_data: 'menu_lecture' }, { text: '🎙️ Интервью', callback_data: 'menu_interview' }],
             [{ text: '📋 Задачи на сегодня', callback_data: 'menu_tasks' }, { text: '🌅 Брифинг', callback_data: 'menu_brief' }],
             [{ text: '🔥 Привычки', callback_data: 'menu_habits' }, { text: '📅 Встречи', callback_data: 'menu_meetings' }],
             [{ text: '📱 Открыть приложение', url: config.webappUrl }],
@@ -1421,6 +1430,51 @@ BHAG (Большая Дерзкая Цель на год):
       const data = (ctx.callbackQuery as any).data as string;
       if (!data) { await ctx.answerCbQuery(); return; }
 
+      // Habit check-in callbacks
+      if (data.startsWith('habit_done:')) {
+        const parts = data.split(':');
+        const habitId = Number(parts[1]);
+        const date = parts[2]!;
+        const tgId = ctx.from!.id;
+        await ctx.answerCbQuery('✅');
+        try {
+          const userId = await this.resolveUserId(tgId, ctx.from?.first_name);
+          const existing = await queryOne('SELECT id FROM habit_logs WHERE habit_id = $1 AND date = $2', [habitId, date]);
+          if (!existing) {
+            await execute('INSERT INTO habit_logs (habit_id, date, completed) VALUES ($1, $2, 1)', [habitId, date]);
+          }
+          const habit = await queryOne<{ title: string; icon: string }>('SELECT title, icon FROM habits WHERE id = $1 AND user_id = $2', [habitId, userId]);
+          if (habit) {
+            // Update the button text to show it's done
+            try {
+              const msg = ctx.callbackQuery.message;
+              if (msg && 'text' in msg) {
+                const newText = msg.text.replace(`⬜ ${habit.icon} ${habit.title}`, `✅ ${habit.icon} ${habit.title}`);
+                // Remove the clicked button from keyboard
+                const keyboard = (msg as any).reply_markup?.inline_keyboard?.filter(
+                  (row: any[]) => !row.some((btn: any) => btn.callback_data === data)
+                ) || [];
+                await ctx.editMessageText(newText, {
+                  parse_mode: 'HTML',
+                  reply_markup: keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined,
+                });
+              }
+            } catch {}
+            // Check if all habits done
+            const remaining = await queryAll<{ id: number }>(
+              "SELECT h.id FROM habits h WHERE h.archived = 0 AND h.frequency = 'daily' AND h.user_id = $1 AND NOT EXISTS (SELECT 1 FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.date = $2)",
+              [userId, date]
+            );
+            if (remaining.length === 0) {
+              await ctx.reply('🎉 Все привычки на сегодня выполнены! Молодец! 💪');
+            }
+          }
+        } catch (err) {
+          console.error('[habit_done callback]', err);
+        }
+        return;
+      }
+
       // Menu button callbacks
       if (data.startsWith('menu_')) {
         const tgId = ctx.from!.id;
@@ -1429,6 +1483,10 @@ BHAG (Большая Дерзкая Цель на год):
           case 'menu_lecture':
             this.contentType.set(tgId, 'lecture');
             await ctx.reply('🎓 Режим лекции активирован. Отправьте аудио или голосовое.');
+            return;
+          case 'menu_interview':
+            this.contentType.set(tgId, 'interview');
+            await ctx.reply('🎙️ Режим интервью активирован. Отправьте аудио или голосовое.');
             return;
           case 'menu_meeting':
             this.contentType.delete(tgId); // default = meeting
@@ -1590,6 +1648,14 @@ BHAG (Большая Дерзкая Цель на год):
           console.error('[bot] applyCorrection failed:', err);
           ctx.reply(`❌ Не удалось применить коррекцию: ${err instanceof Error ? err.message : 'Unknown'}\n\nПопробуй ещё раз или нажми ОК.`);
         }
+        return;
+      }
+
+      // If lecture/interview mode was set and text is long enough — treat as transcript
+      const pendingContentType = this.contentType.get(tgId);
+      if (pendingContentType && text.length > 200) {
+        console.log(`[bot] contentType=${pendingContentType}, treating text as transcript (${text.length} chars)`);
+        await this.buildAndSendDraft(ctx, tgId, userId, 'text', text, null);
         return;
       }
 
@@ -2103,6 +2169,7 @@ BHAG (Большая Дерзкая Цель на год):
       { command: 'habits', description: '🔥 Привычки' },
       { command: 'meetings', description: '🤝 Встречи' },
       { command: 'lecture', description: '🎓 Режим лекции' },
+      { command: 'interview', description: '🎙️ Режим интервью' },
       { command: 'pro', description: '🎯 PRO-транскрибация (Whisper)' },
       { command: 'transcribe', description: '🎤 Транскрибация по ссылке' },
       { command: 'add', description: '➕ Добавить задачу' },
@@ -2154,6 +2221,16 @@ BHAG (Большая Дерзкая Цель на год):
       await this.bot.telegram.sendMessage(tgId, message, { parse_mode: 'HTML' });
     } catch (err) {
       console.error(`[telegram] notifyUser(${tgId}) failed:`, err);
+    }
+  }
+
+  /** Send notification with inline keyboard markup */
+  async notifyUserWithMarkup(tgId: string, message: string, reply_markup: Record<string, unknown>): Promise<void> {
+    if (!this.bot || !tgId) return;
+    try {
+      await this.bot.telegram.sendMessage(tgId, message, { parse_mode: 'HTML', reply_markup: reply_markup as any });
+    } catch (err) {
+      console.error(`[telegram] notifyUserWithMarkup(${tgId}) failed:`, err);
     }
   }
 

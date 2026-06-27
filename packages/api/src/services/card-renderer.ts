@@ -1,4 +1,4 @@
-import type { DraftCard, DraftType } from '@pis/shared';
+import type { DraftCard, DraftType, MeetingType } from '@pis/shared';
 
 export type DraftAction = 'ok' | 'fix' | 'cancel' | 'as-meeting' | 'as-task' | 'as-idea';
 
@@ -19,11 +19,17 @@ const TYPE_RU: Record<DraftType, string> = {
   inbox: 'заметка',
 };
 
+const MEETING_TYPE_RU: Record<MeetingType, string> = {
+  meeting: '🤝 встреча',
+  lecture: '🎓 лекция',
+  interview: '🎙️ интервью',
+};
+
 export function renderDraftCard(c: DraftCard): string {
   const lines: string[] = [
     '📝 Расшифровано.',
     '',
-    `Тип: ${TYPE_RU[c.type]}`,
+    `Тип: ${c.type === 'meeting' && c.meetingType && c.meetingType !== 'meeting' ? MEETING_TYPE_RU[c.meetingType] : TYPE_RU[c.type]}`,
     `Название: ${c.title}`,
     `Дата: ${c.date}`,
   ];

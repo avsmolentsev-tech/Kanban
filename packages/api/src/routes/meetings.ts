@@ -39,6 +39,7 @@ const UpdateSchema = z.object({
   person_ids: z.array(z.number().int()).optional(),
   sync_vault: z.boolean().optional(),
   summary_raw: z.string().optional(),
+  meeting_type: z.enum(['meeting', 'lecture', 'interview']).optional(),
 });
 
 async function attachProjects(meetings: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
@@ -483,6 +484,53 @@ meetingsRouter.post('/:id/summarize', async (req: AuthRequest, res: Response) =>
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Summarize error'));
   }
+});
+
+// Regenerate pro summaries (Notes + Q&A) with meeting type
+meetingsRouter.post('/:id/regenerate-summaries', async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params['id']);
+  const userId = getUserId(req);
+  const meeting = await queryOne<Record<string, unknown>>('SELECT * FROM meetings WHERE id = $1 AND user_id = $2', [id, userId]);
+  if (!meeting) { res.status(404).json(fail('Meeting not found')); return; }
+
+  // Get transcript from summary_structured
+  let transcript = '';
+  try {
+    const s = JSON.parse((meeting['summary_structured'] as string) || '{}');
+    transcript = s.transcript || '';
+  } catch {}
+  if (!transcript) transcript = (meeting['summary_raw'] as string) || '';
+  if (!transcript || transcript.length < 50) { res.status(400).json(fail('No transcript to summarize')); return; }
+
+  const meetingType = (req.body?.meeting_type as string) || (meeting['meeting_type'] as string) || 'meeting';
+
+  // Update meeting_type in DB
+  if (meetingType !== meeting['meeting_type']) {
+    await execute('UPDATE meetings SET meeting_type = $1 WHERE id = $2', [meetingType, id]);
+  }
+
+  // Get people
+  const peopleRows = await queryAll<{ name: string }>('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [id]);
+  const people = peopleRows.map(p => p.name);
+
+  res.json(ok({ status: 'generating', meeting_type: meetingType }));
+
+  // Async generation
+  const { ClaudeService } = require('../services/claude.service');
+  const claudeSvc = new ClaudeService();
+  claudeSvc.generateProSummaries(transcript, meeting['title'] as string, people, meetingType).then(async (summaries: { notes: string; qa: string; actions?: string }) => {
+    const existingRow = await queryOne<{ summary_structured: string | null }>('SELECT summary_structured FROM meetings WHERE id = $1', [id]);
+    let merged: Record<string, unknown> = {};
+    try { merged = JSON.parse(existingRow?.summary_structured || '{}'); } catch {}
+    merged = { ...merged, ...summaries };
+    await execute(
+      'UPDATE meetings SET summary_raw = $1, summary_structured = $2, updated_at = NOW() WHERE id = $3',
+      [summaries.notes || meeting['summary_raw'], JSON.stringify(merged), id]
+    );
+    console.log(`[regenerate] pro summaries generated for meeting #${id} (type=${meetingType})`);
+  }).catch((err: Error) => {
+    console.error(`[regenerate] failed for meeting #${id}:`, err.message);
+  });
 });
 
 // Download meeting file (summary or full) as md/pdf/docx

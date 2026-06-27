@@ -42,6 +42,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
   const [allPeople, setAllPeople] = useState<Array<{ id: number; name: string }>>([]);
   const [meetingPersonIds, setMeetingPersonIds] = useState<number[]>([]);
   const [peopleSearch, setPeopleSearch] = useState('');
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     if (meeting) {
@@ -321,6 +322,56 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                         </button>
                       ))}
                   </div>
+                )}
+              </div>
+
+              {/* Meeting type selector */}
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">{t('Тип записи', 'Recording type')}</div>
+                <div className="flex gap-2">
+                  {([
+                    { value: 'meeting', label: '🤝 ' + t('Встреча', 'Meeting') },
+                    { value: 'lecture', label: '🎓 ' + t('Лекция', 'Lecture') },
+                    { value: 'interview', label: '🎙️ ' + t('Интервью', 'Interview') },
+                  ] as const).map(({ value, label }) => {
+                    const active = (form.meeting_type || 'meeting') === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => {
+                          handleChange('meeting_type', value);
+                          if (meeting) save('meeting_type', value);
+                        }}
+                        className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                          active
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {(form.meeting_type && form.meeting_type !== 'meeting') && (
+                  <button
+                    onClick={async () => {
+                      if (!meeting) return;
+                      setRegenerating(true);
+                      try {
+                        await apiPost(`/meetings/${meeting.id}/regenerate-summaries`, { meeting_type: form.meeting_type });
+                        setTimeout(() => { onUpdated(); setRegenerating(false); }, 3000);
+                      } catch { setRegenerating(false); }
+                    }}
+                    disabled={regenerating}
+                    className="mt-2 w-full py-2 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    {regenerating
+                      ? t('⏳ Генерирую...', '⏳ Generating...')
+                      : t('🔄 Пересоздать Notes и Q&A в формате ' + (form.meeting_type === 'lecture' ? 'лекции' : 'интервью'),
+                          '🔄 Regenerate Notes & Q&A as ' + form.meeting_type)}
+                  </button>
                 )}
               </div>
 

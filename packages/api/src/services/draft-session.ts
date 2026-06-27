@@ -1,4 +1,4 @@
-import type { DraftCard, ExtractionResult } from '@pis/shared';
+import type { DraftCard, ExtractionResult, MeetingType } from '@pis/shared';
 import { randomUUID } from 'node:crypto';
 
 export interface DraftSessionOpts {
@@ -19,6 +19,7 @@ export class DraftSession {
     sourceKind: DraftCard['sourceKind'],
     transcript: string,
     sourceLocalPath: string | null,
+    meetingType: MeetingType = 'meeting',
   ): DraftCard {
     const existing = this.drafts.get(tgId);
     if (existing) {
@@ -45,6 +46,7 @@ export class DraftSession {
       sourceKind,
       sourceLocalPath,
       tasks: extraction.tasks ?? [],
+      meetingType,
       awaitingEdit: false,
       cardMessageId: null,
     };

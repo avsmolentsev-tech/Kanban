@@ -1,4 +1,5 @@
 export type DraftType = 'meeting' | 'task' | 'idea' | 'inbox';
+export type MeetingType = 'meeting' | 'lecture' | 'interview';
 
 export interface ExtractionResult {
   detected_type: DraftType;
@@ -33,5 +34,6 @@ export interface DraftCard {
   sourceLocalPath: string | null;
   tasks: string[];              // extracted task titles from meeting
   awaitingEdit: boolean;
+  meetingType: MeetingType;     // meeting / lecture / interview
   cardMessageId: number | null; // TG message id of the rendered card
 }

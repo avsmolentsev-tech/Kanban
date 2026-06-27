@@ -10,6 +10,7 @@ let lastMorningBrief = '';
 let lastWeeklyReport = '';
 let lastDailyDigest = '';
 let lastDeadlineCheck = '';
+let lastHabitCheckin = '';
 
 interface UserCtx {
   id: number;
@@ -29,6 +30,7 @@ export function startNotificationScheduler(): void {
     checkWeeklyReport();
     checkDailyDigest();
     checkHabitReminders();
+    checkHabitCheckin();
     checkUpcomingDeadlines();
     checkWeeklyGoalPrompt();
     checkDailyGoalReminder();
@@ -119,6 +121,15 @@ async function checkMorningBrief(): Promise<void> {
     }
     if (tasks.length > 0) {
       msg += `🔄 В работе:\n${tasks.map(t => `  • ${t.title} ${'⭐'.repeat(t.priority)}`).join('\n')}`;
+    }
+
+    // Habits for today
+    const habits = await queryAll<{ id: number; title: string; icon: string }>(
+      "SELECT id, title, icon FROM habits WHERE archived = 0 AND frequency = 'daily' AND user_id = $1",
+      [user.id]
+    );
+    if (habits.length > 0) {
+      msg += `\n\n🔥 Привычки на сегодня (${habits.length}):\n${habits.map(h => `  • ${h.icon} ${h.title}`).join('\n')}`;
     }
 
     // Focus of the day
@@ -275,10 +286,11 @@ async function checkDailyDigest(): Promise<void> {
 async function checkHabitReminders(): Promise<void> {
   try {
     const now = moscowNow();
-    const hour = now.getUTCHours();
-    const minute = now.getUTCMinutes();
+    const mskHour = now.getUTCHours();
+    const mskMinute = now.getUTCMinutes();
     const today = moscowDateString();
-    const currentTime = `${String(hour).padStart(2, '0')}:${String(minute < 30 ? '00' : '30')}`;
+    // Current time in minutes since midnight (MSK)
+    const nowMinutes = mskHour * 60 + mskMinute;
 
     for (const user of await getUsers()) {
       const habits = await queryAll<{ id: number; title: string; icon: string; remind_time: string }>(
@@ -287,7 +299,12 @@ async function checkHabitReminders(): Promise<void> {
       );
 
       for (const h of habits) {
-        if (h.remind_time !== currentTime) continue;
+        // Parse remind_time "HH:MM" → minutes since midnight
+        const [rh, rm] = h.remind_time.split(':').map(Number);
+        if (rh == null || rm == null) continue;
+        const reminderMinutes = rh * 60 + rm;
+        // Match within ±8 minutes window (scheduler runs every 15 min)
+        if (Math.abs(nowMinutes - reminderMinutes) > 8) continue;
         const log = await queryOne(
           "SELECT id FROM habit_logs WHERE habit_id = $1 AND date = $2",
           [h.id, today]
@@ -297,6 +314,57 @@ async function checkHabitReminders(): Promise<void> {
       }
     }
   } catch {}
+}
+
+async function checkHabitCheckin(): Promise<void> {
+  const now = moscowNow();
+  const mskHour = now.getUTCHours();
+  const today = moscowDateString();
+  // Send at 20:00 MSK, once per day
+  if (mskHour !== 20) return;
+  if (lastHabitCheckin === today) return;
+  lastHabitCheckin = today;
+
+  for (const user of await getUsers()) {
+    try {
+      const habits = await queryAll<{ id: number; title: string; icon: string }>(
+        "SELECT id, title, icon FROM habits WHERE archived = 0 AND frequency = 'daily' AND user_id = $1",
+        [user.id]
+      );
+      if (habits.length === 0) continue;
+
+      // Find which ones are NOT completed today
+      const uncompleted: typeof habits = [];
+      const completed: typeof habits = [];
+      for (const h of habits) {
+        const log = await queryOne('SELECT id FROM habit_logs WHERE habit_id = $1 AND date = $2', [h.id, today]);
+        if (log) completed.push(h);
+        else uncompleted.push(h);
+      }
+
+      if (uncompleted.length === 0) {
+        telegramService.notifyUser(user.tg_id, `🎉 Все ${habits.length} привычек выполнены сегодня! Отличная работа 💪`);
+        continue;
+      }
+
+      let msg = `🔥 <b>Привычки — вечерний чек-ин</b>\n\n`;
+      if (completed.length > 0) {
+        msg += `✅ Выполнено (${completed.length}):\n${completed.map(h => `  ${h.icon} ${h.title}`).join('\n')}\n\n`;
+      }
+      msg += `⬜ Не отмечено (${uncompleted.length}):\n${uncompleted.map(h => `  ${h.icon} ${h.title}`).join('\n')}\n\n`;
+      msg += `Нажми кнопку чтобы отметить:`;
+
+      // Send with inline buttons for each uncompleted habit
+      const buttons = uncompleted.map(h => ([{
+        text: `✅ ${h.icon} ${h.title}`,
+        callback_data: `habit_done:${h.id}:${today}`,
+      }]));
+
+      telegramService.notifyUserWithMarkup(user.tg_id, msg, { inline_keyboard: buttons });
+    } catch (err) {
+      console.warn(`[notifications] habit checkin failed for user ${user.id}:`, err);
+    }
+  }
 }
 
 async function checkUpcomingDeadlines(): Promise<void> {

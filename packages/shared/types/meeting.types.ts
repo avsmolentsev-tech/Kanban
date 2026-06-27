@@ -8,6 +8,7 @@ export interface Meeting {
   vault_path: string | null;
   source_file: string | null;
   processed: boolean;
+  meeting_type: 'meeting' | 'lecture' | 'interview';
   created_at: string;
 }
 

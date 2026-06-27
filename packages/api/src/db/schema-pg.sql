@@ -96,8 +96,15 @@ CREATE TABLE IF NOT EXISTS meetings (
   processing_status  TEXT,
   processing_error   TEXT,
   goal_id            INTEGER,
+  meeting_type       TEXT    NOT NULL DEFAULT 'meeting',
   user_id            INTEGER REFERENCES users(id)
 );
+
+-- Migration: add meeting_type if missing
+DO $$ BEGIN
+  ALTER TABLE meetings ADD COLUMN meeting_type TEXT NOT NULL DEFAULT 'meeting';
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
 
 -- ─── Agreements ──────────────────────────────────────────────────────────────
 
