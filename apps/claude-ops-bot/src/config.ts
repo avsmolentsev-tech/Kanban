@@ -5,9 +5,14 @@ export interface OpsConfig {
   telegramToken: string;
   allowedTgId: number;
   stateDir: string;
+  dbPath: string;
   sessionTimeoutMs: number;
   defaultModel: 'sonnet' | 'opus';
   claudeBin: string;
+  maxConcurrentTasks: number;
+  fastifyPort: number;
+  verifyCommand: string;
+  miniappUrl: string;
 }
 
 export function loadConfig(): OpsConfig {
@@ -30,8 +35,13 @@ export function loadConfig(): OpsConfig {
     telegramToken: token,
     allowedTgId: id,
     stateDir,
+    dbPath: process.env.DB_PATH ?? path.join(stateDir, 'forge.db'),
     sessionTimeoutMs: timeoutMin * 60_000,
     defaultModel: model,
     claudeBin: process.env.CLAUDE_BIN ?? 'claude',
+    maxConcurrentTasks: Number(process.env.MAX_CONCURRENT_TASKS ?? 3),
+    fastifyPort: Number(process.env.FASTIFY_PORT ?? 8787),
+    verifyCommand: process.env.VERIFY_COMMAND ?? 'npm run verify',
+    miniappUrl: process.env.MINIAPP_URL ?? 'https://forge.myaipro.ru',
   };
 }
