@@ -11,7 +11,7 @@ import { ClaudeRunner } from './claude-runner.js';
 import { chunkForTelegram } from './tg-format.js';
 import { transcribe } from './whisper.js';
 import { createTask, updateTask, getTask, getActiveTasks, addEvent } from './db.js';
-import { TaskManager, createWorktree, getWorktreeDiffStat, type TaskState } from './task-manager.js';
+import { TaskManager, createWorktree, removeWorktree, getWorktreeDiffStat, type TaskState } from './task-manager.js';
 import { projectKeyboard, modelKeyboard, planGateKeyboard, doneKeyboard, failedKeyboard, workingKeyboard, activeTasksKeyboard } from './keyboards.js';
 import { formatReport, formatFailed, formatPlan } from './report.js';
 import { runVerify, formatVerifyResult } from './verify.js';
@@ -522,6 +522,38 @@ export async function startBot(cfg: OpsConfig, db: Database.Database): Promise<v
       updateTask(db, taskId, { test_result: formatVerifyResult(verify) });
 
       if (verify.passed) {
+        // Auto-merge worktree back into main project
+        if (task.worktree_path && task.branch) {
+          try {
+            const project = resolver.get(task.project_name)!;
+            const { spawn } = await import('node:child_process');
+            // Commit any uncommitted changes in worktree
+            await new Promise<void>((resolve) => {
+              const p = spawn('git', ['add', '-A'], { cwd: task.worktree_path! });
+              p.on('close', () => resolve());
+            });
+            await new Promise<void>((resolve) => {
+              const p = spawn('git', ['diff', '--cached', '--quiet'], { cwd: task.worktree_path! });
+              p.on('close', (code) => {
+                if (code !== 0) {
+                  const c = spawn('git', ['commit', '-m', 'forge: task #' + taskId], { cwd: task.worktree_path! });
+                  c.on('close', () => resolve());
+                } else { resolve(); }
+              });
+            });
+            // Merge worktree branch into main branch
+            await new Promise<void>((resolve, reject) => {
+              const p = spawn('git', ['merge', task.branch!, '--no-edit'], { cwd: project.path });
+              let stderr = '';
+              p.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+              p.on('close', (code) => code === 0 ? resolve() : reject(new Error(stderr.slice(0, 200))));
+            });
+            // Clean up worktree
+            await removeWorktree(project.path, task.worktree_path, task.branch!).catch(() => {});
+          } catch (mergeErr) {
+            await ctx.reply('\u26a0\ufe0f \u041c\u0435\u0440\u0436 \u043d\u0435 \u0443\u0434\u0430\u043b\u0441\u044f: ' + (mergeErr instanceof Error ? mergeErr.message : String(mergeErr)));
+          }
+        }
         taskMgr.transition(taskId, 'DONE');
         const report = formatReport(getTask(db, taskId)!);
         for (const chunk of chunkForTelegram(report)) {
