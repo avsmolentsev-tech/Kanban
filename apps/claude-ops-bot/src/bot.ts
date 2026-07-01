@@ -276,20 +276,13 @@ export async function startBot(cfg: OpsConfig, db: Database.Database): Promise<v
       try {
         const { spawn } = await import('node:child_process');
         await fs.mkdirp(projectPath);
-        // git init + initial commit
-        const run = (cmd: string, args: string[]) => new Promise<void>((resolve, reject) => {
-          const p = spawn(cmd, args, { cwd: projectPath, stdio: ['ignore', 'pipe', 'pipe'] });
-          let stderr = '';
-          p.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
-          p.on('close', (code) => code === 0 ? resolve() : reject(new Error(cmd + ' ' + args.join(' ') + ' failed: ' + stderr.slice(0, 200))));
+        // git init
+        await new Promise<void>((resolve, reject) => {
+          const p = spawn('git', ['init'], { cwd: projectPath });
+          p.on('close', (code) => code === 0 ? resolve() : reject(new Error('git init failed')));
         });
-        await run('git', ['init']);
-        await run('git', ['commit', '--allow-empty', '-m', 'init']);
-        // Create private repo on GitHub
-        await ctx.reply('\ud83d\udce1 \u0421\u043e\u0437\u0434\u0430\u044e \u0440\u0435\u043f\u043e\u0437\u0438\u0442\u043e\u0440\u0438\u0439 \u043d\u0430 GitHub...');
-        await run('gh', ['repo', 'create', name, '--private', '--source', '.', '--push']);
         const t = await resolver.addRepo(projectPath, name);
-        return ctx.reply('\u2705 ' + t.name + ' \u2014 \u043f\u0440\u043e\u0435\u043a\u0442 \u0441\u043e\u0437\u0434\u0430\u043d \u0438 \u043f\u0440\u0438\u0432\u044f\u0437\u0430\u043d \u043a GitHub');
+        return ctx.reply('\u2705 ' + t.name + ' \u0441\u043e\u0437\u0434\u0430\u043d \u0432 ' + projectPath);
       } catch (err) {
         return ctx.reply('\u274c ' + (err instanceof Error ? err.message : String(err)));
       }
