@@ -43,7 +43,7 @@ export function ChatTab() {
   };
 
   return (
-    <div className="flex flex-col" style={{ height: "calc(var(--tg-viewport-stable-height, 100dvh) - 120px)" }}>
+    <div className="flex flex-col h-full">
       {/* Header with project selector */}
       <div className="p-3 border-b border-white/10 flex items-center gap-2">
         <select

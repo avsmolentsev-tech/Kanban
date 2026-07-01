@@ -46,7 +46,7 @@ export default function App() {
 
   return (
     <div className="bg-[#0a0e1a] text-white flex flex-col overflow-hidden" style={{ height: "var(--tg-viewport-stable-height, 100dvh)" }}>
-      <header className="sticky top-0 z-50 glass-surface border-b border-white/5 px-4 py-3 flex items-center justify-between">
+      <header className="shrink-0 z-50 glass-surface border-b border-white/5 px-4 py-3 flex items-center justify-between">
         <h1 className="text-xl font-bold gradient-text tracking-tight">Forge</h1>
         <button
           onClick={() => navigate({ type: "settings" })}
@@ -59,7 +59,7 @@ export default function App() {
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto overscroll-contain" style={{ minHeight: 0, paddingBottom: "5rem" }}>
+      <main className="flex-1 overflow-y-auto overscroll-contain" style={{ minHeight: 0 }}>
         <div className="animate-fade-in" key={page.type + ("taskId" in page ? page.taskId : "") + ("name" in page ? page.name : "")}>
           {page.type === "projects" && <ProjectsTab onSelect={(name) => navigate({ type: "project-detail", name })} />}
           {page.type === "project-detail" && (
@@ -93,7 +93,7 @@ export default function App() {
       </main>
 
       {showTabBar && (
-        <nav className="fixed bottom-0 left-0 right-0 z-50 glass-surface border-t border-white/5">
+        <nav className="shrink-0 glass-surface border-t border-white/5">
           <div className="flex justify-around items-center h-16 max-w-lg mx-auto">
             <button onClick={() => navigate({ type: "projects" })} className="flex-1 flex justify-center py-2">
               <TabIcon active={activeTab === "projects"}>
