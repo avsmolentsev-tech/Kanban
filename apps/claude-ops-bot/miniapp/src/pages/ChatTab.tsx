@@ -82,7 +82,7 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
           id: Date.now() + 1,
           project_name: null,
           role: "assistant" as const,
-          content: "\u041e\u0448\u0438\u0431\u043a\u0430: " + (err?.message || "\u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u0435"),
+          content: "Ошибка: " + (err?.message || "соединение"),
           created_at: new Date().toISOString(),
         },
       ]);
@@ -98,9 +98,9 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
   return (
     <div className="flex flex-col h-full">
       {/* Sticky project pills */}
-      <div className="shrink-0 border-b border-white/10">
+      <div className="shrink-0 border-b border-white/10 bg-black/20">
         <div className="flex items-center gap-2 px-3 py-2">
-          <div className="flex-1 flex gap-1.5 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: "none" }}>
+          <div className="flex-1 flex gap-1.5 overflow-x-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             {projects.map((p) => (
               <button
                 key={p.name}
@@ -114,7 +114,7 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
               </button>
             ))}
           </div>
-          <button onClick={handleClear} className="shrink-0 text-[10px] text-gray-600 px-1">\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c</button>
+          <button onClick={handleClear} className="shrink-0 text-[10px] text-gray-600 px-1">Очистить</button>
         </div>
       </div>
 
@@ -122,8 +122,8 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
       <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-3" style={{ minHeight: 0 }}>
         {messages.length === 0 && (
           <div className="text-center text-gray-600 mt-8">
-            <div className="text-3xl mb-2">\u26a1</div>
-            <div className="text-sm">\u041d\u0430\u0447\u043d\u0438 \u0434\u0438\u0430\u043b\u043e\u0433 \u0441 Claude</div>
+            <div className="text-3xl mb-2">⚡</div>
+            <div className="text-sm">Начни диалог с Claude</div>
           </div>
         )}
         {messages.map((msg) => (
@@ -139,9 +139,9 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
         {sending && (
           <div className="flex justify-start">
             <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-gray-400 flex gap-1">
-              <span className="animate-pulse">\u25cf</span>
-              <span className="animate-pulse" style={{ animationDelay: "0.2s" }}>\u25cf</span>
-              <span className="animate-pulse" style={{ animationDelay: "0.4s" }}>\u25cf</span>
+              <span className="animate-pulse">●</span>
+              <span className="animate-pulse" style={{ animationDelay: "0.2s" }}>●</span>
+              <span className="animate-pulse" style={{ animationDelay: "0.4s" }}>●</span>
             </div>
           </div>
         )}
@@ -151,8 +151,8 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
       {/* Attached file preview */}
       {attachedFile && (
         <div className="shrink-0 px-3 py-1.5 border-t border-white/10 flex items-center gap-2 bg-white/5">
-          <span className="text-xs text-cyan-400 truncate flex-1">\ud83d\udcce {attachedFile.name}</span>
-          <button onClick={() => setAttachedFile(null)} className="text-gray-500 text-xs">\u2715</button>
+          <span className="text-xs text-cyan-400 truncate flex-1">📎 {attachedFile.name}</span>
+          <button onClick={() => setAttachedFile(null)} className="text-gray-500 text-xs">✕</button>
         </div>
       )}
 
@@ -161,13 +161,13 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
         <div className="flex gap-2 items-end">
           <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0]); e.target.value = ""; }} />
           <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0]); e.target.value = ""; }} />
-          <button onClick={() => fileInputRef.current?.click()} className="shrink-0 w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-500 hover:text-gray-300 transition">\ud83d\udcce</button>
-          <button onClick={() => cameraInputRef.current?.click()} className="shrink-0 w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-500 hover:text-gray-300 transition">\ud83d\udcf7</button>
+          <button onClick={() => fileInputRef.current?.click()} className="shrink-0 w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-500 hover:text-gray-300 transition">📎</button>
+          <button onClick={() => cameraInputRef.current?.click()} className="shrink-0 w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-500 hover:text-gray-300 transition">📷</button>
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder="\u0421\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435..."
+            placeholder="Сообщение..."
             className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500/30"
           />
           <button
@@ -175,7 +175,7 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
             disabled={sending || (!input.trim() && !attachedFile)}
             className="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-center text-black font-bold disabled:opacity-30 transition"
           >
-            \u25b6
+            ▶
           </button>
         </div>
       </div>
