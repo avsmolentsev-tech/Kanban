@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import type Database from 'better-sqlite3';
 import type { OpsConfig } from './config.js';
 import { getTask, getRecentTasks, getEvents, createTask, addChatMessage, getChatHistory, clearChatHistory } from './db.js';
@@ -12,6 +13,7 @@ export async function startApi(cfg: OpsConfig, db: Database.Database): Promise<v
   const app = Fastify({ logger: false });
 
   await app.register(cors, { origin: cfg.miniappUrl });
+  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
 
   // Auth temporarily relaxed - allow requests without initData for MiniApp testing
   app.addHook("onRequest", async (request, reply) => {
@@ -103,6 +105,26 @@ export async function startApi(cfg: OpsConfig, db: Database.Database): Promise<v
     if (!existsSync(filePath)) return reply.code(404).send({ error: 'File not found' });
     const content = readFileSync(filePath, 'utf-8');
     return { content, path: (request.query as any).path };
+  });
+
+  // Upload file to project directory
+  app.post<{ Params: { project: string } }>('/api/upload/:project', async (request, reply) => {
+    const resolver = new ProjectResolver(path.join(cfg.stateDir, 'repos.json'));
+    await resolver.load();
+    const project = resolver.get(request.params.project);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+    const data = await request.file();
+    if (!data) return reply.code(400).send({ error: 'No file' });
+    const fs = await import('node:fs');
+    const pathMod = await import('node:path');
+    const uploadsDir = pathMod.default.join(project.path, 'uploads');
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    const filename = Date.now() + '-' + (data.filename || 'file');
+    const filepath = pathMod.default.join(uploadsDir, filename);
+    const writeStream = fs.createWriteStream(filepath);
+    await data.file.pipe(writeStream);
+    await new Promise<void>(resolve => writeStream.on('finish', resolve));
+    return { path: filepath, filename };
   });
 
   // Create task from MiniApp

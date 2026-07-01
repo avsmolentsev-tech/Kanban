@@ -45,7 +45,10 @@ export default function App() {
   const showTabBar = ["projects", "tasks", "chat"].includes(page.type);
 
   return (
-    <div className="bg-[#0a0e1a] text-white flex flex-col overflow-hidden" style={{ height: "var(--tg-viewport-stable-height, 100dvh)" }}>
+    <div
+      className="bg-[#0a0e1a] text-white flex flex-col overflow-hidden"
+      style={{ height: "100dvh", maxHeight: "-webkit-fill-available" } as React.CSSProperties}
+    >
       <header className="shrink-0 z-50 glass-surface border-b border-white/5 px-4 py-3 flex items-center justify-between">
         <h1 className="text-xl font-bold gradient-text tracking-tight">Forge</h1>
         <button
@@ -97,20 +100,20 @@ export default function App() {
           <div className="flex justify-around items-center h-16 max-w-lg mx-auto">
             <button onClick={() => navigate({ type: "projects" })} className="flex-1 flex justify-center py-2">
               <TabIcon active={activeTab === "projects"}>
-                <span className="text-lg">{"📁"}</span>
-                <span className="text-[10px] font-medium">{"Проекты"}</span>
+                <span className="text-lg">{"\ud83d\udcc1"}</span>
+                <span className="text-[10px] font-medium">{"\u041f\u0440\u043e\u0435\u043a\u0442\u044b"}</span>
               </TabIcon>
             </button>
             <button onClick={() => navigate({ type: "tasks" })} className="flex-1 flex justify-center py-2">
               <TabIcon active={activeTab === "tasks"}>
-                <span className="text-lg">{"💬"}</span>
-                <span className="text-[10px] font-medium">{"Задачи"}</span>
+                <span className="text-lg">{"\ud83d\udcac"}</span>
+                <span className="text-[10px] font-medium">{"\u0417\u0430\u0434\u0430\u0447\u0438"}</span>
               </TabIcon>
             </button>
             <button onClick={() => navigate({ type: "chat" })} className="flex-1 flex justify-center py-2">
               <TabIcon active={activeTab === "chat"}>
-                <span className="text-lg">{"⚡"}</span>
-                <span className="text-[10px] font-medium">{"Чат"}</span>
+                <span className="text-lg">{"\u26a1"}</span>
+                <span className="text-[10px] font-medium">{"\u0427\u0430\u0442"}</span>
               </TabIcon>
             </button>
           </div>
