@@ -136,7 +136,7 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-3" style={{ minHeight: 0 }}>
+      <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-4 space-y-3" style={{ minHeight: 0 }}>
         {messages.length === 0 && (
           <div className="text-center text-gray-600 mt-8">
             <div className="text-3xl mb-2">{"\u26a1"}</div>
@@ -145,7 +145,7 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
         )}
         {messages.map((msg) => (
           <div key={msg.id} className={"flex " + (msg.role === "user" ? "justify-end" : "justify-start")}>
-            <div className={"max-w-[85%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap break-words " +
+            <div className={"max-w-[80%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap break-words " +
               (msg.role === "user"
                 ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/20 text-white"
                 : "bg-white/5 border border-white/10 text-gray-300")}>
