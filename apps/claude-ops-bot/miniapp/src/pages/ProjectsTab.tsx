@@ -7,23 +7,21 @@ export function ProjectsTab({ onSelect }: { onSelect: (name: string) => void }) 
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    api.projects().then(setProjects).catch(() => {}).finally(() => setLoading(false));
+    api.projects()
+      .then(data => setProjects(data.filter(p => !p.hidden)))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  const visibleProjects = useMemo(
-    () => projects.filter(p => !p.hidden),
-    [projects]
-  );
-
   const filtered = useMemo(
-    () => visibleProjects.filter(p => p.name.toLowerCase().includes(search.toLowerCase())),
-    [visibleProjects, search]
+    () => projects.filter(p => p.name.toLowerCase().includes(search.toLowerCase())),
+    [projects, search]
   );
 
   const handleHide = async (e: React.MouseEvent, name: string) => {
     e.stopPropagation();
     await api.toggleProject(name, true);
-    setProjects(prev => prev.map(p => p.name === name ? { ...p, hidden: true } : p));
+    setProjects(prev => prev.filter(p => p.name !== name));
   };
 
   if (loading) return (
