@@ -1,116 +1,110 @@
-import { useEffect, useState } from "react";
-import { api, type Project } from "../lib/api";
+import { useState, useEffect, useRef } from 'react';
+import { api, type ChatMessage, type Project } from '../lib/api';
 
-export function ChatTab({ preselectedProject, onTaskCreated }: { preselectedProject?: string; onTaskCreated: (id: number) => void }) {
+export function ChatTab() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState(preselectedProject || "");
-  const [model, setModel] = useState<"sonnet" | "opus">("sonnet");
-  const [prompt, setPrompt] = useState("");
+  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState<{ id: number } | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api.projects().then(p => {
-      setProjects(p);
-      if (!selectedProject && p.length > 0) setSelectedProject(p[0].name);
-    }).catch(() => {});
+    api.chatHistory().then(setMessages).catch(() => {});
+    api.projects().then((p) => { setProjects(p); if (p.length > 0) setSelectedProject(p[0].name); });
   }, []);
 
-  const handleSend = async () => {
-    if (!selectedProject || !prompt.trim() || sending) return;
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const send = async () => {
+    if (!input.trim() || sending) return;
+    const text = input.trim();
+    setInput('');
+
+    // Optimistically add user message
+    const userMsg: ChatMessage = { id: Date.now(), project_name: selectedProject, role: 'user', content: text, created_at: new Date().toISOString() };
+    setMessages(prev => [...prev, userMsg]);
+
     setSending(true);
     try {
-      const task = await api.createTask(selectedProject, prompt.trim(), model);
-      setSent(task);
-      setPrompt("");
-    } catch {
-      alert("\u041E\u0448\u0438\u0431\u043A\u0430 \u043F\u0440\u0438 \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u0438 \u0437\u0430\u0434\u0430\u0447\u0438");
+      const response = await api.sendChat(text, selectedProject || undefined);
+      setMessages(prev => [...prev, { ...response, id: Date.now() + 1, created_at: new Date().toISOString() }]);
+    } catch (e) {
+      setMessages(prev => [...prev, { id: Date.now() + 1, project_name: null, role: 'assistant', content: '\u041e\u0448\u0438\u0431\u043a\u0430 \u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u044f', created_at: new Date().toISOString() }]);
     }
     setSending(false);
   };
 
-  if (sent) return (
-    <div className="p-4 flex flex-col items-center justify-center py-20 animate-fade-in">
-      <div className="text-5xl mb-4">{"\u2705"}</div>
-      <h2 className="text-lg font-bold mb-2">{"\u0417\u0430\u0434\u0430\u0447\u0430"} #{sent.id} {"\u0441\u043E\u0437\u0434\u0430\u043D\u0430"}</h2>
-      <p className="text-gray-500 text-sm mb-6">{"\u041E\u043D\u0430 \u0441\u043A\u043E\u0440\u043E \u043D\u0430\u0447\u043D\u0451\u0442 \u0432\u044B\u043F\u043E\u043B\u043D\u044F\u0442\u044C\u0441\u044F"}</p>
-      <div className="flex gap-3">
-        <button
-          onClick={() => onTaskCreated(sent.id)}
-          className="px-6 py-2.5 rounded-xl gradient-cyan text-black font-semibold text-sm active:scale-95 transition-transform"
-        >
-          {"\u041E\u0442\u043A\u0440\u044B\u0442\u044C"}
-        </button>
-        <button
-          onClick={() => setSent(null)}
-          className="px-6 py-2.5 rounded-xl bg-white/5 text-gray-300 font-medium text-sm active:scale-95 transition-transform"
-        >
-          {"\u0415\u0449\u0451"}
-        </button>
-      </div>
-    </div>
-  );
+  const handleClear = async () => {
+    await api.clearChat();
+    setMessages([]);
+  };
 
   return (
-    <div className="p-4 flex flex-col h-[calc(100vh-8rem)] animate-fade-in">
-      <h2 className="text-lg font-bold mb-4">{"\u26A1 \u041D\u043E\u0432\u0430\u044F \u0437\u0430\u0434\u0430\u0447\u0430"}</h2>
-
-      {/* Project selector */}
-      <div className="mb-3">
-        <label className="text-xs text-gray-500 uppercase tracking-wider mb-1.5 block">{"\u041F\u0440\u043E\u0435\u043A\u0442"}</label>
-        <div className="glass-card overflow-hidden">
-          <select
-            value={selectedProject}
-            onChange={e => setSelectedProject(e.target.value)}
-            className="w-full bg-transparent text-white text-sm p-3 outline-none appearance-none cursor-pointer"
-          >
-            {projects.map(p => <option key={p.name} value={p.name} className="bg-[#0d1423]">{p.name}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {/* Model toggle */}
-      <div className="mb-4">
-        <label className="text-xs text-gray-500 uppercase tracking-wider mb-1.5 block">{"\u041C\u043E\u0434\u0435\u043B\u044C"}</label>
-        <div className="glass-card flex p-1 gap-1">
-          {(["sonnet", "opus"] as const).map(m => (
-            <button
-              key={m}
-              onClick={() => setModel(m)}
-              className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${
-                model === m ? "gradient-cyan text-black" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              {m === "sonnet" ? "\u2728 Sonnet" : "\u{1F48E} Opus"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Prompt textarea */}
-      <div className="flex-1 mb-4">
-        <label className="text-xs text-gray-500 uppercase tracking-wider mb-1.5 block">{"\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438"}</label>
-        <textarea
-          value={prompt}
-          onChange={e => setPrompt(e.target.value)}
-          placeholder={"\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0447\u0442\u043E \u043D\u0443\u0436\u043D\u043E \u0441\u0434\u0435\u043B\u0430\u0442\u044C..."}
-          className="w-full h-full min-h-[120px] bg-transparent text-sm text-white placeholder-gray-600 resize-none outline-none p-4 glass-card leading-relaxed"
-        />
-      </div>
-
-      {/* Send button */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleSend}
-          disabled={!prompt.trim() || !selectedProject || sending}
-          className="flex-1 py-3 rounded-2xl gradient-cyan text-black font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 transition-all flex items-center justify-center gap-2"
+    <div className="flex flex-col h-full">
+      {/* Header with project selector */}
+      <div className="p-3 border-b border-white/10 flex items-center gap-2">
+        <select
+          value={selectedProject}
+          onChange={(e) => setSelectedProject(e.target.value)}
+          className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
         >
-          {sending ? (
-            <span className="inline-block w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-          ) : (
-            <>{"\u25B6 \u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C"}</>
-          )}
-        </button>
+          <option value="">{"\u0411\u0435\u0437 \u043f\u0440\u043e\u0435\u043a\u0442\u0430"}</option>
+          {projects.map(p => (
+            <option key={p.name} value={p.name}>{p.name}</option>
+          ))}
+        </select>
+        <button onClick={handleClear} className="text-xs text-gray-500 px-2 py-2">{"\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c"}</button>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.length === 0 && (
+          <div className="text-center text-gray-500 mt-8">{"\u041d\u0430\u0447\u043d\u0438 \u0434\u0438\u0430\u043b\u043e\u0433 \u0441 Claude"}</div>
+        )}
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
+              msg.role === 'user'
+                ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/20 text-white'
+                : 'bg-white/5 border border-white/10 text-gray-300'
+            }`}>
+              {msg.content}
+            </div>
+          </div>
+        ))}
+        {sending && (
+          <div className="flex justify-start">
+            <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-gray-400">
+              <span className="animate-pulse">{"\u25cf"}</span>
+              <span className="animate-pulse" style={{animationDelay: '0.2s'}}>{"\u25cf"}</span>
+              <span className="animate-pulse" style={{animationDelay: '0.4s'}}>{"\u25cf"}</span>
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input bar */}
+      <div className="p-3 border-t border-white/10">
+        <div className="flex gap-2">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send())}
+            placeholder={"\u0421\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435..."}
+            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-cyan-500/30"
+          />
+          <button
+            onClick={send}
+            disabled={sending || !input.trim()}
+            className="px-4 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 text-black font-semibold text-sm disabled:opacity-30 transition"
+          >
+            {"\u25b6"}
+          </button>
+        </div>
       </div>
     </div>
   );

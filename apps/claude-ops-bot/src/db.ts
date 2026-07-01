@@ -53,6 +53,15 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);
     CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id);
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      project_name TEXT,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_messages(user_id);
   `);
 }
 
@@ -124,4 +133,20 @@ export function getEvents(db: Database.Database, taskId: number): Array<{ id: nu
 
 export function ensureUser(db: Database.Database, tgId: number, name: string): void {
   db.prepare('INSERT OR IGNORE INTO users (tg_id, name) VALUES (?, ?)').run(tgId, name);
+}
+
+
+// --- Chat messages ---
+
+export function addChatMessage(db: Database.Database, msg: { user_id: number; project_name: string | null; role: string; content: string }): number {
+  const info = db.prepare('INSERT INTO chat_messages (user_id, project_name, role, content) VALUES (@user_id, @project_name, @role, @content)').run(msg);
+  return info.lastInsertRowid as number;
+}
+
+export function getChatHistory(db: Database.Database, userId: number, limit = 50): Array<{ id: number; project_name: string | null; role: string; content: string; created_at: string }> {
+  return db.prepare('SELECT * FROM chat_messages WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(userId, limit).reverse() as any[];
+}
+
+export function clearChatHistory(db: Database.Database, userId: number): void {
+  db.prepare('DELETE FROM chat_messages WHERE user_id = ?').run(userId);
 }

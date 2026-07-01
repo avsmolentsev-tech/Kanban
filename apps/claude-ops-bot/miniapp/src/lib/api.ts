@@ -37,6 +37,14 @@ export interface FileEntry {
   isDirectory: boolean;
 }
 
+export interface ChatMessage {
+  id: number;
+  project_name: string | null;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
 export const api = {
   me: () => apiFetch<{ userId: number }>('/api/me'),
   tasks: () => apiFetch<Task[]>('/api/tasks'),
@@ -54,5 +62,22 @@ export const api = {
       headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': initData },
       body: JSON.stringify({ project_name, prompt, model }),
     }).then(r => r.json());
+  },
+  chatHistory: () => apiFetch<ChatMessage[]>('/api/chat'),
+  sendChat: async (message: string, project_name?: string): Promise<ChatMessage> => {
+    const initData = (() => { try { return WebApp.initData || ''; } catch { return ''; } })();
+    const res = await fetch(BASE + '/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': initData },
+      body: JSON.stringify({ message, project_name }),
+    });
+    return res.json();
+  },
+  clearChat: async (): Promise<void> => {
+    const initData = (() => { try { return WebApp.initData || ''; } catch { return ''; } })();
+    await fetch(BASE + '/api/chat', {
+      method: 'DELETE',
+      headers: { 'X-Telegram-Init-Data': initData },
+    });
   },
 };
