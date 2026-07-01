@@ -32,10 +32,22 @@ export async function startApi(cfg: OpsConfig, db: Database.Database): Promise<v
   app.get('/api/projects', async () => {
     const resolver = new ProjectResolver(path.join(cfg.stateDir, 'repos.json'));
     await resolver.load();
-    return resolver.list();
+    return resolver.list().map(p => ({ name: p.name, path: p.path, type: p.type, hidden: !!p.hidden }));
   });
 
-  app.get('/api/tasks', async (request) => {
+  // Toggle project hidden status
+  app.post<{ Params: { name: string }; Body: { hidden: boolean } }>('/api/projects/:name/visibility', async (request, reply) => {
+    const { name } = request.params;
+    const { hidden } = request.body as any;
+    const resolver = new ProjectResolver(path.join(cfg.stateDir, 'repos.json'));
+    await resolver.load();
+    const project = resolver.get(name);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+    resolver.setHidden(name, hidden);
+    return { ok: true, name, hidden };
+  });
+
+    app.get('/api/tasks', async (request) => {
     const userId = (request as any).tgUserId as number;
     return getRecentTasks(db, userId, 50);
   });
