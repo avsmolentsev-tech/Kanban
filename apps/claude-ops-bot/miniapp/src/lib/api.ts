@@ -75,12 +75,23 @@ export const api = {
   chatHistory: () => apiFetch<ChatMessage[]>('/api/chat'),
   sendChat: async (message: string, project_name?: string): Promise<ChatMessage> => {
     const initData = (() => { try { return WebApp.initData || ''; } catch { return ''; } })();
-    const res = await fetch(BASE + '/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': initData },
-      body: JSON.stringify({ message, project_name }),
-    });
-    return res.json();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 300000); // 5 min timeout
+    try {
+      const res = await fetch(BASE + '/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': initData },
+        body: JSON.stringify({ message, project_name }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error('API ' + res.status);
+      return res.json();
+    } catch (e: any) {
+      clearTimeout(timeout);
+      if (e.name === 'AbortError') throw new Error('Timeout 5min');
+      throw e;
+    }
   },
   clearChat: async (): Promise<void> => {
     const initData = (() => { try { return WebApp.initData || ''; } catch { return ''; } })();

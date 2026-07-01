@@ -15,6 +15,11 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  // Sync initialProject prop to state
+  useEffect(() => {
+    if (initialProject) setSelectedProject(initialProject);
+  }, [initialProject]);
+
   useEffect(() => {
     api.chatHistory().then(setMessages).catch(() => {});
     api.projects().then((p) => {
@@ -79,14 +84,14 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
         ...prev,
         { ...response, id: Date.now() + 1, created_at: new Date().toISOString() },
       ]);
-    } catch {
+    } catch (err: any) {
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now() + 1,
           project_name: null,
           role: "assistant" as const,
-          content: "\u041e\u0448\u0438\u0431\u043a\u0430 \u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u044f",
+          content: "\u041e\u0448\u0438\u0431\u043a\u0430: " + (err?.message || "\u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u0435"),
           created_at: new Date().toISOString(),
         },
       ]);

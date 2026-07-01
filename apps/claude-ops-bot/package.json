@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
+    "@fastify/multipart": "^10.0.0",
     "@fastify/static": "^9.1.3",
     "@pis/api": "workspace:*",
     "better-sqlite3": "^12.8.0",
