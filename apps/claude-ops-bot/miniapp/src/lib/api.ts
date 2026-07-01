@@ -30,6 +30,7 @@ export interface Project {
   name: string;
   path: string;
   type: string;
+  hidden?: boolean;
 }
 
 export interface FileEntry {
@@ -62,6 +63,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': initData },
       body: JSON.stringify({ project_name, prompt, model }),
     }).then(r => r.json());
+  },
+  toggleProject: async (name: string, hidden: boolean): Promise<void> => {
+    const initData = (() => { try { return WebApp.initData || ''; } catch { return ''; } })();
+    await fetch(BASE + '/api/projects/' + encodeURIComponent(name) + '/visibility', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': initData },
+      body: JSON.stringify({ hidden }),
+    });
   },
   chatHistory: () => apiFetch<ChatMessage[]>('/api/chat'),
   sendChat: async (message: string, project_name?: string): Promise<ChatMessage> => {
