@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import type Database from 'better-sqlite3';
 import type { OpsConfig } from './config.js';
-import { getTask, getRecentTasks, getEvents, createTask } from './db.js';
+import { getTask, getRecentTasks, getEvents, createTask, addChatMessage, getChatHistory, clearChatHistory } from './db.js';
 import { getWorktreeDiff } from './task-manager.js';
 import { authHook } from './miniapp-auth.js';
 import { ProjectResolver } from './project-resolver.js';
@@ -100,6 +100,83 @@ export async function startApi(cfg: OpsConfig, db: Database.Database): Promise<v
     if (!project_name || !prompt) return reply.code(400).send({ error: 'project_name and prompt required' });
     const task = createTask(db, { user_id: userId, project_name, prompt, model: model || 'sonnet', target: 'server' });
     return task;
+  });
+
+
+  // --- Chat endpoints ---
+
+  // Get chat history
+  app.get('/api/chat', async (request) => {
+    const userId = (request as any).tgUserId as number;
+    return getChatHistory(db, userId);
+  });
+
+  // Send chat message and get Claude response
+  app.post<{ Body: { message: string; project_name?: string } }>('/api/chat', async (request, reply) => {
+    const userId = (request as any).tgUserId as number;
+    const { message, project_name } = request.body as any;
+    if (!message) return reply.code(400).send({ error: 'message required' });
+
+    // Save user message
+    addChatMessage(db, { user_id: userId, project_name: project_name || null, role: 'user', content: message });
+
+    // Get recent history for context
+    const history = getChatHistory(db, userId, 20);
+
+    // Build context prompt with history
+    const resolver = new ProjectResolver(path.join(cfg.stateDir, 'repos.json'));
+    await resolver.load();
+
+    const contextLines: string[] = [];
+    if (project_name) {
+      contextLines.push('Проект: ' + project_name);
+      const project = resolver.get(project_name);
+      if (project) contextLines.push('Путь: ' + project.path);
+    }
+    contextLines.push('');
+    contextLines.push('История диалога:');
+    for (const msg of history.slice(-10)) {
+      const prefix = msg.role === 'user' ? 'Пользователь' : 'Ассистент';
+      contextLines.push(prefix + ': ' + msg.content);
+    }
+    contextLines.push('');
+    contextLines.push('Ответь на последнее сообщение пользователя.');
+
+    const fullPrompt = contextLines.join('\n');
+
+    // Determine cwd
+    let cwd = '/root/projects';
+    if (project_name) {
+      const project = resolver.get(project_name);
+      if (project) cwd = project.path;
+    }
+
+    // Run Claude
+    const { ClaudeRunner } = await import('./claude-runner.js');
+    const runner = new ClaudeRunner({
+      bin: cfg.claudeBin,
+      args: ['-p', '--dangerously-skip-permissions', '--model', 'claude-sonnet-4-6'],
+      cwd,
+    });
+
+    try {
+      let output = '';
+      const result = await runner.run(fullPrompt, (chunk: string) => { output += chunk; });
+      const cleanOutput = output.trim();
+      addChatMessage(db, { user_id: userId, project_name: project_name || null, role: 'assistant', content: cleanOutput });
+      return { role: 'assistant', content: cleanOutput };
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      addChatMessage(db, { user_id: userId, project_name: project_name || null, role: 'assistant', content: 'Ошибка: ' + errMsg });
+      return { role: 'assistant', content: 'Ошибка: ' + errMsg };
+    }
+  });
+
+  // Clear chat
+  app.delete('/api/chat', async (request) => {
+    const userId = (request as any).tgUserId as number;
+    clearChatHistory(db, userId);
+    return { ok: true };
   });
 
   await app.listen({ port: cfg.fastifyPort, host: '127.0.0.1' });

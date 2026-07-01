@@ -17,7 +17,7 @@ type Page =
   | { type: "project-detail"; name: string }
   | { type: "tasks" }
   | { type: "task-detail"; taskId: number }
-  | { type: "chat"; projectName?: string }
+  | { type: "chat" }
   | { type: "diff"; taskId: number }
   | { type: "file"; projectName: string; filePath: string }
   | { type: "settings" };
@@ -46,7 +46,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white flex flex-col">
-      {/* Header */}
       <header className="sticky top-0 z-50 glass-surface border-b border-white/5 px-4 py-3 flex items-center justify-between">
         <h1 className="text-xl font-bold gradient-text tracking-tight">Forge</h1>
         <button
@@ -60,7 +59,6 @@ export default function App() {
         </button>
       </header>
 
-      {/* Content */}
       <main className="flex-1 overflow-y-auto pb-20">
         <div className="animate-fade-in" key={page.type + ("taskId" in page ? page.taskId : "") + ("name" in page ? page.name : "")}>
           {page.type === "projects" && <ProjectsTab onSelect={(name) => navigate({ type: "project-detail", name })} />}
@@ -70,7 +68,7 @@ export default function App() {
               onBack={() => navigate({ type: "projects" })}
               onTask={(id) => setPage({ type: "task-detail", taskId: id })}
               onFile={(path) => setPage({ type: "file", projectName: page.name, filePath: path })}
-              onNewTask={() => navigate({ type: "chat", projectName: page.name })}
+              onNewTask={() => navigate({ type: "chat" })}
             />
           )}
           {page.type === "tasks" && <TasksTab onSelect={(id) => setPage({ type: "task-detail", taskId: id })} />}
@@ -81,7 +79,7 @@ export default function App() {
               onDiff={() => setPage({ type: "diff", taskId: page.taskId })}
             />
           )}
-          {page.type === "chat" && <ChatTab preselectedProject={page.projectName} onTaskCreated={(id) => setPage({ type: "task-detail", taskId: id })} />}
+          {page.type === "chat" && <ChatTab />}
           {page.type === "diff" && <DiffView taskId={page.taskId} onBack={() => setPage({ type: "task-detail", taskId: page.taskId })} />}
           {page.type === "file" && (
             <FileViewer
@@ -94,26 +92,25 @@ export default function App() {
         </div>
       </main>
 
-      {/* Bottom Tab Bar */}
       {showTabBar && (
         <nav className="fixed bottom-0 left-0 right-0 z-50 glass-surface border-t border-white/5">
           <div className="flex justify-around items-center h-16 max-w-lg mx-auto">
             <button onClick={() => navigate({ type: "projects" })} className="flex-1 flex justify-center py-2">
               <TabIcon active={activeTab === "projects"}>
-                <span className="text-lg">{"\U0001F4C1"}</span>
-                <span className="text-[10px] font-medium">{"\u041F\u0440\u043E\u0435\u043A\u0442\u044B"}</span>
+                <span className="text-lg">{"📁"}</span>
+                <span className="text-[10px] font-medium">{"Проекты"}</span>
               </TabIcon>
             </button>
             <button onClick={() => navigate({ type: "tasks" })} className="flex-1 flex justify-center py-2">
               <TabIcon active={activeTab === "tasks"}>
-                <span className="text-lg">{"\U0001F4AC"}</span>
-                <span className="text-[10px] font-medium">{"\u0417\u0430\u0434\u0430\u0447\u0438"}</span>
+                <span className="text-lg">{"💬"}</span>
+                <span className="text-[10px] font-medium">{"Задачи"}</span>
               </TabIcon>
             </button>
             <button onClick={() => navigate({ type: "chat" })} className="flex-1 flex justify-center py-2">
               <TabIcon active={activeTab === "chat"}>
-                <span className="text-lg">{"\u26A1"}</span>
-                <span className="text-[10px] font-medium">{"\u0427\u0430\u0442"}</span>
+                <span className="text-lg">{"⚡"}</span>
+                <span className="text-[10px] font-medium">{"Чат"}</span>
               </TabIcon>
             </button>
           </div>
