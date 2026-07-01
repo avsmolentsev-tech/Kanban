@@ -1,4 +1,4 @@
-import { Telegraf, Context } from 'telegraf';
+import { Telegraf, Context, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import * as path from 'node:path';
 import fs from 'fs-extra';
@@ -50,10 +50,8 @@ export async function startBot(cfg: OpsConfig, db: Database.Database): Promise<v
     '/tasks — активные задачи\n' +
     '/repos — список проектов\n' +
     '/model — выбрать модель\n' +
-    '/new_project <name> — создать новый проект
-' +
-    '/clone <user/repo> — клонировать с GitHub
-' +
+    '/new_project <name> — создать проект\n' +
+    '/clone <user/repo> — клонировать с GitHub\n' +
     '/add_repo <path> [name] — добавить существующий'
   ));
 
@@ -139,7 +137,30 @@ export async function startBot(cfg: OpsConfig, db: Database.Database): Promise<v
     pending.delete(tgId);
   });
 
-  bot.action(/^model:(sonnet|opus)$/, async (ctx) => {
+  bot.action('new_project_flow', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.editMessageReplyMarkup(undefined);
+    await ctx.reply('\u041a\u0430\u043a \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u043f\u0440\u043e\u0435\u043a\u0442?', Markup.inlineKeyboard([
+      [Markup.button.callback('\u2795 \u041f\u0443\u0441\u0442\u043e\u0439 \u043f\u0440\u043e\u0435\u043a\u0442', 'create_empty_project')],
+      [Markup.button.callback('\ud83d\udce5 \u041a\u043b\u043e\u043d\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0441 GitHub', 'clone_from_github')],
+    ]));
+  });
+
+  bot.action('create_empty_project', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.editMessageReplyMarkup(undefined);
+    await ctx.reply('\u041d\u0430\u043f\u0438\u0448\u0438 \u0438\u043c\u044f \u043f\u0440\u043e\u0435\u043a\u0442\u0430 (\u043b\u0430\u0442\u0438\u043d\u0438\u0446\u0430, \u0446\u0438\u0444\u0440\u044b, -)');
+    pending.set(ctx.from!.id, { prompt: '__create_project__', model: userModels.get(ctx.from!.id) ?? cfg.defaultModel, target: 'server' });
+  });
+
+  bot.action('clone_from_github', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.editMessageReplyMarkup(undefined);
+    await ctx.reply('\u041d\u0430\u043f\u0438\u0448\u0438 user/repo (\u043d\u0430\u043f\u0440\u0438\u043c\u0435\u0440 avsmolentsev-tech/myapp)');
+    pending.set(ctx.from!.id, { prompt: '__clone_repo__', model: userModels.get(ctx.from!.id) ?? cfg.defaultModel, target: 'server' });
+  });
+
+    bot.action(/^model:(sonnet|opus)$/, async (ctx) => {
     const model = ctx.match[1] as 'sonnet' | 'opus';
     userModels.set(ctx.from!.id, model);
     await ctx.answerCbQuery(`Модель: ${model}`);
@@ -248,7 +269,45 @@ export async function startBot(cfg: OpsConfig, db: Database.Database): Promise<v
     if (text.startsWith('/')) return;
 
     const p = pending.get(tgId);
-    if (p?.prompt.startsWith('__replan__:')) {
+    if (p?.prompt === '__create_project__') {
+      pending.delete(tgId);
+      const name = text.trim();
+      if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+        return ctx.reply('\u2757 \u0418\u043c\u044f: \u0442\u043e\u043b\u044c\u043a\u043e \u043b\u0430\u0442\u0438\u043d\u0438\u0446\u0430, \u0446\u0438\u0444\u0440\u044b, - \u0438 _');
+      }
+      const projectPath = path.join(PROJECTS_DIR, name);
+      try {
+        const { spawn } = await import('node:child_process');
+        await fs.mkdirp(projectPath);
+        await new Promise<void>((resolve, reject) => {
+          const p = spawn('git', ['init'], { cwd: projectPath });
+          p.on('close', (code) => code === 0 ? resolve() : reject(new Error('git init failed')));
+        });
+        const t = await resolver.addRepo(projectPath, name);
+        return ctx.reply('\u2705 \u0421\u043e\u0437\u0434\u0430\u043d ' + t.name + ' \u0432 ' + projectPath);
+      } catch (err) {
+        return ctx.reply('\u274c ' + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+    if (p?.prompt === '__clone_repo__') {
+      pending.delete(tgId);
+      const repo = text.trim();
+      const name = repo.includes('/') ? repo.split('/').pop()! : repo;
+      const projectPath = path.join(PROJECTS_DIR, name);
+      try {
+        await ctx.reply('\ud83d\udce5 \u041a\u043b\u043e\u043d\u0438\u0440\u0443\u044e ' + repo + '...');
+        const { spawn } = await import('node:child_process');
+        await new Promise<void>((resolve, reject) => {
+          const p = spawn('gh', ['repo', 'clone', repo, projectPath], { stdio: ['ignore', 'pipe', 'pipe'] });
+          p.on('close', (code) => code === 0 ? resolve() : reject(new Error('clone failed')));
+        });
+        const t = await resolver.addRepo(projectPath, name);
+        return ctx.reply('\u2705 \u041a\u043b\u043e\u043d\u0438\u0440\u043e\u0432\u0430\u043d ' + t.name);
+      } catch (err) {
+        return ctx.reply('\u274c ' + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+        if (p?.prompt.startsWith('__replan__:')) {
       const taskId = Number(p.prompt.split(':')[1]);
       pending.delete(tgId);
       const task = getTask(db, taskId);

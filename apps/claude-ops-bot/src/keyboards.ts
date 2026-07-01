@@ -9,6 +9,8 @@ export function projectKeyboard(projects: Target[]) {
   for (let i = 0; i < buttons.length; i += 2) {
     rows.push(buttons.slice(i, i + 2));
   }
+  // Add utility buttons at the bottom
+  rows.push([Markup.button.callback('\u2795 \u041d\u043e\u0432\u044b\u0439 \u043f\u0440\u043e\u0435\u043a\u0442', 'new_project_flow')]);
   return Markup.inlineKeyboard(rows);
 }
 
