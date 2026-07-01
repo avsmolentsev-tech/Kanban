@@ -19,6 +19,8 @@ import { buildPlanPrompt, buildExecutePrompt, extractPlan, extractSummary } from
 
 const MODEL_FLAG = (m: 'sonnet' | 'opus') => m === 'opus' ? 'claude-opus-4-6' : 'claude-sonnet-4-6';
 
+const PROJECTS_DIR = '/root/projects';
+
 interface PendingTask {
   prompt: string;
   model: 'sonnet' | 'opus';
@@ -48,7 +50,11 @@ export async function startBot(cfg: OpsConfig, db: Database.Database): Promise<v
     '/tasks — активные задачи\n' +
     '/repos — список проектов\n' +
     '/model — выбрать модель\n' +
-    '/add_repo <path> [name] — добавить проект'
+    '/new_project <name> — создать новый проект
+' +
+    '/clone <user/repo> — клонировать с GitHub
+' +
+    '/add_repo <path> [name] — добавить существующий'
   ));
 
   bot.command('repos', (ctx) => {
@@ -78,6 +84,44 @@ export async function startBot(cfg: OpsConfig, db: Database.Database): Promise<v
       return ctx.reply(`✅ ${t.name} (${t.type}) добавлен`);
     } catch (err) {
       return ctx.reply(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  bot.command('new_project', async (ctx) => {
+    const name = ctx.message.text.replace(/^\/new_project\s*/, '').trim();
+    if (!name) return ctx.reply('Формат: /new_project <name>');
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) return ctx.reply('Имя: только буквы, цифры, - и _');
+    const projectPath = path.join(PROJECTS_DIR, name);
+    try {
+      const { spawn } = await import('node:child_process');
+      await fs.mkdirp(projectPath);
+      await new Promise<void>((resolve, reject) => {
+        const p = spawn('git', ['init'], { cwd: projectPath });
+        p.on('close', (code) => code === 0 ? resolve() : reject(new Error('git init failed')));
+      });
+      const t = await resolver.addRepo(projectPath, name);
+      return ctx.reply('Создан ' + t.name + ' в ' + projectPath);
+    } catch (err) {
+      return ctx.reply('Ошибка: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  });
+
+  bot.command('clone', async (ctx) => {
+    const repo = ctx.message.text.replace(/^\/clone\s*/, '').trim();
+    if (!repo) return ctx.reply('Формат: /clone user/repo');
+    const name = repo.includes('/') ? repo.split('/').pop()! : repo;
+    const projectPath = path.join(PROJECTS_DIR, name);
+    try {
+      await ctx.reply('Клонирую ' + repo + '...');
+      const { spawn } = await import('node:child_process');
+      await new Promise<void>((resolve, reject) => {
+        const p = spawn('gh', ['repo', 'clone', repo, projectPath], { stdio: ['ignore', 'pipe', 'pipe'] });
+        p.on('close', (code) => code === 0 ? resolve() : reject(new Error('clone failed')));
+      });
+      const t = await resolver.addRepo(projectPath, name);
+      return ctx.reply('Клонирован ' + t.name + ' в ' + projectPath);
+    } catch (err) {
+      return ctx.reply('Ошибка: ' + (err instanceof Error ? err.message : String(err)));
     }
   });
 
