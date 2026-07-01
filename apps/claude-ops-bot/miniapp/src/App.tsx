@@ -45,7 +45,7 @@ export default function App() {
   const showTabBar = ["projects", "tasks", "chat"].includes(page.type);
 
   return (
-    <div className="min-h-screen bg-[#0a0e1a] text-white flex flex-col">
+    <div className="bg-[#0a0e1a] text-white flex flex-col overflow-hidden" style={{ height: "var(--tg-viewport-stable-height, 100dvh)" }}>
       <header className="sticky top-0 z-50 glass-surface border-b border-white/5 px-4 py-3 flex items-center justify-between">
         <h1 className="text-xl font-bold gradient-text tracking-tight">Forge</h1>
         <button
@@ -59,7 +59,7 @@ export default function App() {
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-20">
+      <main className="flex-1 overflow-y-auto overscroll-contain" style={{ minHeight: 0, paddingBottom: "5rem" }}>
         <div className="animate-fade-in" key={page.type + ("taskId" in page ? page.taskId : "") + ("name" in page ? page.name : "")}>
           {page.type === "projects" && <ProjectsTab onSelect={(name) => navigate({ type: "project-detail", name })} />}
           {page.type === "project-detail" && (

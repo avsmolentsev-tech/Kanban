@@ -43,7 +43,7 @@ export function ChatTab() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col" style={{ height: "calc(var(--tg-viewport-stable-height, 100dvh) - 120px)" }}>
       {/* Header with project selector */}
       <div className="p-3 border-b border-white/10 flex items-center gap-2">
         <select
@@ -60,7 +60,7 @@ export function ChatTab() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-3" style={{ minHeight: 0 }}>
         {messages.length === 0 && (
           <div className="text-center text-gray-500 mt-8">{"\u041d\u0430\u0447\u043d\u0438 \u0434\u0438\u0430\u043b\u043e\u0433 \u0441 Claude"}</div>
         )}
@@ -88,7 +88,7 @@ export function ChatTab() {
       </div>
 
       {/* Input bar */}
-      <div className="p-3 border-t border-white/10">
+      <div className="shrink-0 p-3 border-t border-white/10">
         <div className="flex gap-2">
           <input
             value={input}
