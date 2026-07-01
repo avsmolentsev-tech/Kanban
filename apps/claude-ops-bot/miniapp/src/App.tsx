@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import WebApp from "@twa-dev/sdk";
 import { ProjectsTab } from "./pages/ProjectsTab";
 import { ProjectDetail } from "./pages/ProjectDetail";
@@ -34,6 +34,32 @@ const TabIcon = ({ active, children }: { active: boolean; children: ReactNode })
 export default function App() {
   const [page, setPage] = useState<Page>({ type: "projects" });
   const [activeTab, setActiveTab] = useState<Tab>("projects");
+  const [viewportHeight, setViewportHeight] = useState<number>(() => window.innerHeight);
+
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+
+    const updateHeight = () => {
+      if (tg?.viewportStableHeight && tg.viewportStableHeight > 100) {
+        setViewportHeight(tg.viewportStableHeight);
+      } else {
+        setViewportHeight(window.innerHeight);
+      }
+    };
+
+    if (tg) {
+      tg.onEvent("viewportChanged", updateHeight);
+      updateHeight();
+    }
+
+    // Fallback for non-Telegram environments
+    window.addEventListener("resize", updateHeight);
+
+    return () => {
+      if (tg) tg.offEvent("viewportChanged", updateHeight);
+      window.removeEventListener("resize", updateHeight);
+    };
+  }, []);
 
   const navigate = (p: Page) => {
     setPage(p);
@@ -47,7 +73,7 @@ export default function App() {
   return (
     <div
       className="bg-[#0a0e1a] text-white flex flex-col overflow-hidden"
-      style={{ height: "100dvh", maxHeight: "-webkit-fill-available" } as React.CSSProperties}
+      style={{ height: viewportHeight + "px" }}
     >
       <header className="shrink-0 z-50 glass-surface border-b border-white/5 px-4 py-3 flex items-center justify-between">
         <h1 className="text-xl font-bold gradient-text tracking-tight">Forge</h1>
@@ -63,7 +89,7 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-y-auto overscroll-contain" style={{ minHeight: 0 }}>
-        <div className="animate-fade-in" key={page.type + ("taskId" in page ? String(page.taskId) : "") + ("name" in page ? page.name : "") + ("projectName" in page ? (page.projectName || "") : "")}>
+        <div className="animate-fade-in h-full" key={page.type + ("taskId" in page ? String(page.taskId) : "") + ("name" in page ? page.name : "") + ("projectName" in page ? (page.projectName || "") : "")}>
           {page.type === "projects" && <ProjectsTab onSelect={(name) => navigate({ type: "project-detail", name })} />}
           {page.type === "project-detail" && (
             <ProjectDetail
