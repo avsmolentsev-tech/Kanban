@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { ClaudeService } from '../services/claude.service';
-import { query, queryAll, queryOne, execute } from '../db/db';
+import { getDb } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
@@ -9,7 +9,6 @@ import { moscowDateString, moscowDateTimeString } from '../utils/time';
 import { generateBundle, findProjectByName } from '../services/bundle.service';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId } from '../middleware/user-scope';
-import { checkAiLimit } from '../middleware/plan';
 
 export const aiRouter = Router();
 const claude = new ClaudeService();
@@ -24,11 +23,6 @@ aiRouter.post('/chat', async (req: AuthRequest, res: Response) => {
   const parsed = ChatSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   try {
-    const limit = await checkAiLimit(req);
-    if (!limit.allowed) {
-      res.status(429).json(fail(`Лимит AI-сообщений: ${limit.used}/${limit.limit} в день. Перейдите на Pro Max для безлимита.`));
-      return;
-    }
     // Build vault context for AI (scoped to user)
     let vaultContext = '';
     try { vaultContext = obsidian.forUser(getUserId(req)).readAllForContext(); } catch {}
@@ -38,46 +32,41 @@ aiRouter.post('/chat', async (req: AuthRequest, res: Response) => {
       vaultContext ? `\n\nДанные из Obsidian Vault (проекты, задачи, встречи, идеи, люди):\n\n${vaultContext}` : '',
     ].filter(Boolean).join('\n');
 
-    const reply = await claude.chat(parsed.data.messages, systemPrompt, 'gpt-4.1-mini', false, false, getUserId(req));
+    const reply = await claude.chat(parsed.data.messages, systemPrompt, 'gpt-4.1-mini');
     res.json(ok({ reply }));
   } catch (err) {
-    res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
+    console.error("[chat] ERROR:", err); res.status(500).json(fail(err instanceof Error ? err.message : "AI error"));
   }
 });
 
 aiRouter.post('/daily-brief', async (req: AuthRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
+    const userParams = userId != null ? [userId] : [];
     const today = moscowDateString();
-    const userParams: unknown[] = userId != null ? [userId] : [];
-    const tasks = await queryAll(`SELECT title, status, priority, urgency, due_date FROM tasks WHERE archived = 0 AND status != 'done'${userId != null ? ' AND user_id = $1' : ''} ORDER BY priority DESC LIMIT 20`, userParams);
-    const meetings = await queryAll(`SELECT title, date FROM meetings WHERE date >= $1${userId != null ? ' AND user_id = $2' : ''} ORDER BY date ASC LIMIT 10`, [today, ...userParams]);
+    const tasks = getDb().prepare(`SELECT title, status, priority, urgency, due_date FROM tasks WHERE archived = 0 AND status != 'done'${userFilter} ORDER BY priority DESC LIMIT 20`).all(...userParams);
+    const meetings = getDb().prepare(`SELECT title, date FROM meetings WHERE date >= ?${userFilter} ORDER BY date ASC LIMIT 10`).all(today, ...userParams);
     const brief = await claude.dailyBrief(JSON.stringify(tasks), JSON.stringify(meetings));
     res.json(ok({ brief }));
   } catch (err) {
-    res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
+    console.error("[chat] ERROR:", err); res.status(500).json(fail(err instanceof Error ? err.message : "AI error"));
   }
 });
 
 aiRouter.post('/weekly-brief', async (req: AuthRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
+    const userParams = userId != null ? [userId] : [];
     const today = moscowDateString();
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    // Build parameterized queries for weekly brief
-    const completedTasks = userId != null
-      ? await queryAll(`SELECT title, priority FROM tasks WHERE status = 'done' AND updated_at >= $1 AND user_id = $2 ORDER BY updated_at DESC`, [weekAgo, userId])
-      : await queryAll(`SELECT title, priority FROM tasks WHERE status = 'done' AND updated_at >= $1 ORDER BY updated_at DESC`, [weekAgo]);
-    const activeTasks = userId != null
-      ? await queryAll(`SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND user_id = $1 ORDER BY priority DESC LIMIT 20`, [userId])
-      : await queryAll(`SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') ORDER BY priority DESC LIMIT 20`, []);
-    const weekMeetings = userId != null
-      ? await queryAll(`SELECT title, date, summary_raw FROM meetings WHERE date >= $1 AND date <= $2 AND user_id = $3 ORDER BY date DESC`, [weekAgo, today, userId])
-      : await queryAll(`SELECT title, date, summary_raw FROM meetings WHERE date >= $1 AND date <= $2 ORDER BY date DESC`, [weekAgo, today]);
-    const upcomingMeetings = userId != null
-      ? await queryAll(`SELECT title, date FROM meetings WHERE date > $1 AND user_id = $2 ORDER BY date ASC LIMIT 5`, [today, userId])
-      : await queryAll(`SELECT title, date FROM meetings WHERE date > $1 ORDER BY date ASC LIMIT 5`, [today]);
+    const db = getDb();
+    const completedTasks = db.prepare(`SELECT title, priority FROM tasks WHERE status = 'done' AND updated_at >= ?${userFilter} ORDER BY updated_at DESC`).all(weekAgo, ...userParams);
+    const activeTasks = db.prepare(`SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday')${userFilter} ORDER BY priority DESC LIMIT 20`).all(...userParams);
+    const weekMeetings = db.prepare(`SELECT title, date, summary_raw FROM meetings WHERE date >= ? AND date <= ?${userFilter} ORDER BY date DESC`).all(weekAgo, today, ...userParams);
+    const upcomingMeetings = db.prepare(`SELECT title, date FROM meetings WHERE date > ?${userFilter} ORDER BY date ASC LIMIT 5`).all(today, ...userParams);
 
     const prompt = `Создай еженедельный обзор на русском языке.
 
@@ -100,10 +89,10 @@ ${JSON.stringify(upcomingMeetings)}
 4. Рекомендации на следующую неделю
 5. Общие наблюдения и тренды`;
 
-    const brief = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini', false, false, userId);
+    const brief = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
     res.json(ok({ brief }));
   } catch (err) {
-    res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
+    console.error("[chat] ERROR:", err); res.status(500).json(fail(err instanceof Error ? err.message : "AI error"));
   }
 });
 
@@ -120,22 +109,17 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
 
   try {
-    const limit = await checkAiLimit(req);
-    if (!limit.allowed) {
-      res.status(429).json(fail(`Лимит AI-сообщений: ${limit.used}/${limit.limit} в день. Перейдите на Pro Max для безлимита.`));
-      return;
-    }
+    const db = getDb();
     const userId = getUserId(req);
-    const userFilterSuffix = (offset: number) => userId != null ? ` AND user_id = $${offset}` : '';
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
     const userParams: unknown[] = userId != null ? [userId] : [];
 
     // Check for claude/клод prefix → save as Claude note
     const claudeMatch = parsed.data.text.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
     if (claudeMatch) {
       const content = claudeMatch[2].trim();
-      await execute('INSERT INTO claude_notes (content, source) VALUES ($1, $2)', [content, 'web']);
-      const pendingRow = await queryOne<{ c: number }>('SELECT COUNT(*) as c FROM claude_notes WHERE processed = 0', []);
-      const pending = pendingRow?.c ?? 0;
+      db.prepare('INSERT INTO claude_notes (content, source) VALUES (?, ?)').run(content, 'web');
+      const pending = (db.prepare('SELECT COUNT(*) as c FROM claude_notes WHERE processed = 0').get() as { c: number }).c;
       res.json(ok({
         actions: [],
         results: [],
@@ -143,181 +127,64 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
       }));
       return;
     }
-    const projects = userId != null
-      ? await queryAll<{ id: number; name: string }>(`SELECT id, name FROM projects WHERE archived = 0 AND user_id = $1`, [userId])
-      : await queryAll<{ id: number; name: string }>(`SELECT id, name FROM projects WHERE archived = 0`, []);
-    const tasks = userId != null
-      ? await queryAll<{ id: number; title: string; status: string; project_id: number | null; due_date: string | null }>(`SELECT id, title, status, project_id, due_date FROM tasks WHERE archived = 0 AND user_id = $1`, [userId])
-      : await queryAll<{ id: number; title: string; status: string; project_id: number | null; due_date: string | null }>(`SELECT id, title, status, project_id, due_date FROM tasks WHERE archived = 0`, []);
-    const people = userId != null
-      ? await queryAll<{ id: number; name: string }>(`SELECT id, name FROM people WHERE user_id = $1`, [userId])
-      : await queryAll<{ id: number; name: string }>(`SELECT id, name FROM people`, []);
+    const projects = db.prepare(`SELECT id, name FROM projects WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; name: string }>;
+    const tasks = db.prepare(`SELECT id, title, status, project_id, due_date FROM tasks WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; title: string; status: string; project_id: number | null; due_date: string | null }>;
+    const people = db.prepare(`SELECT id, name FROM people WHERE 1=1${userFilter}`).all(...userParams) as Array<{ id: number; name: string }>;
 
     const today = moscowDateString();
     const overdueTasks = tasks.filter(t => t.due_date && t.due_date < today && t.status !== 'done' && t.status !== 'someday');
 
     // Achievements data for motivation
     const doneToday = tasks.filter(t => t.status === 'done' && t.due_date === today).length;
-    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const doneRecentlyRow = userId != null
-      ? await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= $1 AND user_id = $2`, [oneDayAgo, userId])
-      : await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= $1`, [oneDayAgo]);
-    const doneRecently = doneRecentlyRow ?? { c: 0 };
-    const doneThisWeekRow = userId != null
-      ? await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= $1 AND user_id = $2`, [sevenDaysAgo, userId])
-      : await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= $1`, [sevenDaysAgo]);
-    const doneThisWeek = doneThisWeekRow ?? { c: 0 };
+    const doneRecently = db.prepare(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= date('now', '-1 day')${userFilter}`).get(...userParams) as { c: number };
+    const doneThisWeek = db.prepare(`SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= date('now', '-7 days')${userFilter}`).get(...userParams) as { c: number };
     const totalDone = tasks.filter(t => t.status === 'done').length;
     const inProgress = tasks.filter(t => t.status === 'in_progress').length;
-    const todayMeetingsRow = userId != null
-      ? await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM meetings WHERE date = $1 AND user_id = $2`, [today, userId])
-      : await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM meetings WHERE date = $1`, [today]);
-    const todayMeetings = todayMeetingsRow ?? { c: 0 };
-    const weekMeetingsRow = userId != null
-      ? await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM meetings WHERE date >= $1 AND user_id = $2`, [sevenDaysAgo.split('T')[0], userId])
-      : await queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM meetings WHERE date >= $1`, [sevenDaysAgo.split('T')[0]]);
-    const weekMeetings = weekMeetingsRow ?? { c: 0 };
-    const habitStreaks = userId != null
-      ? await queryAll<{ title: string; icon: string }>(`
-          SELECT h.title, h.icon FROM habits h
-          WHERE h.archived = 0 AND h.user_id = $1 AND h.id IN (
-            SELECT habit_id FROM habit_logs WHERE date = $2 AND completed = 1
-          )
-        `, [userId, today])
-      : await queryAll<{ title: string; icon: string }>(`
-          SELECT h.title, h.icon FROM habits h
-          WHERE h.archived = 0 AND h.id IN (
-            SELECT habit_id FROM habit_logs WHERE date = $1 AND completed = 1
-          )
-        `, [today]);
-    const streakCounts = userId != null
-      ? await queryAll<{ id: number; title: string; icon: string; recent_count: number }>(`
-          SELECT h.id, h.title, h.icon,
-            (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= $2) as recent_count
-          FROM habits h WHERE h.archived = 0 AND h.user_id = $1 ORDER BY recent_count DESC LIMIT 5
-        `, [userId, thirtyDaysAgo.split('T')[0]])
-      : await queryAll<{ id: number; title: string; icon: string; recent_count: number }>(`
-          SELECT h.id, h.title, h.icon,
-            (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= $1) as recent_count
-          FROM habits h WHERE h.archived = 0 ORDER BY recent_count DESC LIMIT 5
-        `, [thirtyDaysAgo.split('T')[0]]);
+    const todayMeetings = db.prepare(`SELECT COUNT(*) as c FROM meetings WHERE date = ?${userFilter}`).get(today, ...userParams) as { c: number };
+    const weekMeetings = db.prepare(`SELECT COUNT(*) as c FROM meetings WHERE date >= date('now', '-7 days')${userFilter}`).get(...userParams) as { c: number };
+    const habitStreaks = db.prepare(`
+      SELECT h.title, h.icon FROM habits h
+      WHERE h.archived = 0${userFilter} AND h.id IN (
+        SELECT habit_id FROM habit_logs WHERE date = ? AND completed = 1
+      )
+    `).all(...userParams, today) as Array<{ title: string; icon: string }>;
+    const streakCounts = db.prepare(`
+      SELECT h.id, h.title, h.icon,
+        (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= date('now', '-30 days')) as recent_count
+      FROM habits h WHERE h.archived = 0${userFilter} ORDER BY recent_count DESC LIMIT 5
+    `).all(...userParams) as Array<{ id: number; title: string; icon: string; recent_count: number }>;
 
-    // --- Smart meeting search ---
-    const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|совещан|решили|договорил|итоги|выводы|план из|задачи из|о чём|о чем|кто сказал|что было|возражен|аргумент|консультац|лекци|обучен|созвон/i;
+    // Auto-detect if question is about meetings → include full content
+    const meetingKeywords = /встреч|обсужд|говорил|сказал|рассказ|прошл|последн|протокол|стенограмм|робот|стартап|консультац|совещан/i;
     const needsFullMeetings = meetingKeywords.test(parsed.data.text);
     const requestedMeetingId = parsed.data.meeting_id;
 
-    // Detect time range from user's message
-    const timeRangeMatch = parsed.data.text.match(/за\s+(последн(?:юю|ий|ие|ее)|этот|эту|прошл(?:ую|ый|ое))\s+(недел[юиь]|месяц|год|квартал|полгода|2\s*недел)/i)
-      || parsed.data.text.match(/(последн(?:юю|ий|ие|ее))\s+(недел[юиь]|месяц|год|квартал)/i);
-    let meetingDateFrom: string | null = null;
-    if (timeRangeMatch) {
-      const unit = timeRangeMatch[2].toLowerCase();
-      const now = Date.now();
-      if (unit.startsWith('недел')) meetingDateFrom = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      else if (unit === '2 недел' || unit === '2 недели') meetingDateFrom = new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      else if (unit === 'месяц') meetingDateFrom = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      else if (unit === 'квартал') meetingDateFrom = new Date(now - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      else if (unit === 'полгода') meetingDateFrom = new Date(now - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      else if (unit === 'год') meetingDateFrom = new Date(now - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    }
-
-    // Detect project filter from query
-    const textLower = parsed.data.text.toLowerCase();
-    const matchedProject = projects.find(p => textLower.includes(p.name.toLowerCase()));
-    // Detect person filter from query
-    const matchedPerson = people.find(p => textLower.includes(p.name.toLowerCase()));
-
-    type MeetingFull = { id: number; title: string; date: string; project_id: number | null; summary_raw?: string; summary_structured?: string };
-
-    /** Extract best content from a meeting for AI context */
-    function getMeetingContext(m: MeetingFull, maxLen: number): string {
-      // Prefer structured notes (compact & useful), fall back to raw
-      if (m.summary_structured) {
-        try {
-          const s = JSON.parse(m.summary_structured) as { notes?: string; qa?: string; actions?: string };
-          const parts: string[] = [];
-          if (s.notes) parts.push(s.notes);
-          if (s.actions) parts.push('## Задачи\n' + s.actions);
-          if (parts.length > 0) return parts.join('\n\n').slice(0, maxLen);
-        } catch {}
-      }
-      return (m.summary_raw || '').slice(0, maxLen);
-    }
-
-    let meetings: MeetingFull[];
+    type MeetingWithContent = { id: number; title: string; date: string; project_id: number | null; summary_raw?: string };
+    let meetings: MeetingWithContent[];
     let fullMeetingContent = '';
 
     // If specific meeting_id passed (user is viewing a meeting), always include its full transcript
     if (requestedMeetingId) {
-      const currentMeeting = userId != null
-        ? await queryOne<MeetingFull>(`SELECT id, title, date, project_id, summary_raw, summary_structured FROM meetings WHERE id = $1 AND user_id = $2`, [requestedMeetingId, userId])
-        : await queryOne<MeetingFull>(`SELECT id, title, date, project_id, summary_raw, summary_structured FROM meetings WHERE id = $1`, [requestedMeetingId]);
+      const currentMeeting = db.prepare(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE id = ?${userFilter}`).get(requestedMeetingId, ...userParams) as MeetingWithContent | undefined;
       if (currentMeeting) {
-        fullMeetingContent = `## ТЕКУЩАЯ ВСТРЕЧА (пользователь сейчас её просматривает):\n## ${currentMeeting.title} (${currentMeeting.date})\n${getMeetingContext(currentMeeting, 15000)}`;
+        fullMeetingContent = `## ТЕКУЩАЯ ВСТРЕЧА (пользователь сейчас её просматривает):\n## ${currentMeeting.title} (${currentMeeting.date})\n${(currentMeeting.summary_raw || '').slice(0, 12000)}`;
       }
-      // Also include other relevant meetings
-      const otherMeetings = userId != null
-        ? await queryAll<MeetingFull>(`SELECT id, title, date, project_id, summary_raw, summary_structured FROM meetings WHERE id != $1 AND user_id = $2 AND (summary_raw != '' OR summary_structured != '') ORDER BY date DESC LIMIT 10`, [requestedMeetingId, userId])
-        : await queryAll<MeetingFull>(`SELECT id, title, date, project_id, summary_raw, summary_structured FROM meetings WHERE id != $1 AND (summary_raw != '' OR summary_structured != '') ORDER BY date DESC LIMIT 10`, [requestedMeetingId]);
-      if (otherMeetings.length > 0) {
+      // Also include other recent meetings for broader context
+      const otherMeetings = db.prepare(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE id != ?${userFilter} ORDER BY date DESC LIMIT 4`).all(requestedMeetingId, ...userParams) as Array<MeetingWithContent>;
+      if (otherMeetings.length > 0 && needsFullMeetings) {
         fullMeetingContent += '\n\n---\n\n' + otherMeetings.map(m =>
-          `## Встреча #${m.id}: ${m.title} (${m.date})\n${getMeetingContext(m, 4000)}`
+          `## Встреча #${m.id}: ${m.title} (${m.date})\n${(m.summary_raw || '').slice(0, 8000)}`
         ).join('\n\n---\n\n');
       }
-      meetings = [currentMeeting, ...otherMeetings].filter(Boolean) as MeetingFull[];
+      meetings = [currentMeeting, ...otherMeetings].filter(Boolean) as MeetingWithContent[];
     } else if (needsFullMeetings) {
-      // Smart meeting query with filters
-      const conditions: string[] = ["(summary_raw IS NOT NULL AND summary_raw != '' OR summary_structured IS NOT NULL AND summary_structured != '')"];
-      const params: unknown[] = [];
-      let paramIdx = 1;
-
-      if (userId != null) { conditions.push(`user_id = $${paramIdx++}`); params.push(userId); }
-      if (meetingDateFrom) { conditions.push(`date >= $${paramIdx++}`); params.push(meetingDateFrom); }
-      if (matchedProject) { conditions.push(`project_id = $${paramIdx++}`); params.push(matchedProject.id); }
-
-      // If person filter, join with meeting_people
-      let query: string;
-      if (matchedPerson) {
-        query = `SELECT DISTINCT m.id, m.title, m.date, m.project_id, m.summary_raw, m.summary_structured
-          FROM meetings m
-          JOIN meeting_people mp ON m.id = mp.meeting_id
-          WHERE mp.person_id = $${paramIdx++} AND ${conditions.join(' AND ')}
-          ORDER BY m.date DESC LIMIT 50`;
-        params.push(matchedPerson.id);
-      } else {
-        query = `SELECT id, title, date, project_id, summary_raw, summary_structured
-          FROM meetings WHERE ${conditions.join(' AND ')}
-          ORDER BY date DESC LIMIT 50`;
-      }
-
-      const allMeetings = await queryAll<MeetingFull>(query, params);
-
-      // Budget: ~120K chars total for meeting context (fits in gpt-4.1-mini 1M context)
-      const MAX_TOTAL_CHARS = 120000;
-      let totalChars = 0;
-      const meetingParts: string[] = [];
-      // First pass: per-meeting budget depends on total count
-      const perMeetingBudget = Math.max(2000, Math.floor(MAX_TOTAL_CHARS / Math.max(allMeetings.length, 1)));
-
-      for (const m of allMeetings) {
-        const content = getMeetingContext(m, perMeetingBudget);
-        if (!content) continue;
-        const part = `## Встреча #${m.id}: ${m.title} (${m.date})\n${content}`;
-        if (totalChars + part.length > MAX_TOTAL_CHARS) break;
-        meetingParts.push(part);
-        totalChars += part.length;
-      }
-
-      fullMeetingContent = meetingParts.join('\n\n---\n\n');
-      meetings = allMeetings;
+      const fullMeetings = db.prepare(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 5`).all(...userParams) as Array<MeetingWithContent>;
+      fullMeetingContent = fullMeetings.map(m =>
+        `## Встреча #${m.id}: ${m.title} (${m.date})\n${(m.summary_raw || '').slice(0, 8000)}`
+      ).join('\n\n---\n\n');
+      meetings = fullMeetings;
     } else {
-      // No meeting query — just include list for reference
-      meetings = userId != null
-        ? await queryAll<MeetingFull>(`SELECT id, title, date, project_id FROM meetings WHERE user_id = $1 ORDER BY date DESC LIMIT 30`, [userId])
-        : await queryAll<MeetingFull>(`SELECT id, title, date, project_id FROM meetings ORDER BY date DESC LIMIT 30`, []);
+      meetings = db.prepare(`SELECT id, title, date, project_id FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 20`).all(...userParams) as Array<MeetingWithContent>;
     }
 
     const systemPrompt = `Ты — персональный ассистент и коуч. Умный, дружелюбный, вдумчивый, мотивирующий. Можешь разговаривать на любые темы, советовать, обсуждать идеи.
@@ -351,7 +218,7 @@ ${streakCounts.filter(h => h.recent_count >= 3).map(h => `🏆 ${h.icon || '✓'
 ${overdueTasks.length > 0 ? `\n⚠️ Просроченные (${overdueTasks.length}): ${JSON.stringify(overdueTasks.map(t => ({ id: t.id, title: t.title, due_date: t.due_date, project_id: t.project_id })))}\n` : ''}Встречи: ${JSON.stringify(meetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id })))}
 Люди: ${JSON.stringify(people.map(p => ({ id: p.id, name: p.name })))}
 ${parsed.data.last_contact ? `\n🧑 LAST_CONTACT (только что создан/обновлён): id=${parsed.data.last_contact.id}, name="${parsed.data.last_contact.name}". Любые команды про "к проекту", "добавь телефон/email", "привяжи" — относятся к ЭТОМУ контакту!\n` : ''}
-${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} встреч${meetingDateFrom ? `, с ${meetingDateFrom}` : ''}${matchedProject ? `, проект: ${matchedProject.name}` : ''}${matchedPerson ? `, участник: ${matchedPerson.name}` : ''}) ===\n${fullMeetingContent}\n=== КОНЕЦ ДАННЫХ ВСТРЕЧ ===\n\nОтвечай конкретно на основе содержимого встреч выше. Цитируй фрагменты и указывай из какой встречи информация. Если пользователь спрашивает про конкретную тему — ищи по ВСЕМ предоставленным встречам, не только последним.` : ''}
+${fullMeetingContent ? `\n=== ПОЛНЫЕ ТРАНСКРИПЦИИ ПОСЛЕДНИХ ВСТРЕЧ ===\n${fullMeetingContent}\n=== КОНЕЦ ===\n\nОтвечай конкретно на основе содержимого транскрипций выше. Цитируй фрагменты когда уместно.` : ''}
 
 Статусы задач: backlog, todo, in_progress, done, someday
 Сейчас: ${moscowDateTimeString()}
@@ -407,7 +274,7 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
       { role: 'user', content: parsed.data.text },
     ];
 
-    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1-mini', false, true, userId);
+    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1-mini', false, true);
 
     let command: { actions: Array<Record<string, unknown>>; response: string };
     try {
@@ -432,84 +299,83 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
             // Security: verify project belongs to this user
             let safeProjId = action['project_id'] ?? null;
             if (safeProjId) {
-              const projCheck = await queryOne('SELECT id FROM projects WHERE id = $1 AND user_id = $2', [safeProjId, userId]);
+              const projCheck = db.prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(safeProjId, userId);
               if (!projCheck) safeProjId = null;
             }
-            const inserted = await queryOne<{ id: number }>(
-              'INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-              [safeProjId, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId]
+            const r = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+              safeProjId, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId
             );
-            const taskId = inserted!.id;
+            const taskId = Number(r.lastInsertRowid);
             // Auto-add self if no people specified
             let peopleIds = Array.isArray(action['person_ids']) ? action['person_ids'] as number[] : [];
             if (peopleIds.length === 0) {
-              const selfRow = await queryOne<{ id: number }>("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1", []);
+              const selfRow = db.prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
               if (selfRow) peopleIds = [selfRow.id];
             }
             for (const pid of peopleIds) {
-              await execute('INSERT INTO task_people (task_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [taskId, pid]);
+              db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(taskId, pid);
             }
             results.push({ type: 'create_task', success: true, detail: `Задача "${action['title']}" создана` });
             break;
           }
           case 'move_task': {
-            await execute("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3", [action['status'], action['task_id'], userId]);
+            db.prepare("UPDATE tasks SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?").run(action['status'], action['task_id'], userId);
             results.push({ type: 'move_task', success: true, detail: `Задача #${action['task_id']} → ${action['status']}` });
             break;
           }
           case 'delete_task': {
-            await execute("UPDATE tasks SET archived = 1, updated_at = NOW() WHERE id = $1 AND user_id = $2", [action['task_id'], userId]);
+            db.prepare("UPDATE tasks SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?").run(action['task_id'], userId);
             results.push({ type: 'delete_task', success: true, detail: `Задача #${action['task_id']} удалена` });
             break;
           }
           case 'update_task': {
             const fields: string[] = []; const values: unknown[] = [];
             for (const key of ['title', 'priority', 'urgency', 'due_date', 'start_date', 'project_id', 'description', 'status']) {
-              if (action[key] !== undefined) { fields.push(`${key} = $${fields.length + 1}`); values.push(action[key]); }
+              if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
             }
-            if (fields.length > 0) await execute(`UPDATE tasks SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`, [...values, action['task_id'], userId]);
+            if (fields.length > 0) db.prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?`).run(...values, action['task_id'], userId);
             results.push({ type: 'update_task', success: true, detail: `Задача #${action['task_id']} обновлена` });
             break;
           }
           case 'create_project': {
-            await execute('INSERT INTO projects (name, color, user_id) VALUES ($1, $2, $3)', [action['name'], action['color'] ?? '#6366f1', userId]);
+            db.prepare('INSERT INTO projects (name, color, user_id) VALUES (?, ?, ?)').run(action['name'], action['color'] ?? '#6366f1', userId);
             results.push({ type: 'create_project', success: true, detail: `Проект "${action['name']}" создан` });
             break;
           }
           case 'create_idea': {
-            const ideaInserted = await queryOne<{ id: number }>(
-              'INSERT INTO ideas (title, body, category, project_id, status, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-              [action['title'], (action['body'] as string) ?? '', (action['category'] as string) ?? 'personal', action['project_id'] ?? null, 'backlog', userId]
+            const r = db.prepare('INSERT INTO ideas (title, body, category, project_id, status, user_id) VALUES (?, ?, ?, ?, ?, ?)').run(
+              action['title'], (action['body'] as string) ?? '', (action['category'] as string) ?? 'personal',
+              action['project_id'] ?? null, 'backlog', userId
             );
-            const ideaId = ideaInserted!.id;
-            const projName = action['project_id'] ? (await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [action['project_id'] as number]))?.name : null;
+            const ideaId = Number(r.lastInsertRowid);
+            const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
             results.push({ type: 'create_idea', success: true, detail: `Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog` });
             void ideaId;
             break;
           }
           case 'create_goal': {
-            await execute(
-              'INSERT INTO goals (title, description, type, project_id, target_value, unit, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-              [action['title'], (action['description'] as string) ?? '', 'goal', action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%', userId]
+            db.prepare('INSERT INTO goals (title, description, type, project_id, target_value, unit, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+              action['title'], (action['description'] as string) ?? '', 'goal',
+              action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%', userId
             );
             results.push({ type: 'create_goal', success: true, detail: `🎯 Цель "${action['title']}"` });
             break;
           }
           case 'update_goal': {
             const fields: string[] = []; const values: unknown[] = [];
-            if (action['current_value'] !== undefined) { fields.push(`current_value = $${fields.length + 1}`); values.push(action['current_value']); }
-            if (action['status'] !== undefined) { fields.push(`status = $${fields.length + 1}`); values.push(action['status']); }
-            if (fields.length > 0) await execute(`UPDATE goals SET ${fields.join(', ')} WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`, [...values, action['goal_id'], userId]);
+            if (action['current_value'] !== undefined) { fields.push('current_value = ?'); values.push(action['current_value']); }
+            if (action['status'] !== undefined) { fields.push('status = ?'); values.push(action['status']); }
+            if (fields.length > 0) db.prepare(`UPDATE goals SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, action['goal_id'], userId);
             results.push({ type: 'update_goal', success: true, detail: `🎯 Цель #${action['goal_id']} обновлена` });
             break;
           }
           case 'create_bundle': {
             const pname = (action['project_name'] as string) ?? 'все';
-            const match = await findProjectByName(pname);
+            const match = findProjectByName(pname);
             if (match === null) {
               results.push({ type: 'create_bundle', success: false, detail: `Проект "${pname}" не найден` });
             } else {
-              const br = await generateBundle(match);
+              const br = generateBundle(match);
               results.push({ type: 'create_bundle', success: true, detail: `📦 Bundle: ${br.vaultPath} (${br.sizeKb} KB)` });
             }
             break;
@@ -517,14 +383,14 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
           case 'update_project': {
             const fields: string[] = []; const values: unknown[] = [];
             for (const key of ['name', 'color', 'status']) {
-              if (action[key] !== undefined) { fields.push(`${key} = $${fields.length + 1}`); values.push(action[key]); }
+              if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
             }
-            if (fields.length > 0) await execute(`UPDATE projects SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`, [...values, action['project_id'], userId]);
+            if (fields.length > 0) db.prepare(`UPDATE projects SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?`).run(...values, action['project_id'], userId);
             results.push({ type: 'update_project', success: true, detail: `Проект #${action['project_id']} обновлён` });
             break;
           }
           case 'delete_project': {
-            await execute("UPDATE projects SET archived = 1, updated_at = NOW() WHERE id = $1 AND user_id = $2", [action['project_id'], userId]);
+            db.prepare("UPDATE projects SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND user_id = ?").run(action['project_id'], userId);
             results.push({ type: 'delete_project', success: true, detail: `Проект #${action['project_id']} удалён` });
             break;
           }
@@ -532,30 +398,24 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
             const summaryRaw = (action['summary_raw'] as string) ?? '';
             let safeMeetingProjId = action['project_id'] ?? null;
             if (safeMeetingProjId) {
-              const projCheck = await queryOne('SELECT id FROM projects WHERE id = $1 AND user_id = $2', [safeMeetingProjId, userId]);
+              const projCheck = db.prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(safeMeetingProjId, userId);
               if (!projCheck) safeMeetingProjId = null;
             }
-            const mInserted = await queryOne<{ id: number }>(
-              'INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-              [action['title'], action['date'], safeMeetingProjId, summaryRaw, userId]
-            );
-            const meetingId = mInserted!.id;
+            const r = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES (?, ?, ?, ?, ?)').run(action['title'], action['date'], safeMeetingProjId, summaryRaw, userId);
+            const meetingId = Number(r.lastInsertRowid);
             if (Array.isArray(action['person_ids'])) {
-              for (const pid of action['person_ids'] as number[]) {
-                await execute('INSERT INTO meeting_people (meeting_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [meetingId, pid]);
-              }
+              for (const pid of action['person_ids'] as number[]) db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, pid);
             }
             // Create tasks linked to meeting (as backlog, user reviews later)
             const meetingTasks = Array.isArray(action['tasks']) ? action['tasks'] as string[] : [];
             for (const taskTitle of meetingTasks) {
               if (!taskTitle || typeof taskTitle !== 'string') continue;
-              const tInserted = await queryOne<{ id: number }>(
-                'INSERT INTO tasks (project_id, title, description, status, priority, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-                [safeMeetingProjId, taskTitle, `Из встречи: ${action['title']} (${action['date']})`, 'backlog', 3, userId]
+              const tr = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, user_id) VALUES (?, ?, ?, ?, ?, ?)').run(
+                safeMeetingProjId, taskTitle, `Из встречи: ${action['title']} (${action['date']})`, 'backlog', 3, userId
               );
-              const taskId = tInserted!.id;
+              const taskId = Number(tr.lastInsertRowid);
               // Link task to meeting via agreements
-              try { await execute('INSERT INTO agreements (meeting_id, description, status, person_id) VALUES ($1, $2, $3, $4)', [meetingId, taskTitle, 'pending', null]); } catch {}
+              try { db.prepare('INSERT INTO agreements (meeting_id, description, status, person_id) VALUES (?, ?, ?, ?)').run(meetingId, taskTitle, 'pending', null); } catch {}
               void taskId;
             }
             const taskCount = meetingTasks.length;
@@ -565,38 +425,39 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
           case 'update_meeting': {
             const fields: string[] = []; const values: unknown[] = [];
             for (const key of ['title', 'date', 'project_id', 'summary_raw']) {
-              if (action[key] !== undefined) { fields.push(`${key} = $${fields.length + 1}`); values.push(action[key]); }
+              if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
             }
-            if (fields.length > 0) await execute(`UPDATE meetings SET ${fields.join(', ')} WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`, [...values, action['meeting_id'], userId]);
+            if (fields.length > 0) db.prepare(`UPDATE meetings SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, action['meeting_id'], userId);
             results.push({ type: 'update_meeting', success: true, detail: `Встреча #${action['meeting_id']} обновлена` });
             break;
           }
           case 'delete_meeting': {
-            await execute('DELETE FROM meeting_people WHERE meeting_id IN (SELECT id FROM meetings WHERE id = $1 AND user_id = $2)', [action['meeting_id'], userId]);
-            await execute('DELETE FROM meetings WHERE id = $1 AND user_id = $2', [action['meeting_id'], userId]);
+            db.prepare('DELETE FROM meeting_people WHERE meeting_id IN (SELECT id FROM meetings WHERE id = ? AND user_id = ?)').run(action['meeting_id'], userId);
+            db.prepare('DELETE FROM meetings WHERE id = ? AND user_id = ?').run(action['meeting_id'], userId);
             results.push({ type: 'delete_meeting', success: true, detail: `Встреча #${action['meeting_id']} удалена` });
             break;
           }
           case 'create_person': {
-            const pInserted = await queryOne<{ id: number }>(
-              'INSERT INTO people (name, company, role, phone, email, telegram, notes, project_id, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
-              [action['name'], action['company'] ?? '', action['role'] ?? '', action['phone'] ?? '', action['email'] ?? '', action['telegram'] ?? '', action['notes'] ?? '', action['project_id'] ?? null, userId]
+            const r = db.prepare('INSERT INTO people (name, company, role, phone, email, telegram, notes, project_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+              action['name'], action['company'] ?? '', action['role'] ?? '',
+              action['phone'] ?? '', action['email'] ?? '', action['telegram'] ?? '',
+              action['notes'] ?? '', action['project_id'] ?? null, userId
             );
-            const personId = pInserted!.id;
+            const personId = Number(r.lastInsertRowid);
             // Link to project via junction table if project_id provided
             if (action['project_id']) {
-              try { await execute('INSERT INTO people_projects (person_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [personId, action['project_id']]); } catch {}
+              try { db.prepare('INSERT OR IGNORE INTO people_projects (person_id, project_id) VALUES (?, ?)').run(personId, action['project_id']); } catch {}
             }
             results.push({ type: 'create_person', success: true, detail: `Контакт "${action['name']}" создан${action['company'] ? ` (${action['company']})` : ''}${action['project_id'] ? ' + привязан к проекту' : ''}` });
             break;
           }
           case 'delete_person': {
-            const personOwnerCheck = await queryOne('SELECT id FROM people WHERE id = $1 AND user_id = $2', [action['person_id'], userId]);
+            const personOwnerCheck = db.prepare('SELECT id FROM people WHERE id = ? AND user_id = ?').get(action['person_id'], userId);
             if (personOwnerCheck) {
-              await execute('DELETE FROM task_people WHERE person_id = $1', [action['person_id']]);
-              await execute('DELETE FROM meeting_people WHERE person_id = $1', [action['person_id']]);
-              await execute('DELETE FROM people_projects WHERE person_id = $1', [action['person_id']]);
-              await execute('DELETE FROM people WHERE id = $1 AND user_id = $2', [action['person_id'], userId]);
+              db.prepare('DELETE FROM task_people WHERE person_id = ?').run(action['person_id']);
+              db.prepare('DELETE FROM meeting_people WHERE person_id = ?').run(action['person_id']);
+              db.prepare('DELETE FROM people_projects WHERE person_id = ?').run(action['person_id']);
+              db.prepare('DELETE FROM people WHERE id = ? AND user_id = ?').run(action['person_id'], userId);
             }
             results.push({ type: 'delete_person', success: true, detail: `Контакт #${action['person_id']} удалён` });
             break;
@@ -606,13 +467,13 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
             const fields: string[] = [];
             const values: unknown[] = [];
             for (const f of ['name', 'company', 'role', 'phone', 'email', 'telegram', 'project_id']) {
-              if (action[f] !== undefined) { fields.push(`${f} = $${fields.length + 1}`); values.push(action[f]); }
+              if (action[f] !== undefined) { fields.push(`${f} = ?`); values.push(action[f]); }
             }
             if (fields.length > 0) {
-              await execute(`UPDATE people SET ${fields.join(', ')} WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`, [...values, pid, userId]);
+              db.prepare(`UPDATE people SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, pid, userId);
               // Update project junction
               if (action['project_id']) {
-                try { await execute('INSERT INTO people_projects (person_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [pid, action['project_id']]); } catch {}
+                try { db.prepare('INSERT OR IGNORE INTO people_projects (person_id, project_id) VALUES (?, ?)').run(pid, action['project_id']); } catch {}
               }
             }
             results.push({ type: 'update_person', success: true, detail: `Контакт #${pid} обновлён` });
@@ -631,9 +492,9 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
             const tmpPath = `/tmp/pis-file-${Date.now()}-${filename}`;
             fs.writeFileSync(tmpPath, content, 'utf-8');
             // Find user's tg_id
-            const actionUserId = getUserId(req as AuthRequest);
-            if (actionUserId) {
-              const userRow = await queryOne<{ tg_id: string | null }>('SELECT tg_id FROM users WHERE id = $1', [actionUserId]);
+            const userId = getUserId(req as AuthRequest);
+            if (userId) {
+              const userRow = db.prepare('SELECT tg_id FROM users WHERE id = ?').get(userId) as { tg_id: string | null } | undefined;
               if (userRow?.tg_id) {
                 const { telegramService } = require('../services/telegram.service');
                 await telegramService.sendFileToUser(userRow.tg_id, tmpPath, filename, message || `📄 ${filename}`);
@@ -667,52 +528,48 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
 aiRouter.post('/daily-plan', async (req: AuthRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
+    const userParams = userId != null ? [userId] : [];
     const today = moscowDateString();
+    const db = getDb();
 
     // Today's tasks by due_date and priority
-    const todayTasks = userId != null
-      ? await queryAll(`SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status != 'done' AND (due_date = $1 OR status = 'in_progress') AND user_id = $2 ORDER BY priority DESC`, [today, userId])
-      : await queryAll(`SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status != 'done' AND (due_date = $1 OR status = 'in_progress') ORDER BY priority DESC`, [today]);
+    const todayTasks = db.prepare(
+      `SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status != 'done' AND (due_date = ? OR status = 'in_progress')${userFilter} ORDER BY priority DESC`
+    ).all(today, ...userParams);
 
     // All active tasks (for broader context)
-    const activeTasks = userId != null
-      ? await queryAll(`SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND user_id = $1 ORDER BY priority DESC LIMIT 30`, [userId])
-      : await queryAll(`SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') ORDER BY priority DESC LIMIT 30`, []);
+    const activeTasks = db.prepare(
+      `SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday')${userFilter} ORDER BY priority DESC LIMIT 30`
+    ).all(...userParams);
 
     // Today's meetings
-    const meetings = userId != null
-      ? await queryAll(`SELECT title, date FROM meetings WHERE date = $1 AND user_id = $2 ORDER BY date ASC`, [today, userId])
-      : await queryAll(`SELECT title, date FROM meetings WHERE date = $1 ORDER BY date ASC`, [today]);
+    const meetings = db.prepare(
+      `SELECT title, date FROM meetings WHERE date = ?${userFilter} ORDER BY date ASC`
+    ).all(today, ...userParams);
 
     // Habits not yet done today
-    const habits = userId != null
-      ? await queryAll(`
-          SELECT h.title, h.icon FROM habits h
-          WHERE h.archived = 0 AND h.user_id = $1 AND h.id NOT IN (
-            SELECT habit_id FROM habit_logs WHERE date = $2 AND completed = 1
-          )
-        `, [userId, today])
-      : await queryAll(`
-          SELECT h.title, h.icon FROM habits h
-          WHERE h.archived = 0 AND h.id NOT IN (
-            SELECT habit_id FROM habit_logs WHERE date = $1 AND completed = 1
-          )
-        `, [today]);
+    const habits = db.prepare(`
+      SELECT h.title, h.icon FROM habits h
+      WHERE h.archived = 0${userFilter} AND h.id NOT IN (
+        SELECT habit_id FROM habit_logs WHERE date = ? AND completed = 1
+      )
+    `).all(...userParams, today);
 
     // Goals progress
-    const goals = userId != null
-      ? await queryAll(`SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active' AND user_id = $1`, [userId])
-      : await queryAll(`SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active'`, []);
+    const goals = db.prepare(
+      `SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active'${userFilter}`
+    ).all(...userParams);
 
     // Priority project context
     const priorityProjectId = req.body?.priority_project_id ? Number(req.body.priority_project_id) : null;
     let priorityLine = '';
     if (priorityProjectId) {
-      const proj = await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [priorityProjectId]);
+      const proj = db.prepare('SELECT name FROM projects WHERE id = ?').get(priorityProjectId) as { name: string } | undefined;
       if (proj) {
-        const projTasks = userId != null
-          ? await queryAll(`SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND project_id = $1 AND user_id = $2 ORDER BY priority DESC`, [priorityProjectId, userId])
-          : await queryAll(`SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND project_id = $1 ORDER BY priority DESC`, [priorityProjectId]);
+        const projTasks = db.prepare(
+          `SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND project_id = ?${userFilter} ORDER BY priority DESC`
+        ).all(priorityProjectId, ...userParams);
         priorityLine = `\n\n⭐ ПРИОРИТЕТНЫЙ ПРОЕКТ НА СЕГОДНЯ: "${proj.name}". Его задачи должны быть в фокусе и занимать основную часть дня.\nЗадачи приоритетного проекта: ${JSON.stringify(projTasks)}`;
       }
     }
@@ -736,70 +593,61 @@ aiRouter.post('/daily-plan', async (req: AuthRequest, res: Response) => {
 Цели и прогресс: ${JSON.stringify(goals)}${priorityLine}
 Дата: ${today}`;
 
-    const plan = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini', false, false, userId);
+    const plan = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
     res.json(ok({ plan }));
   } catch (err) {
-    res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
+    console.error("[chat] ERROR:", err); res.status(500).json(fail(err instanceof Error ? err.message : "AI error"));
   }
 });
 
 aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) => {
   try {
     const userId = getUserId(req);
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
+    const userParams = userId != null ? [userId] : [];
     const today = moscowDateString();
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const db = getDb();
 
     // Tasks completed in last 7 days
-    const completedTasks = userId != null
-      ? await queryAll(`SELECT title, priority, project_id, updated_at FROM tasks WHERE status = 'done' AND updated_at >= $1 AND user_id = $2 ORDER BY updated_at DESC`, [weekAgo, userId])
-      : await queryAll(`SELECT title, priority, project_id, updated_at FROM tasks WHERE status = 'done' AND updated_at >= $1 ORDER BY updated_at DESC`, [weekAgo]);
+    const completedTasks = db.prepare(
+      `SELECT title, priority, project_id, updated_at FROM tasks WHERE status = 'done' AND updated_at >= ?${userFilter} ORDER BY updated_at DESC`
+    ).all(weekAgo, ...userParams);
 
     // Tasks created in last 7 days
-    const createdTasks = userId != null
-      ? await queryAll(`SELECT title, priority, project_id, created_at FROM tasks WHERE created_at >= $1 AND user_id = $2 ORDER BY created_at DESC`, [weekAgo, userId])
-      : await queryAll(`SELECT title, priority, project_id, created_at FROM tasks WHERE created_at >= $1 ORDER BY created_at DESC`, [weekAgo]);
+    const createdTasks = db.prepare(
+      `SELECT title, priority, project_id, created_at FROM tasks WHERE created_at >= ?${userFilter} ORDER BY created_at DESC`
+    ).all(weekAgo, ...userParams);
 
     // Overdue tasks
-    const overdueTasks = userId != null
-      ? await queryAll(`SELECT title, priority, due_date, project_id FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < $1 AND user_id = $2 ORDER BY due_date ASC`, [today, userId])
-      : await queryAll(`SELECT title, priority, due_date, project_id FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < $1 ORDER BY due_date ASC`, [today]);
+    const overdueTasks = db.prepare(
+      `SELECT title, priority, due_date, project_id FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND due_date < ?${userFilter} ORDER BY due_date ASC`
+    ).all(today, ...userParams);
 
     // Task distribution by project
-    const projectDistribution = userId != null
-      ? await queryAll(`
-          SELECT p.name as project, COUNT(t.id) as task_count
-          FROM tasks t
-          LEFT JOIN projects p ON t.project_id = p.id
-          WHERE t.archived = 0 AND t.status != 'done' AND t.user_id = $1
-          GROUP BY t.project_id, p.name
-          ORDER BY task_count DESC
-        `, [userId])
-      : await queryAll(`
-          SELECT p.name as project, COUNT(t.id) as task_count
-          FROM tasks t
-          LEFT JOIN projects p ON t.project_id = p.id
-          WHERE t.archived = 0 AND t.status != 'done'
-          GROUP BY t.project_id, p.name
-          ORDER BY task_count DESC
-        `, []);
+    const projectDistribution = db.prepare(`
+      SELECT p.name as project, COUNT(t.id) as task_count
+      FROM tasks t
+      LEFT JOIN projects p ON t.project_id = p.id
+      WHERE t.archived = 0 AND t.status != 'done'${userId != null ? ' AND t.user_id = ?' : ''}
+      GROUP BY t.project_id
+      ORDER BY task_count DESC
+    `).all(...userParams);
 
     // Habit completion rate (last 7 days)
-    const habits = userId != null
-      ? await queryAll<{ id: number; title: string }>(`SELECT id, title FROM habits WHERE archived = 0 AND user_id = $1`, [userId])
-      : await queryAll<{ id: number; title: string }>(`SELECT id, title FROM habits WHERE archived = 0`, []);
-    const habitLogs = await queryAll<{ habit_id: number; completed_days: number }>(
-      "SELECT habit_id, COUNT(*) as completed_days FROM habit_logs WHERE date >= $1 AND completed = 1 GROUP BY habit_id",
-      [weekAgo]
-    );
+    const habits = db.prepare(`SELECT id, title FROM habits WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; title: string }>;
+    const habitLogs = db.prepare(
+      "SELECT habit_id, COUNT(*) as completed_days FROM habit_logs WHERE date >= ? AND completed = 1 GROUP BY habit_id"
+    ).all(weekAgo) as Array<{ habit_id: number; completed_days: number }>;
     const habitStats = habits.map(h => {
       const log = habitLogs.find(l => l.habit_id === h.id);
       return { title: h.title, completed_days: log?.completed_days ?? 0, total_days: 7 };
     });
 
     // Goals progress
-    const goals = userId != null
-      ? await queryAll(`SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active' AND user_id = $1`, [userId])
-      : await queryAll(`SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active'`, []);
+    const goals = db.prepare(
+      `SELECT title, current_value, target_value, unit, status FROM goals WHERE status = 'active'${userFilter}`
+    ).all(...userParams);
 
     const prompt = `Проведи анализ продуктивности за последние 7 дней на русском языке.
 
@@ -820,10 +668,10 @@ aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) 
 5. 🎯 Прогресс по целям
 6. 💡 Рекомендации по улучшению продуктивности`;
 
-    const analysis = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini', false, false, userId);
+    const analysis = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
     res.json(ok({ analysis }));
   } catch (err) {
-    res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
+    console.error("[chat] ERROR:", err); res.status(500).json(fail(err instanceof Error ? err.message : "AI error"));
   }
 });
 
@@ -831,8 +679,8 @@ aiRouter.get('/search', async (req: AuthRequest, res: Response) => {
   const q = req.query['q'];
   if (typeof q !== 'string' || !q) { res.status(400).json(fail('Query parameter q is required')); return; }
   try {
-    const tasks = await queryAll("SELECT title FROM tasks WHERE title LIKE $1 LIMIT 10", [`%${q}%`]);
-    const meetings = await queryAll("SELECT title, summary_raw FROM meetings WHERE title LIKE $1 OR summary_raw LIKE $2 LIMIT 5", [`%${q}%`, `%${q}%`]);
+    const tasks = getDb().prepare("SELECT title FROM tasks WHERE title LIKE ? LIMIT 10").all(`%${q}%`);
+    const meetings = getDb().prepare("SELECT title, summary_raw FROM meetings WHERE title LIKE ? OR summary_raw LIKE ? LIMIT 5").all(`%${q}%`, `%${q}%`);
     const result = await claude.searchKnowledge(q, JSON.stringify({ tasks, meetings }));
     res.json(ok(result));
   } catch (err) {

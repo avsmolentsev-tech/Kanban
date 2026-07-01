@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { Telegraf, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { config } from '../config';
-import { queryAll, queryOne, execute } from '../db/db';
+import { getDb } from '../db/db';
 import { IngestService } from './ingest.service';
 import { ClaudeService } from './claude.service';
 import OpenAI from 'openai';
@@ -59,9 +59,10 @@ export class TelegramService {
   }
 
   /** Resolve internal user id from Telegram user id. Returns null if not linked — user must /login first. */
-  private async resolveUserId(tgId: number, _tgName?: string): Promise<number | null> {
+  private resolveUserId(tgId: number, _tgName?: string): number | null {
     if (!tgId) return null;
-    const row = await queryOne<{ id: number }>("SELECT id FROM users WHERE tg_id = $1", [String(tgId)]);
+    const db = getDb();
+    const row = db.prepare("SELECT id FROM users WHERE tg_id = ?").get(String(tgId)) as { id: number } | undefined;
     if (row) return row.id;
     // No auto-create — user must link via /login
     return null;
@@ -75,20 +76,19 @@ export class TelegramService {
   }
 
   private async saveDraftAsIs(draft: DraftCard): Promise<void> {
+    const db = getDb();
     const obsidian = new ObsidianService(config.vaultPath).forUser(draft.userId);
     const tagsList = draft.tags;
     if (draft.type === 'meeting') {
       // Check for duplicate: same title + date
-      const existing = await queryOne<{ id: number; title: string }>(
-        'SELECT id, title FROM meetings WHERE user_id = $1 AND date = $2 AND title = $3',
-        [draft.userId, draft.date, draft.title]
-      );
+      const existing = db.prepare('SELECT id, title FROM meetings WHERE user_id = ? AND date = ? AND title = ?').get(draft.userId, draft.date, draft.title) as { id: number; title: string } | undefined;
       if (existing) {
         console.log(`[draft] duplicate meeting detected: "${draft.title}" on ${draft.date} (existing #${existing.id})`);
         // Update existing instead of creating new
-        await execute(
-          'UPDATE meetings SET summary_raw = $1, summary_structured = $2 WHERE id = $3',
-          [draft.summary || draft.title, JSON.stringify({ transcript: draft.transcript }), existing.id]
+        db.prepare('UPDATE meetings SET summary_raw = ?, summary_structured = ? WHERE id = ?').run(
+          draft.summary || draft.title,
+          JSON.stringify({ transcript: draft.transcript }),
+          existing.id
         );
         this.pushRecentAction(draft.tgId, { type: 'meeting', title: draft.title, id: existing.id, table: 'meetings', date: draft.date, savedAt: Date.now() });
         return;
@@ -99,24 +99,23 @@ export class TelegramService {
       const cleanProject = (draft.projectName ?? '').replace(/^❓\s*/, '').replace(/\s*\(не найден\)$/, '').trim() || null;
       let projectId: number | null = null;
       if (cleanProject) {
-        const allProjects = await queryAll<{ id: number; name: string }>('SELECT id, name FROM projects WHERE user_id = $1 AND archived = 0', [draft.userId]);
+        const allProjects = db.prepare('SELECT id, name FROM projects WHERE user_id = ? AND archived = 0').all(draft.userId) as Array<{ id: number; name: string }>;
         const lowerClean = cleanProject.toLowerCase();
         const proj = allProjects.find(p => p.name.toLowerCase() === lowerClean || p.name.toLowerCase().includes(lowerClean) || lowerClean.includes(p.name.toLowerCase()));
         projectId = proj?.id ?? null;
       }
-      const inserted = await queryOne<{ id: number }>(
-        'INSERT INTO meetings (user_id, title, date, project_id, summary_raw, summary_structured, source_file, processed) VALUES ($1, $2, $3, $4, $5, $6, $7, 1) RETURNING id',
-        [draft.userId, draft.title, draft.date, projectId, summaryBody, JSON.stringify({ transcript: draft.transcript }), draft.sourceKind]
-      );
-      const meetingId = inserted!.id;
+      const result = db.prepare(
+        'INSERT INTO meetings (user_id, title, date, project_id, summary_raw, summary_structured, source_file, processed) VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
+      ).run(draft.userId, draft.title, draft.date, projectId, summaryBody, JSON.stringify({ transcript: draft.transcript }), draft.sourceKind);
+      const meetingId = Number(result.lastInsertRowid);
       // Link people
       for (const personName of draft.people) {
-        const person = await queryOne<{ id: number }>('SELECT id FROM people WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [draft.userId, personName.trim()]);
+        const person = db.prepare('SELECT id FROM people WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(draft.userId, personName.trim()) as { id: number } | undefined;
         if (person) {
-          await execute('INSERT INTO meeting_people (meeting_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [meetingId, person.id]);
+          db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, person.id);
         } else {
-          const newPerson = await queryOne<{ id: number }>('INSERT INTO people (user_id, name) VALUES ($1, $2) RETURNING id', [draft.userId, personName.trim()]);
-          await execute('INSERT INTO meeting_people (meeting_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [meetingId, newPerson!.id]);
+          const newPerson = db.prepare('INSERT INTO people (user_id, name) VALUES (?, ?)').run(draft.userId, personName.trim());
+          db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, Number(newPerson.lastInsertRowid));
         }
       }
       const vaultRel = await obsidian.writeMeeting({
@@ -127,7 +126,7 @@ export class TelegramService {
         source: `telegram-${draft.sourceKind}`,
         tags: tagsList,
       });
-      await execute('UPDATE meetings SET vault_path = $1 WHERE id = $2', [vaultRel, meetingId]);
+      db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vaultRel, meetingId);
       this.pushRecentAction(draft.tgId, { type: 'meeting', title: draft.title, id: meetingId, table: 'meetings', date: draft.date, savedAt: Date.now() });
 
       // Tasks from meeting are NOT auto-created — user selects them via UI dialog
@@ -137,22 +136,22 @@ export class TelegramService {
         const claude = new ClaudeService();
         claude.generateProSummaries(draft.transcript, draft.title, draft.people).then(async (summaries) => {
           // Read-merge-write to avoid overwriting user edits
-          const existingRow = await queryOne<{ summary_structured: string | null }>('SELECT summary_structured FROM meetings WHERE id = $1', [meetingId]);
+          const existing = db.prepare('SELECT summary_structured FROM meetings WHERE id = ?').get(meetingId) as { summary_structured: string | null } | undefined;
           let merged: Record<string, unknown> = {};
-          try { merged = JSON.parse(existingRow?.summary_structured || '{}'); } catch {}
+          try { merged = JSON.parse(existing?.summary_structured || '{}'); } catch {}
           merged = { ...merged, ...summaries, transcript: draft.transcript };
-          await execute(
-            'UPDATE meetings SET summary_raw = $1, summary_structured = $2 WHERE id = $3',
-            [summaries.notes || summaryBody, JSON.stringify(merged), meetingId]
+          db.prepare('UPDATE meetings SET summary_raw = ?, summary_structured = ? WHERE id = ?').run(
+            summaries.notes || summaryBody,
+            JSON.stringify(merged),
+            meetingId
           );
           console.log(`[draft] pro summaries generated for meeting #${meetingId}`);
           // Re-sync to Obsidian with full structured data (notes, Q&A, actions)
           try {
-            const fresh = await queryOne<Record<string, unknown>>('SELECT * FROM meetings WHERE id = $1', [meetingId]);
+            const fresh = db.prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId) as Record<string, unknown> | undefined;
             if (fresh && (fresh['sync_vault'] as number | null | undefined) !== 0) {
-              const projectNameRow = fresh['project_id'] ? await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [fresh['project_id'] as number]) : undefined;
-              const projectName = projectNameRow?.name;
-              const peopleNames = (await queryAll<{ name: string }>('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [meetingId])).map(x => x.name);
+              const projectName = fresh['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(fresh['project_id'] as number) as { name: string } | undefined)?.name : undefined;
+              const peopleNames = (db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map(x => x.name);
               const vp = await obsidian.writeMeeting({
                 title: fresh['title'] as string,
                 date: fresh['date'] as string,
@@ -162,7 +161,7 @@ export class TelegramService {
                 people: peopleNames,
               });
               if (vp && vp !== fresh['vault_path']) {
-                await execute('UPDATE meetings SET vault_path = $1 WHERE id = $2', [vp, meetingId]);
+                db.prepare('UPDATE meetings SET vault_path = ? WHERE id = ?').run(vp, meetingId);
               }
               console.log(`[draft] vault re-synced for meeting #${meetingId}`);
             }
@@ -178,27 +177,20 @@ export class TelegramService {
       const cleanProject = (draft.projectName ?? '').replace(/^❓\s*/, '').replace(/\s*\(не найден\)$/, '').trim() || null;
       let projectId: number | null = null;
       if (cleanProject) {
-        const allProjects = await queryAll<{ id: number; name: string }>('SELECT id, name FROM projects WHERE user_id = $1 AND archived = 0', [draft.userId]);
+        const allProjects = db.prepare('SELECT id, name FROM projects WHERE user_id = ? AND archived = 0').all(draft.userId) as Array<{ id: number; name: string }>;
         const lowerClean = cleanProject.toLowerCase();
         const proj = allProjects.find(p => p.name.toLowerCase() === lowerClean || p.name.toLowerCase().includes(lowerClean) || lowerClean.includes(p.name.toLowerCase()));
         projectId = proj?.id ?? null;
       }
-      const taskInserted = await queryOne<{ id: number }>(
-        'INSERT INTO tasks (user_id, title, description, status, priority, urgency, project_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-        [draft.userId, draft.title, draft.summary, 'todo', 3, 3, projectId]
-      );
-      const taskId = taskInserted!.id;
+      const result = db.prepare(
+        'INSERT INTO tasks (user_id, title, description, status, priority, urgency, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(draft.userId, draft.title, draft.summary, 'todo', 3, 3, projectId);
+      const taskId = Number(result.lastInsertRowid);
       // Link people
       for (const personName of draft.people) {
-        const person = await queryOne<{ id: number }>('SELECT id FROM people WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [draft.userId, personName.trim()]);
-        let personId: number;
-        if (person) {
-          personId = person.id;
-        } else {
-          const newPerson = await queryOne<{ id: number }>('INSERT INTO people (user_id, name) VALUES ($1, $2) RETURNING id', [draft.userId, personName.trim()]);
-          personId = newPerson!.id;
-        }
-        await execute('INSERT INTO task_people (task_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [taskId, personId]);
+        const person = db.prepare('SELECT id FROM people WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(draft.userId, personName.trim()) as { id: number } | undefined;
+        const personId = person?.id ?? Number(db.prepare('INSERT INTO people (user_id, name) VALUES (?, ?)').run(draft.userId, personName.trim()).lastInsertRowid);
+        db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(taskId, personId);
       }
       const vaultRel = await obsidian.writeTask({
         title: draft.title, status: 'todo', priority: 3, urgency: 3,
@@ -208,21 +200,20 @@ export class TelegramService {
         tags: tagsList,
         source: `telegram-${draft.sourceKind}`,
       });
-      await execute('UPDATE tasks SET vault_path = $1 WHERE id = $2', [vaultRel, taskId]);
+      db.prepare('UPDATE tasks SET vault_path = ? WHERE id = ?').run(vaultRel, taskId);
       this.pushRecentAction(draft.tgId, { type: 'task', title: draft.title, id: taskId, table: 'tasks', date: draft.date, savedAt: Date.now() });
     } else if (draft.type === 'idea') {
       // Resolve project
       const cleanProjectIdea = (draft.projectName ?? '').replace(/^❓\s*/, '').replace(/\s*\(не найден\)$/, '').trim() || null;
       let ideaProjectId: number | null = null;
       if (cleanProjectIdea) {
-        const proj = await queryOne<{ id: number }>('SELECT id FROM projects WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [draft.userId, cleanProjectIdea]);
+        const proj = db.prepare('SELECT id FROM projects WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(draft.userId, cleanProjectIdea) as { id: number } | undefined;
         ideaProjectId = proj?.id ?? null;
       }
-      const ideaInserted = await queryOne<{ id: number }>(
-        'INSERT INTO ideas (user_id, title, body, category, status, project_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-        [draft.userId, draft.title, draft.summary, 'personal', 'backlog', ideaProjectId]
-      );
-      const ideaId = ideaInserted!.id;
+      const ideaResult = db.prepare(
+        'INSERT INTO ideas (user_id, title, body, category, status, project_id) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(draft.userId, draft.title, draft.summary, 'personal', 'backlog', ideaProjectId);
+      const ideaId = Number(ideaResult.lastInsertRowid);
       await obsidian.writeIdea({
         title: draft.title, body: draft.summary,
         category: 'personal',
@@ -240,7 +231,8 @@ export class TelegramService {
 
   private async applyCorrection(ctx: any, draft: DraftCard, userText: string): Promise<void> {
     const claude = new ClaudeService();
-    const existingProjects = await queryAll<{ name: string }>('SELECT name FROM projects WHERE user_id = $1 AND archived = 0', [draft.userId]);
+    const db = getDb();
+    const existingProjects = db.prepare('SELECT name FROM projects WHERE user_id = ? AND archived = 0').all(draft.userId) as Array<{ name: string }>;
     const patched = await claude.correctDraft(draft, userText, existingProjects.map(p => p.name));
     // Fuzzy-match project from correction against DB
     let projectName = patched.project_hints[0] ?? null;
@@ -286,6 +278,7 @@ export class TelegramService {
     sourceLocalPath: string | null,
   ): Promise<void> {
     if (!transcript.trim()) { await ctx.reply('⚠️ Пустой текст, нечего сохранять'); return; }
+    const db = getDb();
     const claude = new ClaudeService();
 
     // Check if lecture mode was set
@@ -293,7 +286,7 @@ export class TelegramService {
     if (cType) this.contentType.delete(tgId); // one-shot
 
     // Pass existing project names to Claude so it picks from the list
-    const existingProjects = await queryAll<{ name: string }>('SELECT name FROM projects WHERE user_id = $1 AND archived = 0', [userId]);
+    const existingProjects = db.prepare('SELECT name FROM projects WHERE user_id = ? AND archived = 0').all(userId) as Array<{ name: string }>;
     const projectNames = existingProjects.map(p => p.name);
     const typeHint = cType === 'lecture' ? 'lecture' : undefined;
     const extraction: ExtractionResult = await claude.extractDraft(transcript, typeHint, projectNames);
@@ -331,15 +324,16 @@ export class TelegramService {
 
   /** Execute a command via AI — same as web voice commands */
   private async executeCommand(text: string, tgUserId?: number, lastContact?: { id: number; name: string }): Promise<{ text: string; files?: Array<{ path: string; filename: string }> }> {
-    const userId = tgUserId ? await this.resolveUserId(tgUserId) : null;
-    const userFilter = userId != null ? ' AND user_id = $1' : '';
+    const db = getDb();
+    const userId = tgUserId ? this.resolveUserId(tgUserId) : null;
+    const userFilter = userId != null ? ' AND user_id = ?' : '';
     const userParams = userId != null ? [userId] : [];
     const claude = new ClaudeService();
-    const projects = await queryAll<{ id: number; name: string }>(`SELECT id, name FROM projects WHERE archived = 0${userFilter}`, userParams);
-    const tasks = await queryAll<{ id: number; title: string; status: string; project_id: number | null; due_date: string | null }>(`SELECT id, title, status, project_id, due_date FROM tasks WHERE archived = 0${userFilter}`, userParams);
-    const people = await queryAll<{ id: number; name: string }>(`SELECT id, name FROM people WHERE 1=1${userFilter}`, userParams);
+    const projects = db.prepare(`SELECT id, name FROM projects WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; name: string }>;
+    const tasks = db.prepare(`SELECT id, title, status, project_id, due_date FROM tasks WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; title: string; status: string; project_id: number | null; due_date: string | null }>;
+    const people = db.prepare(`SELECT id, name FROM people WHERE 1=1${userFilter}`).all(...userParams) as Array<{ id: number; name: string }>;
     let goals: Array<{ id: number; title: string; type: string; parent_id: number | null; current_value: number; target_value: number; unit: string; status: string }> = [];
-    try { goals = await queryAll<typeof goals[number]>(`SELECT id, title, type, parent_id, current_value, target_value, unit, status FROM goals WHERE status = 'active'${userFilter} ORDER BY type, parent_id`, userParams); } catch {}
+    try { goals = db.prepare(`SELECT id, title, type, parent_id, current_value, target_value, unit, status FROM goals WHERE status = 'active'${userFilter} ORDER BY type, parent_id`).all(...userParams) as typeof goals; } catch {}
 
     const today = moscowDateString();
     const todayTasks = tasks.filter(t => t.due_date === today && t.status !== 'done' && t.status !== 'someday');
@@ -354,21 +348,20 @@ export class TelegramService {
     let fullMeetingContent = '';
 
     // Helper: fetch people linked to a meeting
-    const getMeetingPeople = async (meetingId: number): Promise<string[]> => {
-      const rows = await queryAll<{ name: string }>('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [meetingId]);
-      return rows.map(r => r.name);
+    const getMeetingPeople = (meetingId: number): string[] => {
+      return (db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(meetingId) as Array<{ name: string }>).map(r => r.name);
     };
 
     if (needsFullMeetings) {
-      const fullMeetings = await queryAll<{ id: number; title: string; date: string; project_id: number | null; summary_raw: string }>(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 5`, userParams);
-      const fullMeetingsWithPeople = await Promise.all(fullMeetings.map(async m => ({ ...m, people: await getMeetingPeople(m.id) })));
-      fullMeetingContent = fullMeetingsWithPeople.map(m => {
-        return `## Встреча #${m.id}: ${m.title} (${m.date})${m.people.length ? ` [Участники: ${m.people.join(', ')}]` : ''}\n${(m.summary_raw || '').slice(0, 8000)}`;
+      const fullMeetings = db.prepare(`SELECT id, title, date, project_id, summary_raw FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 5`).all(...userParams) as Array<{ id: number; title: string; date: string; project_id: number | null; summary_raw: string }>;
+      fullMeetingContent = fullMeetings.map(m => {
+        const ppl = getMeetingPeople(m.id);
+        return `## Встреча #${m.id}: ${m.title} (${m.date})${ppl.length ? ` [Участники: ${ppl.join(', ')}]` : ''}\n${(m.summary_raw || '').slice(0, 8000)}`;
       }).join('\n\n---\n\n');
-      meetings = fullMeetingsWithPeople.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.summary_raw || '').slice(0, 200), people: m.people }));
+      meetings = fullMeetings.map(m => ({ id: m.id, title: m.title, date: m.date, project_id: m.project_id, preview: (m.summary_raw || '').slice(0, 200), people: getMeetingPeople(m.id) }));
     } else {
-      const rawMeetings = await queryAll<{ id: number; title: string; date: string; project_id: number | null; preview: string }>(`SELECT id, title, date, project_id, SUBSTRING(summary_raw, 1, 500) as preview FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 20`, userParams);
-      meetings = await Promise.all(rawMeetings.map(async m => ({ ...m, people: await getMeetingPeople(m.id) })));
+      const rawMeetings = db.prepare(`SELECT id, title, date, project_id, substr(summary_raw, 1, 500) as preview FROM meetings WHERE 1=1${userFilter} ORDER BY date DESC LIMIT 20`).all(...userParams) as Array<{ id: number; title: string; date: string; project_id: number | null; preview: string }>;
+      meetings = rawMeetings.map(m => ({ ...m, people: getMeetingPeople(m.id) }));
     }
 
     // Recent user actions (what was just transcribed/saved/edited — for context continuity)
@@ -521,32 +514,30 @@ BHAG (Большая Дерзкая Цель на год):
       try {
         switch (action['type']) {
           case 'create_task': {
-            const taskIns = await queryOne<{ id: number }>(
-              'INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-              [action['project_id'] ?? null, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId]
+            const r = db.prepare('INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+              action['project_id'] ?? null, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId
             );
-            const taskId = taskIns!.id;
+            const taskId = Number(r.lastInsertRowid);
             // Auto-add self if no people specified
             let peopleIds = Array.isArray(action['person_ids']) ? action['person_ids'] as number[] : [];
             if (peopleIds.length === 0) {
-              const selfRow = await queryOne<{ id: number }>("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1");
+              const selfRow = db.prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
               if (selfRow) peopleIds = [selfRow.id];
             }
             for (const pid of peopleIds) {
-              await execute('INSERT INTO task_people (task_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [taskId, pid]);
+              db.prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(taskId, pid);
             }
-            const projNameRow = action['project_id'] ? await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [action['project_id'] as number]) : null;
-            const projName = projNameRow?.name ?? null;
+            const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
             results.push(`✅ Задача "${action['title']}"${projName ? ` → ${projName}` : ''}`);
             break;
           }
           case 'move_task': {
-            await execute("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2", [action['status'], action['task_id']]);
+            db.prepare("UPDATE tasks SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?").run(action['status'], action['task_id']);
             results.push(`✅ Задача #${action['task_id']} → ${action['status']}`);
             break;
           }
           case 'delete_task': {
-            await execute("UPDATE tasks SET archived = 1 WHERE id = $1", [action['task_id']]);
+            db.prepare("UPDATE tasks SET archived = 1 WHERE id = ?").run(action['task_id']);
             results.push(`🗑 Задача #${action['task_id']} удалена`);
             break;
           }
@@ -554,49 +545,46 @@ BHAG (Большая Дерзкая Цель на год):
             const fields: string[] = [];
             const values: unknown[] = [];
             for (const key of ['title', 'priority', 'urgency', 'due_date', 'project_id']) {
-              if (action[key] !== undefined) { fields.push(`${key} = $${values.length + 1}`); values.push(action[key]); }
+              if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
             }
             if (fields.length > 0) {
-              values.push(action['task_id']);
-              await execute(`UPDATE tasks SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${values.length}`, values);
+              db.prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(...values, action['task_id']);
             }
             results.push(`✅ Задача #${action['task_id']} обновлена`);
             break;
           }
           case 'create_project': {
-            await execute('INSERT INTO projects (name, color, user_id) VALUES ($1, $2, $3)', [action['name'], action['color'] ?? '#6366f1', userId]);
+            db.prepare('INSERT INTO projects (name, color, user_id) VALUES (?, ?, ?)').run(action['name'], action['color'] ?? '#6366f1', userId);
             results.push(`✅ Проект "${action['name']}"`);
             break;
           }
           case 'create_idea': {
-            await execute(
-              'INSERT INTO ideas (title, body, category, project_id, status, user_id) VALUES ($1, $2, $3, $4, $5, $6)',
-              [action['title'], (action['body'] as string) ?? '', (action['category'] as string) ?? 'personal', action['project_id'] ?? null, 'backlog', userId]
+            db.prepare('INSERT INTO ideas (title, body, category, project_id, status, user_id) VALUES (?, ?, ?, ?, ?, ?)').run(
+              action['title'], (action['body'] as string) ?? '', (action['category'] as string) ?? 'personal',
+              action['project_id'] ?? null, 'backlog', userId
             );
-            const ideaProjRow = action['project_id'] ? await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [action['project_id'] as number]) : null;
-            const projName = ideaProjRow?.name ?? null;
+            const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
             results.push(`💡 Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog`);
             break;
           }
           case 'create_habit': {
-            await execute(
-              'INSERT INTO habits (title, icon, remind_time, user_id) VALUES ($1, $2, $3, $4)',
-              [action['title'], (action['icon'] as string) ?? '✅', action['remind_time'] ?? null, userId]
+            db.prepare('INSERT INTO habits (title, icon, remind_time, user_id) VALUES (?, ?, ?, ?)').run(
+              action['title'], (action['icon'] as string) ?? '✅', action['remind_time'] ?? null, userId
             );
             results.push(`🔥 Привычка "${action['title']}" создана${action['remind_time'] ? ` (⏰ ${action['remind_time']})` : ''}`);
             break;
           }
           case 'log_habit': {
             const title = (action['habit_title'] as string).toLowerCase();
-            const habit = await queryAll<{ id: number; title: string }>(`SELECT id, title FROM habits WHERE archived = 0${userFilter}`, userParams);
+            const habit = db.prepare(`SELECT id, title FROM habits WHERE archived = 0${userFilter}`).all(...userParams) as Array<{ id: number; title: string }>;
             const match = habit.find(h => h.title.toLowerCase().includes(title) || title.includes(h.title.toLowerCase()));
             if (match) {
               const today = moscowDateString();
-              const existingLog = await queryOne<{ id: number }>("SELECT id FROM habit_logs WHERE habit_id = $1 AND date = $2", [match.id, today]);
-              if (existingLog) {
+              const existing = db.prepare("SELECT id FROM habit_logs WHERE habit_id = ? AND date = ?").get(match.id, today);
+              if (existing) {
                 results.push(`✅ "${match.title}" уже отмечена сегодня`);
               } else {
-                await execute("INSERT INTO habit_logs (habit_id, date) VALUES ($1, $2)", [match.id, today]);
+                db.prepare("INSERT INTO habit_logs (habit_id, date) VALUES (?, ?)").run(match.id, today);
                 results.push(`✅ "${match.title}" отмечена!`);
               }
             } else {
@@ -606,18 +594,16 @@ BHAG (Большая Дерзкая Цель на год):
           }
           case 'create_goal': {
             const goalType = (action['goal_type'] as string) ?? 'goal';
-            await execute(
-              'INSERT INTO goals (title, description, type, project_id, target_value, unit, due_date, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-              [action['title'], (action['description'] as string) ?? '', goalType,
-              action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%', action['due_date'] ?? null, userId]
+            const r = db.prepare('INSERT INTO goals (title, description, type, project_id, target_value, unit, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+              action['title'], (action['description'] as string) ?? '', goalType,
+              action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%', action['due_date'] ?? null, userId
             );
             results.push(`🎯 Цель "${action['title']}" создана`);
             break;
           }
           case 'create_key_result': {
-            await execute(
-              'INSERT INTO goals (title, type, parent_id, target_value, unit, user_id) VALUES ($1, $2, $3, $4, $5, $6)',
-              [action['title'], 'key_result', action['parent_id'], action['target_value'] ?? 100, (action['unit'] as string) ?? '%', userId]
+            db.prepare('INSERT INTO goals (title, type, parent_id, target_value, unit, user_id) VALUES (?, ?, ?, ?, ?, ?)').run(
+              action['title'], 'key_result', action['parent_id'], action['target_value'] ?? 100, (action['unit'] as string) ?? '%', userId
             );
             results.push(`📊 KR "${action['title']}" добавлен`);
             break;
@@ -625,22 +611,21 @@ BHAG (Большая Дерзкая Цель на год):
           case 'update_goal': {
             const fields: string[] = [];
             const values: unknown[] = [];
-            if (action['current_value'] !== undefined) { fields.push(`current_value = $${values.length + 1}`); values.push(action['current_value']); }
-            if (action['status'] !== undefined) { fields.push(`status = $${values.length + 1}`); values.push(action['status']); }
+            if (action['current_value'] !== undefined) { fields.push('current_value = ?'); values.push(action['current_value']); }
+            if (action['status'] !== undefined) { fields.push('status = ?'); values.push(action['status']); }
             if (fields.length > 0) {
-              values.push(action['goal_id']);
-              await execute(`UPDATE goals SET ${fields.join(', ')} WHERE id = $${values.length}`, values);
+              db.prepare(`UPDATE goals SET ${fields.join(', ')} WHERE id = ?`).run(...values, action['goal_id']);
             }
             results.push(`🎯 Цель #${action['goal_id']} обновлена`);
             break;
           }
           case 'create_bundle': {
             const pname = (action['project_name'] as string) ?? 'все';
-            const match = await findProjectByName(pname);
+            const match = findProjectByName(pname);
             if (match === null) {
               results.push(`❌ Проект "${pname}" не найден`);
             } else {
-              const r = await generateBundle(match);
+              const r = generateBundle(match);
               const fullPath = path.join(config.vaultPath, r.vaultPath);
               // Generate all formats
               const formats = generateAllFormats(fullPath);
@@ -656,18 +641,16 @@ BHAG (Большая Дерзкая Цель на год):
           }
           case 'create_meeting': {
             const summary = (action['summary_raw'] as string) ?? '';
-            const meetIns = await queryOne<{ id: number }>(
-              'INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-              [action['title'], action['date'], action['project_id'] ?? null, summary, userId]
+            const r = db.prepare('INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES (?, ?, ?, ?, ?)').run(
+              action['title'], action['date'], action['project_id'] ?? null, summary, userId
             );
-            const meetingId = meetIns!.id;
+            const meetingId = Number(r.lastInsertRowid);
             if (Array.isArray(action['person_ids'])) {
               for (const pid of action['person_ids'] as number[]) {
-                await execute('INSERT INTO meeting_people (meeting_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [meetingId, pid]);
+                db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(meetingId, pid);
               }
             }
-            const meetProjRow = action['project_id'] ? await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [action['project_id'] as number]) : null;
-            const projName = meetProjRow?.name ?? null;
+            const projName = action['project_id'] ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(action['project_id'] as number) as { name: string } | undefined)?.name : null;
             results.push(`✅ Встреча "${action['title']}" на ${action['date']}${projName ? ` [${projName}]` : ''}`);
             break;
           }
@@ -675,24 +658,23 @@ BHAG (Большая Дерзкая Цель на год):
             const fields: string[] = [];
             const values: unknown[] = [];
             for (const key of ['title', 'date', 'project_id', 'summary_raw']) {
-              if (action[key] !== undefined) { fields.push(`${key} = $${values.length + 1}`); values.push(action[key]); }
+              if (action[key] !== undefined) { fields.push(`${key} = ?`); values.push(action[key]); }
             }
             if (fields.length > 0) {
-              values.push(action['meeting_id']);
-              await execute(`UPDATE meetings SET ${fields.join(', ')} WHERE id = $${values.length}`, values);
+              db.prepare(`UPDATE meetings SET ${fields.join(', ')} WHERE id = ?`).run(...values, action['meeting_id']);
             }
             if (Array.isArray(action['person_ids'])) {
-              await execute('DELETE FROM meeting_people WHERE meeting_id = $1', [action['meeting_id']]);
+              db.prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(action['meeting_id']);
               for (const pid of action['person_ids'] as number[]) {
-                await execute('INSERT INTO meeting_people (meeting_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [action['meeting_id'], pid]);
+                db.prepare('INSERT OR IGNORE INTO meeting_people (meeting_id, person_id) VALUES (?, ?)').run(action['meeting_id'], pid);
               }
             }
             results.push(`✅ Встреча #${action['meeting_id']} обновлена`);
             break;
           }
           case 'delete_meeting': {
-            await execute('DELETE FROM meeting_people WHERE meeting_id = $1', [action['meeting_id']]);
-            await execute('DELETE FROM meetings WHERE id = $1', [action['meeting_id']]);
+            db.prepare('DELETE FROM meeting_people WHERE meeting_id = ?').run(action['meeting_id']);
+            db.prepare('DELETE FROM meetings WHERE id = ?').run(action['meeting_id']);
             results.push(`🗑 Встреча #${action['meeting_id']} удалена`);
             break;
           }
@@ -700,11 +682,11 @@ BHAG (Большая Дерзкая Цель на год):
             const date = action['date'] as string;
             const focus = action['focus'] as string;
             if (date && focus) {
-              const existingFocus = await queryOne<{ id: number }>('SELECT id FROM journal WHERE date = $1 AND user_id = $2', [date, userId]);
-              if (existingFocus) {
-                await execute('UPDATE journal SET focus = $1 WHERE date = $2 AND user_id = $3', [focus, date, userId]);
+              const existing = db.prepare('SELECT id FROM journal WHERE date = ? AND user_id = ?').get(date, userId);
+              if (existing) {
+                db.prepare('UPDATE journal SET focus = ? WHERE date = ? AND user_id = ?').run(focus, date, userId);
               } else {
-                await execute('INSERT INTO journal (date, focus, user_id) VALUES ($1, $2, $3)', [date, focus, userId]);
+                db.prepare('INSERT INTO journal (date, focus, user_id) VALUES (?, ?, ?)').run(date, focus, userId);
               }
               results.push(`🎯 Фокус на ${date}: ${focus}`);
             }
@@ -713,26 +695,25 @@ BHAG (Большая Дерзкая Цель на год):
           case 'create_person': {
             const name = action['name'] as string;
             if (!name) { results.push('❌ Не указано имя'); break; }
-            const existingP = await queryOne<{ id: number }>('SELECT id FROM people WHERE LOWER(name) = LOWER($1) AND user_id = $2', [name, userId]);
+            const existingP = db.prepare('SELECT id FROM people WHERE LOWER(name) = LOWER(?) AND user_id = ?').get(name, userId) as { id: number } | undefined;
             let personId: number;
             if (existingP) {
               personId = existingP.id;
               // Update fields if provided
               for (const key of ['phone', 'email', 'telegram', 'company', 'role', 'notes']) {
-                if (action[key]) await execute(`UPDATE people SET ${key} = $1 WHERE id = $2`, [action[key], personId]);
+                if (action[key]) db.prepare(`UPDATE people SET ${key} = ? WHERE id = ?`).run(action[key], personId);
               }
             } else {
-              const personIns = await queryOne<{ id: number }>(
-                'INSERT INTO people (name, company, role, phone, email, telegram, notes, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
-                [name, (action['company'] as string) ?? '', (action['role'] as string) ?? '', (action['phone'] as string) ?? '',
-                (action['email'] as string) ?? '', (action['telegram'] as string) ?? '', (action['notes'] as string) ?? '', userId]
+              const r = db.prepare('INSERT INTO people (name, company, role, phone, email, telegram, notes, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+                name, (action['company'] as string) ?? '', (action['role'] as string) ?? '', (action['phone'] as string) ?? '',
+                (action['email'] as string) ?? '', (action['telegram'] as string) ?? '', (action['notes'] as string) ?? '', userId
               );
-              personId = personIns!.id;
+              personId = Number(r.lastInsertRowid);
             }
             if (action['project_id']) {
-              try { await execute('INSERT INTO people_projects (person_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [personId, action['project_id']]); } catch {}
+              try { db.prepare('INSERT OR IGNORE INTO people_projects (person_id, project_id) VALUES (?, ?)').run(personId, action['project_id']); } catch {}
             }
-            this.lastCreatedPerson.set(userId ?? 0, { id: personId, name, ts: Date.now() });
+            this.lastCreatedPerson.set(String(userId), { id: personId, name });
             results.push(`✅ Контакт "${name}" ${existingP ? 'обновлён' : 'создан'}${action['project_id'] ? ' + привязан к проекту' : ''}`);
             break;
           }
@@ -742,28 +723,26 @@ BHAG (Большая Дерзкая Цель на год):
             const fields: string[] = [];
             const values: unknown[] = [];
             for (const f of ['name', 'company', 'role', 'phone', 'email', 'telegram', 'notes']) {
-              if (action[f] !== undefined && action[f] !== '') { fields.push(`${f} = $${values.length + 1}`); values.push(action[f]); }
+              if (action[f] !== undefined && action[f] !== '') { fields.push(`${f} = ?`); values.push(action[f]); }
             }
             if (fields.length > 0) {
-              values.push(pid, userId);
-              await execute(`UPDATE people SET ${fields.join(', ')} WHERE id = $${values.length - 1} AND user_id = $${values.length}`, values);
+              db.prepare(`UPDATE people SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, pid, userId);
             }
             if (action['project_id']) {
-              try { await execute('INSERT INTO people_projects (person_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [pid, action['project_id']]); } catch {}
+              try { db.prepare('INSERT OR IGNORE INTO people_projects (person_id, project_id) VALUES (?, ?)').run(pid, action['project_id']); } catch {}
             }
-            const pNameRow = await queryOne<{ name: string }>('SELECT name FROM people WHERE id = $1', [pid]);
-            const pName = pNameRow?.name ?? `#${pid}`;
+            const pName = (db.prepare('SELECT name FROM people WHERE id = ?').get(pid) as { name: string } | undefined)?.name ?? `#${pid}`;
             results.push(`✅ Контакт "${pName}" обновлён`);
             break;
           }
           case 'delete_person': {
             const pid = action['person_id'] as number;
-            const personCheck = await queryOne<{ id: number }>('SELECT id FROM people WHERE id = $1 AND user_id = $2', [pid, userId]);
+            const personCheck = db.prepare('SELECT id FROM people WHERE id = ? AND user_id = ?').get(pid, userId);
             if (personCheck) {
-              await execute('DELETE FROM task_people WHERE person_id = $1', [pid]);
-              await execute('DELETE FROM meeting_people WHERE person_id = $1', [pid]);
-              await execute('DELETE FROM people_projects WHERE person_id = $1', [pid]);
-              await execute('DELETE FROM people WHERE id = $1 AND user_id = $2', [pid, userId]);
+              db.prepare('DELETE FROM task_people WHERE person_id = ?').run(pid);
+              db.prepare('DELETE FROM meeting_people WHERE person_id = ?').run(pid);
+              db.prepare('DELETE FROM people_projects WHERE person_id = ?').run(pid);
+              db.prepare('DELETE FROM people WHERE id = ? AND user_id = ?').run(pid, userId);
               results.push(`🗑 Контакт #${pid} удалён`);
             } else {
               results.push(`❌ Контакт #${pid} не найден`);
@@ -858,9 +837,10 @@ BHAG (Большая Дерзкая Цель на год):
     });
 
     // /start
-    this.bot.command('start', async (ctx) => {
+    this.bot.command('start', (ctx) => {
       const tgId = ctx.from?.id ?? 0;
-      const existing = await queryOne<{ id: number; name: string }>("SELECT id, name FROM users WHERE tg_id = $1", [String(tgId)]);
+      const db = getDb();
+      const existing = db.prepare("SELECT id, name FROM users WHERE tg_id = ?").get(String(tgId)) as { id: number; name: string } | undefined;
 
       if (existing) {
         // Already linked — show welcome
@@ -916,7 +896,7 @@ BHAG (Большая Дерзкая Цель на год):
     });
 
     // /login email password — link Telegram to web account via credentials
-    this.bot.command('login', async (ctx) => {
+    this.bot.command('login', (ctx) => {
       const parts = ctx.message.text.replace(/^\/login\s*/, '').trim().split(/\s+/);
       const email = (parts[0] || '').toLowerCase();
       const password = parts[1] || '';
@@ -924,8 +904,9 @@ BHAG (Большая Дерзкая Цель на год):
         ctx.reply('Формат: /login email пароль\n\nПример: /login alex@mail.com 123456\n\nПривяжет Telegram к аккаунту на сайте. Все данные подтянутся автоматически.');
         return;
       }
+      const db = getDb();
       const tgId = String(ctx.from?.id ?? '');
-      const existingUser = await queryOne<{ id: number; name: string; email: string; password_hash: string; tg_id: string | null }>('SELECT id, name, email, password_hash, tg_id FROM users WHERE email = $1', [email]);
+      const existingUser = db.prepare('SELECT id, name, email, password_hash, tg_id FROM users WHERE email = ?').get(email) as { id: number; name: string; email: string; password_hash: string; tg_id: string | null } | undefined;
       if (!existingUser) {
         ctx.reply(`❌ Аккаунт с email ${email} не найден.`);
         return;
@@ -936,14 +917,14 @@ BHAG (Большая Дерзкая Цель на год):
         return;
       }
       // Remove auto-created tg account if exists and merge data
-      const autoAccount = await queryOne<{ id: number }>("SELECT id FROM users WHERE tg_id = $1 AND email LIKE '%@telegram.local'", [tgId]);
+      const autoAccount = db.prepare("SELECT id FROM users WHERE tg_id = ? AND email LIKE '%@telegram.local'").get(tgId) as { id: number } | undefined;
       if (autoAccount && autoAccount.id !== existingUser.id) {
         for (const table of ['tasks', 'projects', 'meetings', 'people', 'ideas', 'documents', 'habits', 'goals', 'journal']) {
-          try { await execute(`UPDATE ${table} SET user_id = $1 WHERE user_id = $2`, [existingUser.id, autoAccount.id]); } catch {}
+          try { db.prepare(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`).run(existingUser.id, autoAccount.id); } catch {}
         }
-        await execute('DELETE FROM users WHERE id = $1', [autoAccount.id]);
+        db.prepare('DELETE FROM users WHERE id = ?').run(autoAccount.id);
       }
-      await execute('UPDATE users SET tg_id = $1 WHERE id = $2', [tgId, existingUser.id]);
+      db.prepare('UPDATE users SET tg_id = ? WHERE id = ?').run(tgId, existingUser.id);
       ctx.reply(`✅ Готово! Telegram привязан к ${existingUser.name} (${existingUser.email}).\n\nВсе данные подтянулись. Можешь пользоваться!`);
       // Delete the message with password for security
       try { ctx.deleteMessage(ctx.message.message_id); } catch {}
@@ -953,7 +934,7 @@ BHAG (Большая Дерзкая Цель на год):
     this.bot.command('cmd', async (ctx) => {
       const text = ctx.message.text.replace(/^\/cmd\s*/, '').trim();
       if (!text) { ctx.reply('Формат: /cmd создай задачу купить молоко'); return; }
-      const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
       try {
         const response = await this.executeCommand(text, ctx.from?.id);
@@ -967,7 +948,7 @@ BHAG (Большая Дерзкая Цель на год):
     // /bundle — generate NotebookLM bundle for project
     // /bundle — generate and SEND bundle in all formats
     this.bot.command('bundle', async (ctx) => {
-      const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
       const text = ctx.message.text.replace(/^\/bundle\s*/, '').trim();
       if (!text) {
@@ -976,12 +957,12 @@ BHAG (Большая Дерзкая Цель на год):
       }
       try {
         ctx.reply('📦 Собираю bundle и конвертирую...');
-        const match = await findProjectByName(text);
+        const match = findProjectByName(text);
         if (match === null) {
           ctx.reply(`❌ Проект "${text}" не найден`);
           return;
         }
-        const result = await generateBundle(match);
+        const result = generateBundle(match);
         const fullPath = path.join(config.vaultPath, result.vaultPath);
 
         // Generate all formats
@@ -1034,7 +1015,7 @@ BHAG (Большая Дерзкая Цель на год):
 
     // /transcribe <url> — download and transcribe large audio from URL
     this.bot.command('transcribe', async (ctx) => {
-      const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
       const url = ctx.message.text.replace(/^\/transcribe\s*/, '').trim();
       if (!url) { ctx.reply('Формат: /transcribe <ссылка на аудио>\n\nЗалей файл в Google Drive/Яндекс Диск, сделай публичную ссылку и отправь.'); return; }
@@ -1072,42 +1053,44 @@ BHAG (Большая Дерзкая Цель на год):
         // Ingest as meeting
         const ingestService = new IngestService();
         const result = await ingestService.ingestText(transcript, userId);
-        await sendLong(ctx, await formatIngestResult(result));
+        await sendLong(ctx, formatIngestResult(result));
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'unknown'}`);
       }
     });
 
     // /habits — today's habits
-    this.bot.command('habits', async (ctx) => {
-      const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+    this.bot.command('habits', (ctx) => {
+      const db = getDb();
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
-      const habits = await queryAll<{ id: number; title: string; icon: string }>("SELECT id, title, icon FROM habits WHERE archived = 0 AND user_id = $1", [userId]);
+      const habits = db.prepare("SELECT id, title, icon FROM habits WHERE archived = 0 AND user_id = ?").all(userId) as Array<{ id: number; title: string; icon: string }>;
       if (habits.length === 0) { ctx.reply('🔥 Нет привычек. Добавь в /app → Привычки'); return; }
       const today = moscowDateString();
-      const logs = await queryAll<{ habit_id: number }>("SELECT habit_id FROM habit_logs WHERE date = $1", [today]);
+      const logs = db.prepare("SELECT habit_id FROM habit_logs WHERE date = ?").all(today) as Array<{ habit_id: number }>;
       const doneSet = new Set(logs.map(l => l.habit_id));
       const lines = habits.map(h => `${doneSet.has(h.id) ? '✅' : '⬜'} ${h.icon} ${h.title}`);
       ctx.reply(`🔥 Привычки (${doneSet.size}/${habits.length}):\n\n${lines.join('\n')}\n\nОтметить: "отметь привычку Медитация"`);
     });
 
-    this.bot.command('meetings', async (ctx) => {
-      const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+    this.bot.command('meetings', (ctx) => {
+      const db = getDb();
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
-      const meetings = await queryAll<{ title: string; date: string; project_name: string | null }>("SELECT m.title, m.date, p.name as project_name FROM meetings m LEFT JOIN projects p ON m.project_id = p.id WHERE m.user_id = $1 ORDER BY m.date DESC LIMIT 10", [userId]);
+      const meetings = db.prepare("SELECT m.title, m.date, p.name as project_name FROM meetings m LEFT JOIN projects p ON m.project_id = p.id WHERE m.user_id = ? ORDER BY m.date DESC LIMIT 10").all(userId) as Array<{ title: string; date: string; project_name: string | null }>;
       if (meetings.length === 0) { ctx.reply('Нет встреч'); return; }
       const lines = meetings.map(m => `📅 ${m.date} — ${m.title}${m.project_name ? ` [${m.project_name}]` : ''}`);
       ctx.reply(`🤝 Последние встречи:\n\n${lines.join('\n')}`);
     });
 
     // /tasks — today's tasks
-    this.bot.command('tasks', async (ctx) => {
-      const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+    this.bot.command('tasks', (ctx) => {
+      const db = getDb();
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
-      const tasks = await queryAll<{ title: string; status: string; priority: number; due_date: string | null; project_id: number | null }>(
-        "SELECT title, status, priority, due_date, project_id FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND user_id = $1 ORDER BY priority DESC LIMIT 20",
-        [userId]
-      );
+      const tasks = db.prepare(
+        "SELECT title, status, priority, due_date, project_id FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND user_id = ? ORDER BY priority DESC LIMIT 20"
+      ).all(userId) as Array<{ title: string; status: string; priority: number; due_date: string | null; project_id: number | null }>;
 
       if (tasks.length === 0) {
         ctx.reply('Нет активных задач!');
@@ -1115,7 +1098,7 @@ BHAG (Большая Дерзкая Цель на год):
       }
 
       const projectMap = new Map(
-        (await queryAll<{ id: number; name: string }>('SELECT id, name FROM projects', [])).map(p => [p.id, p.name])
+        (db.prepare('SELECT id, name FROM projects').all() as Array<{ id: number; name: string }>).map(p => [p.id, p.name])
       );
 
       const lines = tasks.map((t) => {
@@ -1130,13 +1113,13 @@ BHAG (Большая Дерзкая Цель на год):
     });
 
     // /all — all tasks grouped by status
-    this.bot.command('all', async (ctx) => {
-      const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+    this.bot.command('all', (ctx) => {
+      const db = getDb();
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
-      const tasks = await queryAll<{ title: string; status: string; priority: number }>(
-        "SELECT title, status, priority FROM tasks WHERE archived = 0 AND user_id = $1 ORDER BY status, priority DESC",
-        [userId]
-      );
+      const tasks = db.prepare(
+        "SELECT title, status, priority FROM tasks WHERE archived = 0 AND user_id = ? ORDER BY status, priority DESC"
+      ).all(userId) as Array<{ title: string; status: string; priority: number }>;
 
       const grouped: Record<string, string[]> = {};
       for (const t of tasks) {
@@ -1157,42 +1140,42 @@ BHAG (Большая Дерзкая Цель на год):
     });
 
     // /projects
-    this.bot.command('projects', async (ctx) => {
-      const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+    this.bot.command('projects', (ctx) => {
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
-      const projects = await queryAll<{ name: string; status: string }>(
-        "SELECT name, status, color FROM projects WHERE archived = 0 AND user_id = $1 ORDER BY order_index ASC",
-        [userId]
-      );
+      const projects = getDb().prepare(
+        "SELECT name, status, color FROM projects WHERE archived = 0 AND user_id = ? ORDER BY order_index ASC"
+      ).all(userId) as Array<{ name: string; status: string }>;
 
       const lines = projects.map(p => `• ${p.name} (${p.status})`);
       ctx.reply(`📁 Проекты:\n\n${lines.join('\n')}` || 'Нет проектов');
     });
 
     // /add <title> — quick add task
-    this.bot.command('add', async (ctx) => {
+    this.bot.command('add', (ctx) => {
       const text = ctx.message.text.replace(/^\/add\s*/, '').trim();
       if (!text) { ctx.reply('Формат: /add Название задачи'); return; }
-      const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
 
-      const taskIns = await queryOne<{ id: number }>('INSERT INTO tasks (title, status, priority, user_id) VALUES ($1, $2, $3, $4) RETURNING id', [text, 'todo', 3, userId]);
-      const tid = taskIns!.id;
-      const selfRow = await queryOne<{ id: number }>("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1");
-      if (selfRow) await execute('INSERT INTO task_people (task_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [tid, selfRow.id]);
+      const r = getDb().prepare('INSERT INTO tasks (title, status, priority, user_id) VALUES (?, ?, ?, ?)').run(text, 'todo', 3, userId);
+      const tid = Number(r.lastInsertRowid);
+      const selfRow = getDb().prepare("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1").get() as { id: number } | undefined;
+      if (selfRow) getDb().prepare('INSERT OR IGNORE INTO task_people (task_id, person_id) VALUES (?, ?)').run(tid, selfRow.id);
       ctx.reply(`✅ Задача добавлена: ${text}`);
     });
 
     // /focus — show or set today's focus
     this.bot.command('focus', async (ctx) => {
       const tgId = ctx.from?.id ?? 0;
-      const userId = await this.resolveUserId(tgId);
+      const userId = this.resolveUserId(tgId);
       if (!userId) return;
       const text = ctx.message.text.replace(/^\/focus\s*/, '').trim();
+      const db = getDb();
       const today = moscowDateString();
 
       if (!text) {
-        const journal = await queryOne<{ focus: string }>('SELECT focus FROM journal WHERE date = $1 AND user_id = $2', [today, userId]);
+        const journal = db.prepare('SELECT focus FROM journal WHERE date = ? AND user_id = ?').get(today, userId) as { focus: string } | undefined;
         if (journal?.focus) {
           await ctx.reply(`🎯 Фокус сегодня: ${journal.focus}\n\nИзменить: /focus <новый фокус>`);
         } else {
@@ -1201,57 +1184,51 @@ BHAG (Большая Дерзкая Цель на год):
         return;
       }
 
-      const existingFocus = await queryOne<{ id: number }>('SELECT id FROM journal WHERE date = $1 AND user_id = $2', [today, userId]);
-      if (existingFocus) {
-        await execute('UPDATE journal SET focus = $1 WHERE date = $2 AND user_id = $3', [text, today, userId]);
+      const existing = db.prepare('SELECT id FROM journal WHERE date = ? AND user_id = ?').get(today, userId);
+      if (existing) {
+        db.prepare('UPDATE journal SET focus = ? WHERE date = ? AND user_id = ?').run(text, today, userId);
       } else {
-        await execute('INSERT INTO journal (date, focus, user_id) VALUES ($1, $2, $3)', [today, text, userId]);
+        db.prepare('INSERT INTO journal (date, focus, user_id) VALUES (?, ?, ?)').run(today, text, userId);
       }
       await ctx.reply(`🎯 Фокус на ${today}: ${text}`);
     });
 
     // /brief — daily brief (achievements first!)
     this.bot.command('brief', async (ctx) => {
-      const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      const db = getDb();
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       const today = moscowDateString();
-      const tasks = await queryAll<{ title: string; priority: number; due_date: string | null }>(
-        "SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND user_id = $1 ORDER BY priority DESC LIMIT 10",
-        [userId]
-      );
-      const meetings = await queryAll<{ title: string; date: string }>(
-        'SELECT title, date FROM meetings WHERE date >= $1 AND user_id = $2 ORDER BY date ASC LIMIT 5',
-        [today, userId]
-      );
+      const tasks = db.prepare(
+        "SELECT title, status, priority, due_date FROM tasks WHERE archived = 0 AND status NOT IN ('done', 'someday') AND user_id = ? ORDER BY priority DESC LIMIT 10"
+      ).all(userId) as Array<{ title: string; priority: number; due_date: string | null }>;
+      const meetings = db.prepare(
+        'SELECT title, date FROM meetings WHERE date >= ? AND user_id = ? ORDER BY date ASC LIMIT 5'
+      ).all(today, userId) as Array<{ title: string; date: string }>;
 
       // Achievements
-      const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
-      const thirtyDaysAgoDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const doneRecently = await queryOne<{ c: string }>(
-        "SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= $1 AND user_id = $2",
-        [oneDayAgo, userId]
-      );
-      const habitsDoneToday = await queryAll<{ title: string; icon: string }>(
-        `SELECT h.title, h.icon FROM habits h
-        WHERE h.archived = 0 AND h.user_id = $1 AND h.id IN (
-          SELECT habit_id FROM habit_logs WHERE date = $2 AND completed = 1
-        )`,
-        [userId, today]
-      );
-      const topStreaks = await queryAll<{ title: string; icon: string; cnt: string }>(
-        `SELECT h.title, h.icon,
-          (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= $2) as cnt
-        FROM habits h WHERE h.archived = 0 AND h.user_id = $1 ORDER BY cnt DESC LIMIT 3`,
-        [userId, thirtyDaysAgoDate]
-      );
+      const doneRecently = db.prepare(
+        "SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND archived = 0 AND updated_at >= date('now', '-1 day') AND user_id = ?"
+      ).get(userId) as { c: number };
+      const habitsDoneToday = db.prepare(`
+        SELECT h.title, h.icon FROM habits h
+        WHERE h.archived = 0 AND h.user_id = ? AND h.id IN (
+          SELECT habit_id FROM habit_logs WHERE date = ? AND completed = 1
+        )
+      `).all(userId, today) as Array<{ title: string; icon: string }>;
+      const topStreaks = db.prepare(`
+        SELECT h.title, h.icon,
+          (SELECT COUNT(*) FROM habit_logs hl WHERE hl.habit_id = h.id AND hl.completed = 1 AND hl.date >= date('now', '-30 days')) as cnt
+        FROM habits h WHERE h.archived = 0 AND h.user_id = ? ORDER BY cnt DESC LIMIT 3
+      `).all(userId) as Array<{ title: string; icon: string; cnt: number }>;
       const overdue = tasks.filter(t => t.due_date && t.due_date < today);
 
       let brief = '🌅 Доброе утро!\n\n';
 
       // Achievements first
       const wins: string[] = [];
-      if (Number(doneRecently?.c ?? 0) > 0) wins.push(`✅ Закрыто задач за последние сутки: ${doneRecently!.c}`);
+      if (doneRecently.c > 0) wins.push(`✅ Закрыто задач за последние сутки: ${doneRecently.c}`);
       if (habitsDoneToday.length > 0) wins.push(`🔥 Привычки сегодня: ${habitsDoneToday.map(h => `${h.icon || '✓'} ${h.title}`).join(', ')}`);
-      for (const s of topStreaks.filter(s => Number(s.cnt) >= 5)) {
+      for (const s of topStreaks.filter(s => s.cnt >= 5)) {
         wins.push(`🏆 ${s.icon || '✓'} ${s.title} — ${s.cnt} дней за месяц!`);
       }
 
@@ -1283,10 +1260,10 @@ BHAG (Большая Дерзкая Цель на год):
     });
 
     // /search <query>
-    this.bot.command('search', async (ctx) => {
+    this.bot.command('search', (ctx) => {
       const query = ctx.message.text.replace(/^\/search\s*/, '').trim();
       if (!query) { ctx.reply('Формат: /search ключевое слово'); return; }
-      const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
 
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -1301,11 +1278,13 @@ BHAG (Большая Дерзкая Цель на год):
     // /settings — per-user settings (e.g. reminder_time)
     this.bot.command('settings', async (ctx) => {
       const tgId = ctx.from?.id ?? 0;
-      const userId = await this.resolveUserId(tgId, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      const userId = this.resolveUserId(tgId, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       if (!userId) return;
       const text = ctx.message.text.replace(/^\/settings\s*/, '').trim();
+      const sdb = getDb();
+
       if (!text) {
-        const rows = await queryAll<{ key: string; value: string }>('SELECT key, value FROM settings WHERE user_id = $1', [userId]);
+        const rows = sdb.prepare('SELECT key, value FROM settings WHERE user_id = ?').all(userId) as Array<{ key: string; value: string }>;
         if (rows.length === 0) {
           await ctx.reply('⚙️ Настройки пусты. Доступные:\n/settings reminder_time 21:00');
           return;
@@ -1319,12 +1298,12 @@ BHAG (Большая Дерзкая Цель на год):
       const key = parts[0]!;
       const value = parts.slice(1).join(' ');
       if (!value) {
-        const row = await queryOne<{ value: string }>('SELECT value FROM settings WHERE user_id = $1 AND key = $2', [userId, key]);
+        const row = sdb.prepare('SELECT value FROM settings WHERE user_id = ? AND key = ?').get(userId, key) as { value: string } | undefined;
         await ctx.reply(`Текущее значение: ${row?.value ?? 'не задано'}`);
         return;
       }
 
-      await execute('INSERT INTO settings (key, value, user_id) VALUES ($1, $2, $3) ON CONFLICT(key, user_id) DO UPDATE SET value = $4', [key, value, userId, value]);
+      sdb.prepare('INSERT INTO settings (key, value, user_id) VALUES (?, ?, ?) ON CONFLICT(key, user_id) DO UPDATE SET value = ?').run(key, value, userId, value);
       await ctx.reply(`✅ ${key} = ${value}`);
     });
 
@@ -1381,7 +1360,7 @@ BHAG (Большая Дерзкая Цель на год):
     };
 
     // Format ingest result nicely (compact version for Telegram 4096 limit)
-    const formatIngestResult = async (result: { detected_type: string; summary: string; created_records: Array<{ type: string; id: number; title: string }> }): Promise<string> => {
+    const formatIngestResult = (result: { detected_type: string; summary: string; created_records: Array<{ type: string; id: number; title: string }> }): string => {
       const typeLabels: Record<string, string> = { meeting: '🤝 Встреча', task: '📋 Задача', idea: '💡 Идея', inbox: '📥 Входящее' };
       const label = typeLabels[result.detected_type] ?? result.detected_type;
 
@@ -1395,12 +1374,13 @@ BHAG (Большая Дерзкая Цель на год):
 
         // Show linked project/people for meeting
         if (mainRec.type === 'meeting') {
-          const m = await queryOne<{ project_id: number | null }>('SELECT project_id FROM meetings WHERE id = $1', [mainRec.id]);
+          const db = getDb();
+          const m = db.prepare('SELECT project_id FROM meetings WHERE id = ?').get(mainRec.id) as { project_id: number | null } | undefined;
           if (m?.project_id) {
-            const p = await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [m.project_id]);
+            const p = db.prepare('SELECT name FROM projects WHERE id = ?').get(m.project_id) as { name: string } | undefined;
             if (p) msg += `\n📁 Проект: ${p.name}`;
           }
-          const people = await queryAll<{ name: string }>('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [mainRec.id]);
+          const people = db.prepare('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = ?').all(mainRec.id) as Array<{ name: string }>;
           if (people.length > 0) msg += `\n👥 ${people.map(p => p.name).join(', ')}`;
         }
       }
@@ -1435,9 +1415,9 @@ BHAG (Большая Дерзкая Цель на год):
             await ctx.reply('🎤 Отправьте аудио или голосовое для транскрибации встречи.');
             return;
           case 'menu_tasks': {
-            const userId = await this.resolveUserId(tgId, ctx.from?.first_name);
+            const userId = this.resolveUserId(tgId, ctx.from?.first_name);
             const today = moscowDateString();
-            const tasks = await queryAll<{ title: string; priority: number }>("SELECT title, priority FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND (due_date = $1 OR status = 'in_progress') AND user_id = $2 ORDER BY priority DESC LIMIT 10", [today, userId]);
+            const tasks = getDb().prepare("SELECT title, priority FROM tasks WHERE archived = 0 AND status NOT IN ('done','someday') AND (due_date = ? OR status = 'in_progress') AND user_id = ? ORDER BY priority DESC LIMIT 10").all(today, userId) as Array<{ title: string; priority: number }>;
             await ctx.reply(tasks.length > 0 ? `📋 Задачи:\n${tasks.map(t => `  • ${t.title} ${'⭐'.repeat(t.priority)}`).join('\n')}` : '✅ Нет активных задач на сегодня!');
             return;
           }
@@ -1446,16 +1426,16 @@ BHAG (Большая Дерзкая Цель на год):
             await (ctx as any).reply('/brief загружается...'); // placeholder
             return;
           case 'menu_habits': {
-            const userId = await this.resolveUserId(tgId, ctx.from?.first_name);
+            const userId = this.resolveUserId(tgId, ctx.from?.first_name);
             const today = moscowDateString();
-            const habits = await queryAll<{ title: string; icon: string; done: number }>("SELECT h.title, h.icon, CASE WHEN hl.id IS NOT NULL THEN 1 ELSE 0 END as done FROM habits h LEFT JOIN habit_logs hl ON hl.habit_id = h.id AND hl.date = $1 AND hl.completed = 1 WHERE h.archived = 0 AND h.user_id = $2", [today, userId]);
+            const habits = getDb().prepare("SELECT h.title, h.icon, CASE WHEN hl.id IS NOT NULL THEN 1 ELSE 0 END as done FROM habits h LEFT JOIN habit_logs hl ON hl.habit_id = h.id AND hl.date = ? AND hl.completed = 1 WHERE h.archived = 0 AND h.user_id = ?").all(today, userId) as Array<{ title: string; icon: string; done: number }>;
             await ctx.reply(habits.length > 0 ? `🔥 Привычки:\n${habits.map(h => `  ${h.done ? '✅' : '⬜'} ${h.icon || '•'} ${h.title}`).join('\n')}` : '🌱 Нет привычек. Создай в приложении!');
             return;
           }
           case 'menu_meetings': {
-            const userId = await this.resolveUserId(tgId, ctx.from?.first_name);
+            const userId = this.resolveUserId(tgId, ctx.from?.first_name);
             const today = moscowDateString();
-            const meetings = await queryAll<{ title: string; date: string }>("SELECT title, date FROM meetings WHERE date >= $1 AND user_id = $2 ORDER BY date ASC LIMIT 5", [today, userId]);
+            const meetings = getDb().prepare("SELECT title, date FROM meetings WHERE date >= ? AND user_id = ? ORDER BY date ASC LIMIT 5").all(today, userId) as Array<{ title: string; date: string }>;
             await ctx.reply(meetings.length > 0 ? `📅 Встречи:\n${meetings.map(m => `  • ${m.date} — ${m.title}`).join('\n')}` : '📅 Нет предстоящих встреч');
             return;
           }
@@ -1530,7 +1510,8 @@ BHAG (Большая Дерзкая Цель на год):
       if (loginState === 'email') {
         const email = text.trim().toLowerCase();
         if (!email.includes('@')) { ctx.reply('❌ Введи корректный email:'); return; }
-        const user = await queryOne<{ id: number }>('SELECT id FROM users WHERE email = $1', [email]);
+        const db = getDb();
+        const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: number } | undefined;
         if (!user) { ctx.reply(`❌ Аккаунт ${email} не найден. Попробуй ещё раз или нажми /start`); this.pendingLogins.delete(tgId); return; }
         this.pendingEmails.set(tgId, email);
         this.pendingLogins.set(tgId, 'password');
@@ -1541,38 +1522,40 @@ BHAG (Большая Дерзкая Цель на год):
         const email = this.pendingEmails.get(tgId) ?? '';
         this.pendingLogins.delete(tgId);
         this.pendingEmails.delete(tgId);
-        const user = await queryOne<{ id: number; name: string; email: string; password_hash: string }>('SELECT id, name, email, password_hash FROM users WHERE email = $1', [email]);
+        const db = getDb();
+        const user = db.prepare('SELECT id, name, email, password_hash FROM users WHERE email = ?').get(email) as { id: number; name: string; email: string; password_hash: string } | undefined;
         if (!user) { ctx.reply('❌ Ошибка. Нажми /start'); return; }
         const bcrypt = require('bcryptjs');
         if (!bcrypt.compareSync(text, user.password_hash)) { ctx.reply('❌ Неверный пароль. Нажми /start чтобы попробовать снова.'); return; }
         // Link tg_id and merge auto-account if exists
-        const autoAccount = await queryOne<{ id: number }>("SELECT id FROM users WHERE tg_id = $1 AND email LIKE '%@telegram.local'", [String(tgId)]);
+        const autoAccount = db.prepare("SELECT id FROM users WHERE tg_id = ? AND email LIKE '%@telegram.local'").get(String(tgId)) as { id: number } | undefined;
         if (autoAccount && autoAccount.id !== user.id) {
           for (const table of ['tasks', 'projects', 'meetings', 'people', 'ideas', 'documents', 'habits', 'goals', 'journal']) {
-            try { await execute(`UPDATE ${table} SET user_id = $1 WHERE user_id = $2`, [user.id, autoAccount.id]); } catch {}
+            try { db.prepare(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`).run(user.id, autoAccount.id); } catch {}
           }
-          await execute('DELETE FROM users WHERE id = $1', [autoAccount.id]);
+          db.prepare('DELETE FROM users WHERE id = ?').run(autoAccount.id);
         }
-        await execute('UPDATE users SET tg_id = $1 WHERE id = $2', [String(tgId), user.id]);
+        db.prepare('UPDATE users SET tg_id = ? WHERE id = ?').run(String(tgId), user.id);
         // Delete password message
         try { ctx.deleteMessage(ctx.message.message_id); } catch {}
         ctx.reply(`✅ Готово! Привет, ${user.name}!\n\nТвой аккаунт привязан. Все данные подтянулись.\n\nПросто пиши — я пойму!`);
         return;
       }
 
-      const userId = await this.resolveUserId(tgId, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+      const userId = this.resolveUserId(tgId, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
       // userId auto-created by resolveUserId
 
       // If there's an open draft — ANY text is treated as correction (no need to press ✏️ first)
       // Check if user just created a contact and replies with project name
       const lastPerson = this.lastCreatedPerson.get(tgId);
       if (lastPerson && text.length < 100) {
-        const allProjects = await queryAll<{ id: number; name: string }>('SELECT id, name FROM projects WHERE user_id = $1 AND archived = 0', [userId]);
+        const db = getDb();
+        const allProjects = db.prepare('SELECT id, name FROM projects WHERE user_id = ? AND archived = 0').all(userId) as Array<{ id: number; name: string }>;
         const hint = text.toLowerCase().replace(/^(к проекту|проект|привяжи к)\s*/i, '').trim();
         const match = allProjects.find(p => p.name.toLowerCase() === hint || p.name.toLowerCase().includes(hint) || hint.includes(p.name.toLowerCase()));
         if (match) {
-          await execute('UPDATE people SET project_id = $1 WHERE id = $2', [match.id, lastPerson.id]);
-          try { await execute('INSERT INTO people_projects (person_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [lastPerson.id, match.id]); } catch {}
+          db.prepare('UPDATE people SET project_id = ? WHERE id = ?').run(match.id, lastPerson.id);
+          try { db.prepare('INSERT OR IGNORE INTO people_projects (person_id, project_id) VALUES (?, ?)').run(lastPerson.id, match.id); } catch {}
           this.lastCreatedPerson.delete(tgId);
           ctx.reply(`✅ ${lastPerson.name} привязан(а) к проекту ${match.name}`);
           return;
@@ -1624,13 +1607,14 @@ BHAG (Большая Дерзкая Цель на год):
             const patch = JSON.parse(resp.choices[0]?.message?.content ?? '{}');
 
             if (patch.field_updates && Object.keys(patch.field_updates).length > 0) {
+              const db = getDb();
               const updates: string[] = [];
               const fu = patch.field_updates;
 
               if (fu.project) {
-                const proj = await queryOne<{ id: number; name: string }>('SELECT id, name FROM projects WHERE user_id = $1 AND LOWER(name) LIKE LOWER($2)', [userId, `%${fu.project}%`]);
+                const proj = db.prepare('SELECT id, name FROM projects WHERE user_id = ? AND LOWER(name) LIKE LOWER(?)').get(userId, `%${fu.project}%`) as { id: number; name: string } | undefined;
                 if (proj) {
-                  await execute(`UPDATE ${lastAction.table} SET project_id = $1 WHERE id = $2 AND user_id = $3`, [proj.id, lastAction.id, userId]);
+                  db.prepare(`UPDATE ${lastAction.table} SET project_id = ? WHERE id = ? AND user_id = ?`).run(proj.id, lastAction.id, userId);
                   updates.push(`проект → ${proj.name}`);
                 } else {
                   updates.push(`проект "${fu.project}" не найден в базе`);
@@ -1656,10 +1640,9 @@ BHAG (Большая Дерзкая Цель на год):
       // Check for claude/клод prefix → save for Claude Code processing
       const claudeMatch = text.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
       if (claudeMatch) {
-        const content = claudeMatch[2]!.trim();
-        await execute('INSERT INTO claude_notes (content, source) VALUES ($1, $2)', [content, 'telegram']);
-        const pendingRow = await queryOne<{ c: string }>('SELECT COUNT(*) as c FROM claude_notes WHERE processed = 0');
-        const pending = Number(pendingRow?.c ?? 0);
+        const content = claudeMatch[2].trim();
+        getDb().prepare('INSERT INTO claude_notes (content, source) VALUES (?, ?)').run(content, 'telegram');
+        const pending = (getDb().prepare('SELECT COUNT(*) as c FROM claude_notes WHERE processed = 0').get() as { c: number }).c;
         ctx.reply(`📝 Заметка сохранена для Claude Code\n📬 В очереди: ${pending}\n\nСкажи мне в Claude Code "обработай заметки" — разложу всё по Obsidian`);
         return;
       }
@@ -1673,7 +1656,7 @@ BHAG (Большая Дерзкая Цель на год):
         } else {
           const ingestService = new IngestService();
           const result = await ingestService.ingestText(text, userId);
-          await sendLong(ctx, await formatIngestResult(result));
+          await sendLong(ctx, formatIngestResult(result));
         }
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
@@ -1683,7 +1666,7 @@ BHAG (Большая Дерзкая Цель на год):
     // Voice message → transcribe first, then decide
     this.bot.on(message('voice'), async (ctx) => {
       try {
-        const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+        const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
         // userId auto-created by resolveUserId
 
         const tgId = ctx.from?.id ?? 0;
@@ -1717,10 +1700,9 @@ BHAG (Большая Дерзкая Цель на год):
         // Check for claude/клод prefix in voice
         const claudeMatch = transcript.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
         if (claudeMatch) {
-          const content = claudeMatch[2]!.trim();
-          await execute('INSERT INTO claude_notes (content, source) VALUES ($1, $2)', [content, 'telegram-voice']);
-          const pendingRow2 = await queryOne<{ c: string }>('SELECT COUNT(*) as c FROM claude_notes WHERE processed = 0');
-          const pending = Number(pendingRow2?.c ?? 0);
+          const content = claudeMatch[2].trim();
+          getDb().prepare('INSERT INTO claude_notes (content, source) VALUES (?, ?)').run(content, 'telegram-voice');
+          const pending = (getDb().prepare('SELECT COUNT(*) as c FROM claude_notes WHERE processed = 0').get() as { c: number }).c;
           ctx.reply(`📝 Заметка сохранена для Claude Code\n📬 В очереди: ${pending}`);
           return;
         }
@@ -1750,14 +1732,12 @@ BHAG (Большая Дерзкая Цель на год):
     // Document → check if audio, transcribe; otherwise ingest
     this.bot.on(message('document'), async (ctx) => {
       try {
-        const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+        const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
         // userId auto-created by resolveUserId
         const doc = ctx.message.document;
         const filename = doc.file_name ?? 'file';
         const mime = doc.mime_type ?? '';
         const isAudio = mime.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|webm|flac|aac|wma)$/i.test(filename);
-        const isVideo = mime.startsWith('video/') || /\.(mp4|mov|avi|mkv|wmv|m4v)$/i.test(filename);
-        const isTranscribable = isAudio || isVideo;
 
         const fileSizeMb = (doc.file_size ?? 0) / (1024 * 1024);
         // Local Bot API server removes 20MB limit; only block if no local API
@@ -1771,8 +1751,8 @@ BHAG (Большая Дерзкая Цель на год):
 
         const buffer = await this.downloadTelegramFile(ctx, doc.file_id);
 
-        if (isTranscribable) {
-          // Transcribe audio/video file
+        if (isAudio) {
+          // Transcribe audio file
           const tgId = ctx.from?.id ?? 0;
           const isPro = this.proMode.has(tgId);
           if (isPro) {
@@ -1786,7 +1766,7 @@ BHAG (Большая Дерзкая Цель на год):
             } else if (qStatus.active >= 2) {
               ctx.reply('🎤 Транскрибирую (очередь занята, может занять дольше)...');
             } else {
-              ctx.reply(isVideo ? '🎬 Транскрибирую видео...' : '🎤 Транскрибирую аудиофайл...');
+              ctx.reply('🎤 Транскрибирую аудиофайл...');
             }
           }
           const transcript = isPro
@@ -1810,7 +1790,7 @@ BHAG (Большая Дерзкая Цель на год):
           ctx.reply('📄 Обрабатываю файл...');
           const ingestService = new IngestService();
           const result = await ingestService.ingestBuffer(buffer, filename, userId);
-          await sendLong(ctx, await formatIngestResult(result));
+          await sendLong(ctx, formatIngestResult(result));
         }
       } catch (err) {
         ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
@@ -1820,7 +1800,7 @@ BHAG (Большая Дерзкая Цель на год):
     // Audio message (mp3 etc sent as audio, not voice)
     this.bot.on(message('audio'), async (ctx) => {
       try {
-        const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+        const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
         // userId auto-created by resolveUserId
         const audio = ctx.message.audio;
         const fileSizeMb = (audio.file_size ?? 0) / (1024 * 1024);
@@ -1869,107 +1849,24 @@ BHAG (Большая Дерзкая Цель на год):
       }
     });
 
-    // Video message → extract audio and transcribe
-    this.bot.on(message('video'), async (ctx) => {
-      try {
-        const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
-        const video = ctx.message.video;
-        const fileSizeMb = (video.file_size ?? 0) / (1024 * 1024);
-        if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
-          await ctx.reply(`⚠️ Видео слишком большое (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
-          return;
-        }
-        const tgId = ctx.from?.id ?? 0;
-        const isPro = this.proMode.has(tgId);
-        if (isPro) {
-          this.proMode.delete(tgId);
-          ctx.reply('🎯 PRO: Транскрибирую видео через OpenAI Whisper...');
-        } else {
-          const { getQueueStatus } = require('./whisper-queue');
-          const qStatus = getQueueStatus();
-          if (fileSizeMb > 20) {
-            ctx.reply(`⬇️ Большое видео (${Math.round(fileSizeMb)} МБ), скачиваю и транскрибирую...`);
-          } else if (qStatus.active >= 2 && qStatus.queued > 0) {
-            ctx.reply(`🎬 В очереди (позиция ${qStatus.queued + 1}). Транскрибирую когда освободится...`);
-          } else {
-            ctx.reply('🎬 Транскрибирую видео...');
-          }
-        }
-        const buffer = await this.downloadTelegramFile(ctx, video.file_id);
-        const filename = (video as unknown as Record<string, unknown>).file_name as string ?? 'video.mp4';
-
-        const transcript = isPro
-          ? await this.transcribeProAudio(buffer, filename)
-          : await this.transcribeAudio(buffer, filename);
-        if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь в видео'); return; }
-
-        const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
-        ctx.reply(`📝 Транскрипция видео (${transcript.length} символов):\n${preview}`);
-
-        const activeDraft = this.drafts.get(ctx.from!.id);
-        if (activeDraft) {
-          await this.applyCorrection(ctx, activeDraft, transcript);
-          return;
-        }
-
-        await this.buildAndSendDraft(ctx, userId!, ctx.from!.id, 'video', transcript, null);
-      } catch (err) {
-        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
-      }
-    });
-
-    // Video note (round video) → extract audio and transcribe
-    this.bot.on(message('video_note'), async (ctx) => {
-      try {
-        const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
-        const videoNote = ctx.message.video_note;
-        const tgId = ctx.from?.id ?? 0;
-        const isPro = this.proMode.has(tgId);
-        if (isPro) {
-          this.proMode.delete(tgId);
-          ctx.reply('🎯 PRO: Транскрибирую кружок через OpenAI Whisper...');
-        } else {
-          ctx.reply('🎬 Транскрибирую видео-кружок...');
-        }
-        const buffer = await this.downloadTelegramFile(ctx, videoNote.file_id);
-
-        const transcript = isPro
-          ? await this.transcribeProAudio(buffer, 'video_note.mp4')
-          : await this.transcribeAudio(buffer, 'video_note.mp4');
-        if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
-
-        const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
-        ctx.reply(`📝 Транскрипция (${transcript.length} символов):\n${preview}`);
-
-        const activeDraft = this.drafts.get(ctx.from!.id);
-        if (activeDraft) {
-          await this.applyCorrection(ctx, activeDraft, transcript);
-          return;
-        }
-
-        await this.buildAndSendDraft(ctx, userId!, ctx.from!.id, 'video', transcript, null);
-      } catch (err) {
-        ctx.reply(`❌ Ошибка: ${err instanceof Error ? err.message : 'Unknown'}`);
-      }
-    });
-
     // Contact shared from phone book
     this.bot.on(message('contact'), async (ctx) => {
       try {
-        const userId = await this.resolveUserId(ctx.from?.id ?? 0);
+        const userId = this.resolveUserId(ctx.from?.id ?? 0);
         if (!userId) { ctx.reply('Привяжите аккаунт через /login'); return; }
         const c = ctx.message.contact;
         const name = [c.first_name, c.last_name].filter(Boolean).join(' ').trim();
         const phone = c.phone_number || '';
         if (!name) { ctx.reply('❌ Контакт без имени'); return; }
 
-        const existing = await queryOne<{ id: number }>('SELECT id FROM people WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [userId, name]);
+        const db = getDb();
+        const existing = db.prepare('SELECT id FROM people WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(userId, name) as { id: number } | undefined;
         if (existing) {
-          if (phone) await execute("UPDATE people SET phone = $1 WHERE id = $2 AND (phone = '' OR phone IS NULL)", [phone, existing.id]);
+          if (phone) db.prepare("UPDATE people SET phone = ? WHERE id = ? AND (phone = '' OR phone IS NULL)").run(phone, existing.id);
           ctx.reply(`✅ Контакт "${name}" обновлён\n${phone ? `📱 ${phone}` : ''}`);
         } else {
-          const newPersonIns = await queryOne<{ id: number }>('INSERT INTO people (name, phone, user_id) VALUES ($1, $2, $3) RETURNING id', [name, phone, userId]);
-          const newId = newPersonIns!.id;
+          const result = db.prepare('INSERT INTO people (name, phone, user_id) VALUES (?, ?, ?)').run(name, phone, userId);
+          const newId = Number(result.lastInsertRowid);
           this.lastCreatedPerson.set(ctx.from!.id, { name, id: newId, ts: Date.now() });
           ctx.reply(`✅ Контакт создан: ${name}\n${phone ? `📱 ${phone}\n` : ''}\nПривязать к проекту? Напишите название.`);
         }
@@ -1980,7 +1877,7 @@ BHAG (Большая Дерзкая Цель на год):
 
     this.bot.on(message('photo'), async (ctx) => {
       try {
-        const userId = await this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
+        const userId = this.resolveUserId(ctx.from?.id ?? 0, [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || ctx.from?.username);
         if (!userId) { ctx.reply('Привяжите аккаунт через /login'); return; }
         const photo = ctx.message.photo[ctx.message.photo.length - 1]!;
         const buffer = await this.downloadTelegramFile(ctx, photo.file_id);
@@ -2043,9 +1940,10 @@ BHAG (Большая Дерзкая Цель на год):
             // Check lastCreatedPerson first
             const lastPerson = this.lastCreatedPerson.get(tgId);
             if (lastPerson) {
-              if (parsed.phone) await execute("UPDATE people SET phone = $1 WHERE id = $2", [parsed.phone, lastPerson.id]);
-              if (parsed.telegram) await execute("UPDATE people SET telegram = $1 WHERE id = $2", [parsed.telegram, lastPerson.id]);
-              if (parsed.email) await execute("UPDATE people SET email = $1 WHERE id = $2", [parsed.email, lastPerson.id]);
+              const db2 = getDb();
+              if (parsed.phone) db2.prepare("UPDATE people SET phone = ? WHERE id = ?").run(parsed.phone, lastPerson.id);
+              if (parsed.telegram) db2.prepare("UPDATE people SET telegram = ? WHERE id = ?").run(parsed.telegram, lastPerson.id);
+              if (parsed.email) db2.prepare("UPDATE people SET email = ? WHERE id = ?").run(parsed.email, lastPerson.id);
               ctx.reply(`✅ Контакт "${lastPerson.name}" дополнен\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.telegram ? `📱 ${parsed.telegram}\n` : ''}${parsed.email ? `📧 ${parsed.email}` : ''}`);
               return;
             }
@@ -2067,21 +1965,21 @@ BHAG (Большая Дерзкая Цель на год):
             }
           }
           // Create contact
-          const existingPhoto = await queryOne<{ id: number }>('SELECT id FROM people WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [userId, parsed.name.trim()]);
-          if (existingPhoto) {
+          const db = getDb();
+          const existing = db.prepare('SELECT id FROM people WHERE user_id = ? AND LOWER(name) = LOWER(?)').get(userId, parsed.name.trim()) as { id: number } | undefined;
+          if (existing) {
             // Update existing — only fill empty fields
-            if (parsed.phone) await execute("UPDATE people SET phone = $1 WHERE id = $2 AND (phone = '' OR phone IS NULL)", [parsed.phone, existingPhoto.id]);
-            if (parsed.email) await execute("UPDATE people SET email = $1 WHERE id = $2 AND (email = '' OR email IS NULL)", [parsed.email, existingPhoto.id]);
-            if (parsed.telegram) await execute("UPDATE people SET telegram = $1 WHERE id = $2 AND (telegram = '' OR telegram IS NULL)", [parsed.telegram, existingPhoto.id]);
-            if (parsed.company) await execute("UPDATE people SET company = $1 WHERE id = $2 AND (company = '' OR company IS NULL)", [parsed.company, existingPhoto.id]);
-            if (parsed.role) await execute("UPDATE people SET role = $1 WHERE id = $2 AND (role = '' OR role IS NULL)", [parsed.role, existingPhoto.id]);
+            if (parsed.phone) db.prepare("UPDATE people SET phone = ? WHERE id = ? AND (phone = '' OR phone IS NULL)").run(parsed.phone, existing.id);
+            if (parsed.email) db.prepare("UPDATE people SET email = ? WHERE id = ? AND (email = '' OR email IS NULL)").run(parsed.email, existing.id);
+            if (parsed.telegram) db.prepare("UPDATE people SET telegram = ? WHERE id = ? AND (telegram = '' OR telegram IS NULL)").run(parsed.telegram, existing.id);
+            if (parsed.company) db.prepare("UPDATE people SET company = ? WHERE id = ? AND (company = '' OR company IS NULL)").run(parsed.company, existing.id);
+            if (parsed.role) db.prepare("UPDATE people SET role = ? WHERE id = ? AND (role = '' OR role IS NULL)").run(parsed.role, existing.id);
             ctx.reply(`✅ Контакт "${parsed.name}" обновлён\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.email ? `📧 ${parsed.email}\n` : ''}${parsed.company ? `🏢 ${parsed.company}\n` : ''}${parsed.notes || ''}`);
           } else {
-            const photoPersonIns = await queryOne<{ id: number }>(
-              'INSERT INTO people (name, company, role, phone, email, telegram, notes, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
-              [parsed.name, parsed.company || '', parsed.role || '', parsed.phone || '', parsed.email || '', parsed.telegram || '', parsed.notes || '', userId]
+            const result = db.prepare('INSERT INTO people (name, company, role, phone, email, telegram, notes, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+              parsed.name, parsed.company || '', parsed.role || '', parsed.phone || '', parsed.email || '', parsed.telegram || '', parsed.notes || '', userId
             );
-            const newPersonId = photoPersonIns!.id;
+            const newPersonId = Number(result.lastInsertRowid);
             this.lastCreatedPerson.set(ctx.from!.id, { name: parsed.name, id: newPersonId, ts: Date.now() });
             ctx.reply(`✅ Контакт создан: ${parsed.name}\n${parsed.phone ? `📱 ${parsed.phone}\n` : ''}${parsed.email ? `📧 ${parsed.email}\n` : ''}${parsed.company ? `🏢 ${parsed.company}\n` : ''}${parsed.role ? `💼 ${parsed.role}\n` : ''}${parsed.notes ? `📝 ${parsed.notes}` : ''}\n\nПривязать к проекту? Напишите название проекта.`);
           }
@@ -2176,9 +2074,10 @@ BHAG (Большая Дерзкая Цель на год):
   }
 
   /** Get all users with linked Telegram accounts */
-  async getLinkedUsers(): Promise<Array<{ id: number; tg_id: string; name: string }>> {
+  getLinkedUsers(): Array<{ id: number; tg_id: string; name: string }> {
     try {
-      return await queryAll<{ id: number; tg_id: string; name: string }>("SELECT id, tg_id, name FROM users WHERE tg_id IS NOT NULL AND tg_id != ''");
+      const db = getDb();
+      return db.prepare("SELECT id, tg_id, name FROM users WHERE tg_id IS NOT NULL AND tg_id != ''").all() as Array<{ id: number; tg_id: string; name: string }>;
     } catch { return []; }
   }
 }

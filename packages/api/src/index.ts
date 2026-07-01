@@ -3,7 +3,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { router } from './routes';
-import { initPg, runSchema } from './db/db';
+import { initDb } from './db/db';
 import { seedDb } from './db/seed';
 import { searchService } from './services/search.service';
 import { telegramService } from './services/telegram.service';
@@ -23,7 +23,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors({
-  origin: ['https://clarity-space.ru', 'http://localhost:5173', 'http://localhost:3000'],
+  origin: ['https://kanban.myaipro.ru', 'https://clarity-space.ru', 'http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
 }));
 app.use(express.json({ limit: `${config.maxFileSizeMb}mb` }));
@@ -56,15 +56,12 @@ app.get('/health', (_req, res) => {
 });
 
 async function start(): Promise<void> {
-  await initPg(config.databaseUrl);
-  await runSchema();
+  initDb();
   seedDb();
   searchService.reindexAll();
   searchService.startVaultWatcher();
   telegramService.start();
   startNotificationScheduler();
-  // Todoist background sync
-  try { const { startTodoistBackgroundSync } = require('./routes/todoist'); startTodoistBackgroundSync(); } catch (e) { console.warn('[todoist] background sync not started:', (e as Error).message); }
   app.listen(config.port, () => {
     console.log(`[Clarity Space API] running on port ${config.port}`);
     // Start Obsidian vault watcher for bidirectional sync
