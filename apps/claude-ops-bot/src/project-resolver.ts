@@ -8,6 +8,7 @@ export interface Target {
   name: string;
   path: string;
   type: TargetType;
+  hidden?: boolean;
 }
 
 export class ProjectResolver {
@@ -21,6 +22,20 @@ export class ProjectResolver {
 
   list(): Target[] {
     return [...this.targets];
+  }
+
+  listVisible(): Target[] {
+    return this.targets.filter(t => !t.hidden);
+  }
+
+  setHidden(name: string, hidden: boolean): void {
+    const t = this.targets.find(t => t.name === name);
+    if (t) {
+      t.hidden = hidden;
+      // save synchronously
+      const fs = require('fs-extra');
+      fs.writeFileSync(this.reposFile, JSON.stringify(this.targets, null, 2));
+    }
   }
 
   get(name: string): Target | undefined {

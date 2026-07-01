@@ -329,7 +329,7 @@ export async function startBot(cfg: OpsConfig, db: Database.Database): Promise<v
     }
 
     const model = userModels.get(tgId) ?? cfg.defaultModel;
-    const projects = resolver.list();
+    const projects = resolver.listVisible();
 
     if (projects.length === 0) {
       return ctx.reply('Нет проектов. /add_repo <path>');
