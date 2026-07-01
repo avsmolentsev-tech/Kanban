@@ -63,7 +63,7 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-y-auto overscroll-contain" style={{ minHeight: 0 }}>
-        <div className="animate-fade-in" key={page.type + ("taskId" in page ? page.taskId : "") + ("name" in page ? page.name : "")}>
+        <div className="animate-fade-in" key={page.type + ("taskId" in page ? String(page.taskId) : "") + ("name" in page ? page.name : "") + ("projectName" in page ? (page.projectName || "") : "")}>
           {page.type === "projects" && <ProjectsTab onSelect={(name) => navigate({ type: "project-detail", name })} />}
           {page.type === "project-detail" && (
             <ProjectDetail
