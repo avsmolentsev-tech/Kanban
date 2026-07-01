@@ -442,7 +442,7 @@ export async function startBot(cfg: OpsConfig, db: Database.Database): Promise<v
 
     const runner = new ClaudeRunner({
       bin: cfg.claudeBin,
-      args: ['-p', '--permission-mode', 'bypassPermissions', '--model', MODEL_FLAG(task.model as 'sonnet' | 'opus')],
+      args: ['-p', '--dangerously-skip-permissions', '--model', MODEL_FLAG(task.model as 'sonnet' | 'opus')],
       cwd,
     });
 
@@ -485,7 +485,7 @@ export async function startBot(cfg: OpsConfig, db: Database.Database): Promise<v
 
     const runner = new ClaudeRunner({
       bin: cfg.claudeBin,
-      args: ['-p', '--permission-mode', 'bypassPermissions', '--model', MODEL_FLAG(task.model as 'sonnet' | 'opus')],
+      args: ['-p', '--dangerously-skip-permissions', '--model', MODEL_FLAG(task.model as 'sonnet' | 'opus')],
       cwd,
     });
 
