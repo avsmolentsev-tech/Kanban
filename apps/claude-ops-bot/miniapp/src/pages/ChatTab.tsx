@@ -4,10 +4,10 @@ import WebApp from "@twa-dev/sdk";
 
 const BASE = import.meta.env.VITE_API_URL || "";
 
-export function ChatTab() {
+export function ChatTab({ initialProject }: { initialProject?: string }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState<string>("");
+  const [selectedProject, setSelectedProject] = useState<string>(initialProject || "");
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [attachedFile, setAttachedFile] = useState<{ name: string; path: string } | null>(null);

@@ -17,7 +17,7 @@ type Page =
   | { type: "project-detail"; name: string }
   | { type: "tasks" }
   | { type: "task-detail"; taskId: number }
-  | { type: "chat" }
+  | { type: "chat"; projectName?: string }
   | { type: "diff"; taskId: number }
   | { type: "file"; projectName: string; filePath: string }
   | { type: "settings" };
@@ -71,7 +71,7 @@ export default function App() {
               onBack={() => navigate({ type: "projects" })}
               onTask={(id) => setPage({ type: "task-detail", taskId: id })}
               onFile={(path) => setPage({ type: "file", projectName: page.name, filePath: path })}
-              onNewTask={() => navigate({ type: "chat" })}
+              onNewTask={() => navigate({ type: "chat", projectName: page.name })}
             />
           )}
           {page.type === "tasks" && <TasksTab onSelect={(id) => setPage({ type: "task-detail", taskId: id })} />}
@@ -82,7 +82,7 @@ export default function App() {
               onDiff={() => setPage({ type: "diff", taskId: page.taskId })}
             />
           )}
-          {page.type === "chat" && <ChatTab />}
+          {page.type === "chat" && <ChatTab initialProject={page.projectName} />}
           {page.type === "diff" && <DiffView taskId={page.taskId} onBack={() => setPage({ type: "task-detail", taskId: page.taskId })} />}
           {page.type === "file" && (
             <FileViewer
