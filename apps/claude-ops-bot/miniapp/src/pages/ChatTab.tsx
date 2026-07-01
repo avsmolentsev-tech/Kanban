@@ -55,7 +55,7 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
   };
 
   const send = async () => {
-    if ((!input.trim() && !attachedFile) || sending) return;
+    if (!input.trim() && !attachedFile) return;
     let text = input.trim();
     if (attachedFile) {
       text = "[File: " + attachedFile.name + " -> " + attachedFile.path + "]\n" + text;
@@ -189,7 +189,7 @@ export function ChatTab({ initialProject }: { initialProject?: string }) {
           />
           <button
             onClick={send}
-            disabled={sending || (!input.trim() && !attachedFile)}
+            disabled={!input.trim() && !attachedFile}
             className="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-center text-black font-bold disabled:opacity-30 transition"
           >
             {"▶"}
