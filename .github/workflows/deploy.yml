@@ -90,6 +90,7 @@ jobs:
           path: |
             scripts/backup-obsidian-md-to-drive.sh
             scripts/logrotate-backup-obsidian-md
+            scripts/vault-git-autosync.sh
           retention-days: 1
 
   deploy:
@@ -272,4 +273,15 @@ jobs:
             ( crontab -l 2>/dev/null | grep -v backup-obsidian-md-to-drive ; echo \"15 3 * * * /usr/local/bin/backup-obsidian-md-to-drive.sh\" ) | crontab -
             touch /var/log/backup-obsidian-md.log
             chmod 0644 /var/log/backup-obsidian-md.log
+          '"
+
+      - name: Install vault → GitHub auto-sync cron
+        run: |
+          scp -i ~/.ssh/id_ed25519 backup-scripts/vault-git-autosync.sh \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/usr/local/bin/vault-git-autosync.sh
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "bash -lc '
+            chmod 0755 /usr/local/bin/vault-git-autosync.sh
+            ( crontab -l 2>/dev/null | grep -v vault-git-autosync ; echo \"*/15 * * * * /usr/local/bin/vault-git-autosync.sh\" ) | crontab -
+            touch /var/log/vault-git-autosync.log
+            chmod 0644 /var/log/vault-git-autosync.log
           '"
