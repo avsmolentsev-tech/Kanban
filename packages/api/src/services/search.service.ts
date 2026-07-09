@@ -22,8 +22,10 @@ export class SearchService {
     // no-op
   }
 
-  async search(query: string, limit = 50): Promise<SearchHit[]> {
+  async search(query: string, limit = 50, userId?: number | null): Promise<SearchHit[]> {
     if (!query.trim()) return [];
+    // Fail closed: without a user context we must not search across everyone's data.
+    if (userId === null || userId === undefined) return [];
     const q = query.trim();
     const likeQ = `%${q}%`;
     const results: SearchHit[] = [];
@@ -33,10 +35,10 @@ export class SearchService {
       const tasks = await queryAll<{ id: number; title: string; rank: number }>(
         `SELECT id, title, ts_rank(search_vector, plainto_tsquery('russian', $1)) as rank
          FROM tasks
-         WHERE search_vector @@ plainto_tsquery('russian', $1) AND archived = 0
+         WHERE search_vector @@ plainto_tsquery('russian', $1) AND archived = 0 AND user_id = $3
          ORDER BY rank DESC
          LIMIT $2`,
-        [q, limit]
+        [q, limit, userId]
       );
       for (const t of tasks) {
         results.push({ type: 'task', ref_id: t.id, title: t.title, snippet: '', rank: t.rank });
@@ -44,8 +46,8 @@ export class SearchService {
 
       // Meetings: ILIKE
       const meetings = await queryAll<{ id: number; title: string; summary_raw: string }>(
-        'SELECT id, title, summary_raw FROM meetings WHERE title ILIKE $1 OR summary_raw ILIKE $1 LIMIT $2',
-        [likeQ, limit]
+        'SELECT id, title, summary_raw FROM meetings WHERE (title ILIKE $1 OR summary_raw ILIKE $1) AND user_id = $3 LIMIT $2',
+        [likeQ, limit, userId]
       );
       for (const m of meetings) {
         const snippet = (m.summary_raw ?? '').slice(0, 200);
@@ -54,8 +56,8 @@ export class SearchService {
 
       // Ideas: ILIKE
       const ideas = await queryAll<{ id: number; title: string; body: string }>(
-        'SELECT id, title, body FROM ideas WHERE title ILIKE $1 OR body ILIKE $1 LIMIT $2',
-        [likeQ, limit]
+        'SELECT id, title, body FROM ideas WHERE (title ILIKE $1 OR body ILIKE $1) AND user_id = $3 LIMIT $2',
+        [likeQ, limit, userId]
       );
       for (const i of ideas) {
         results.push({ type: 'idea', ref_id: i.id, title: i.title, snippet: (i.body ?? '').slice(0, 200), rank: 0 });
@@ -64,8 +66,8 @@ export class SearchService {
       // Documents: ILIKE
       try {
         const docs = await queryAll<{ id: number; title: string; body: string }>(
-          'SELECT id, title, body FROM documents WHERE title ILIKE $1 OR body ILIKE $1 LIMIT $2',
-          [likeQ, limit]
+          'SELECT id, title, body FROM documents WHERE (title ILIKE $1 OR body ILIKE $1) AND user_id = $3 LIMIT $2',
+          [likeQ, limit, userId]
         );
         for (const d of docs) {
           results.push({ type: 'document', ref_id: d.id, title: d.title, snippet: (d.body ?? '').slice(0, 200), rank: 0 });
@@ -74,8 +76,8 @@ export class SearchService {
 
       // People: ILIKE
       const people = await queryAll<{ id: number; name: string; notes: string }>(
-        'SELECT id, name, notes FROM people WHERE name ILIKE $1 OR notes ILIKE $1 LIMIT $2',
-        [likeQ, limit]
+        'SELECT id, name, notes FROM people WHERE (name ILIKE $1 OR notes ILIKE $1) AND user_id = $3 LIMIT $2',
+        [likeQ, limit, userId]
       );
       for (const p of people) {
         results.push({ type: 'person', ref_id: p.id, title: p.name, snippet: (p.notes ?? '').slice(0, 200), rank: 0 });

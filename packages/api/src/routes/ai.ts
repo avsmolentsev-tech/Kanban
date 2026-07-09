@@ -828,11 +828,12 @@ aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) 
 });
 
 aiRouter.get('/search', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
   const q = req.query['q'];
   if (typeof q !== 'string' || !q) { res.status(400).json(fail('Query parameter q is required')); return; }
   try {
-    const tasks = await queryAll("SELECT title FROM tasks WHERE title LIKE $1 LIMIT 10", [`%${q}%`]);
-    const meetings = await queryAll("SELECT title, summary_raw FROM meetings WHERE title LIKE $1 OR summary_raw LIKE $2 LIMIT 5", [`%${q}%`, `%${q}%`]);
+    const tasks = await queryAll("SELECT title FROM tasks WHERE title LIKE $1 AND user_id = $2 LIMIT 10", [`%${q}%`, userId]);
+    const meetings = await queryAll("SELECT title, summary_raw FROM meetings WHERE (title LIKE $1 OR summary_raw LIKE $2) AND user_id = $3 LIMIT 5", [`%${q}%`, `%${q}%`, userId]);
     const result = await claude.searchKnowledge(q, JSON.stringify({ tasks, meetings }));
     res.json(ok(result));
   } catch (err) {

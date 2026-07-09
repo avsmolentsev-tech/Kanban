@@ -72,7 +72,7 @@ export class ClaudeService {
       for (const toolCall of message.tool_calls) {
         if (toolCall.type === 'function') {
           const args = JSON.parse(toolCall.function.arguments || '{}');
-          const result = await executeTool(toolCall.function.name, args);
+          const result = await executeTool(toolCall.function.name, args, userId);
           chatMessages.push({
             role: 'tool',
             tool_call_id: toolCall.id,

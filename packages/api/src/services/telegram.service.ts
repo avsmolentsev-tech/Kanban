@@ -1293,7 +1293,7 @@ BHAG (Большая Дерзкая Цель на год):
 
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { searchService } = require('./search.service');
-      const results = searchService.search(query, 10);
+      const results = await searchService.search(query, 10, userId);
       if (results.length === 0) { ctx.reply('Ничего не найдено'); return; }
 
       const lines = results.map((r: { type: string; title: string }) => `[${r.type}] ${r.title}`);

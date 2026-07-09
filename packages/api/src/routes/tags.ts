@@ -12,31 +12,37 @@ const CreateTagSchema = z.object({
   color: z.string().optional().default('#6366f1'),
 });
 
-// GET /tags — list all tags
-tagsRouter.get('/', async (_req: AuthRequest, res: Response) => {
-  const tags = await queryAll('SELECT * FROM tags ORDER BY name');
+// GET /tags — list current user's tags
+tagsRouter.get('/', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  const tags = await queryAll('SELECT * FROM tags WHERE user_id = $1 ORDER BY name', [userId]);
   res.json(ok(tags));
 });
 
-// POST /tags — create tag
+// POST /tags — create tag owned by current user
 tagsRouter.post('/', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
   const parsed = CreateTagSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
   const { name, color } = parsed.data;
   const inserted = await queryOne<{ id: number }>(
-    'INSERT INTO tags (name, color) VALUES ($1, $2) RETURNING id',
-    [name, color]
+    'INSERT INTO tags (name, color, user_id) VALUES ($1, $2, $3) RETURNING id',
+    [name, color, userId]
   );
   if (!inserted) { res.status(500).json(fail('Insert failed')); return; }
-  const tag = await queryOne('SELECT * FROM tags WHERE id = $1', [inserted.id]);
+  const tag = await queryOne('SELECT * FROM tags WHERE id = $1 AND user_id = $2', [inserted.id, userId]);
   res.status(201).json(ok(tag));
 });
 
-// DELETE /tags/:id — delete tag
+// DELETE /tags/:id — delete a tag owned by current user
 tagsRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
   const tagId = Number(req.params['id']);
+  // Verify ownership before touching anything
+  const owned = await queryOne('SELECT id FROM tags WHERE id = $1 AND user_id = $2', [tagId, userId]);
+  if (!owned) { res.status(404).json(fail('Tag not found')); return; }
   await execute('DELETE FROM task_tags WHERE tag_id = $1', [tagId]);
-  await execute('DELETE FROM tags WHERE id = $1', [tagId]);
+  await execute('DELETE FROM tags WHERE id = $1 AND user_id = $2', [tagId, userId]);
   res.json(ok({ deleted: true }));
 });
 

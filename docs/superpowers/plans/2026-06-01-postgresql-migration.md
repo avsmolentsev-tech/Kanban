@@ -1152,7 +1152,7 @@ ssh root@clarity-space.ru "source ~/.nvm/nvm.sh && nvm use 20 && cd /var/www/kan
 
 ```bash
 # API health
-curl https://clarity-space.ru/v1/widget/today?key=pis_5e983b3d409d6e39416b1c19861d68ad5899bc08065d041c
+curl https://clarity-space.ru/v1/widget/today?key=pis_YOUR_WIDGET_KEY_HERE
 # Check meetings
 curl -s https://clarity-space.ru/v1/meetings -H 'Authorization: Bearer TOKEN' | head -200
 ```
