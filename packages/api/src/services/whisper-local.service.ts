@@ -6,9 +6,44 @@ import * as os from 'os';
 const WHISPER_CLI = '/opt/whisper.cpp/build/bin/whisper-cli';
 const WHISPER_MODEL = '/opt/whisper.cpp/models/ggml-small.bin';
 
+// Shared faster-whisper microservice (see infra/transcribe-service). Preferred
+// local backend — faster than whisper.cpp and shared across all projects.
+const TRANSCRIBE_SERVICE_URL = process.env['TRANSCRIBE_SERVICE_URL'] || 'http://127.0.0.1:8091';
+
 /** Check if local whisper.cpp is available */
 export function isLocalWhisperAvailable(): boolean {
   return fs.existsSync(WHISPER_CLI) && fs.existsSync(WHISPER_MODEL);
+}
+
+/** Is the faster-whisper microservice healthy? (short timeout, never throws) */
+export async function isTranscribeServiceAvailable(): Promise<boolean> {
+  try {
+    const res = await fetch(`${TRANSCRIBE_SERVICE_URL}/health`, { signal: AbortSignal.timeout(2000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Transcribe via the faster-whisper microservice (raw buffer; it decodes internally). */
+export async function transcribeViaService(buffer: Buffer, filename: string): Promise<string> {
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array(buffer)]), filename || 'audio');
+  form.append('language', 'ru');
+  const res = await fetch(`${TRANSCRIBE_SERVICE_URL}/transcribe`, {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.timeout(2_700_000), // up to 45 min for long recordings
+  });
+  if (!res.ok) throw new Error(`transcribe service ${res.status}: ${await res.text().catch(() => '')}`);
+  const data = await res.json() as { text?: string };
+  const transcript = (data.text ?? '').trim();
+  try {
+    const { execute } = require('../db/db');
+    await execute("INSERT INTO usage_logs (type, model, detail) VALUES ($1, $2, $3)",
+      ['transcription', 'faster-whisper', `${transcript.length} chars`]);
+  } catch {}
+  return transcript;
 }
 
 /**
@@ -94,6 +129,15 @@ function runCommand(cmd: string, args: string[], timeoutMs: number): Promise<voi
  * ASYNC — does not block Node.js event loop, so other API requests keep flowing.
  */
 export async function transcribeLocal(buffer: Buffer, filename: string): Promise<string> {
+  // Prefer the faster-whisper microservice; fall back to whisper.cpp if it's down.
+  if (await isTranscribeServiceAvailable()) {
+    try {
+      return await transcribeViaService(buffer, filename);
+    } catch (err) {
+      console.warn('[transcribe] service failed, falling back to whisper.cpp:', err instanceof Error ? err.message : err);
+    }
+  }
+
   const tmpDir = os.tmpdir();
   const id = Date.now() + '-' + Math.random().toString(36).slice(2);
 

@@ -1,0 +1,27 @@
+services:
+  transcribe:
+    build: .
+    image: transcribe-service:latest
+    container_name: transcribe-service
+    restart: unless-stopped
+    # localhost only — internal service, other projects call it over 127.0.0.1
+    ports:
+      - "127.0.0.1:8091:8091"
+    volumes:
+      # persist the downloaded model between rebuilds
+      - ./models:/models
+    environment:
+      - MODEL_SIZE=medium
+      - COMPUTE_TYPE=int8
+      - CPU_THREADS=2
+      - MAX_CONCURRENCY=2
+      - LANG_DEFAULT=ru
+    # leave 1 core + headroom for the other 6 projects on this box
+    cpus: 3.0
+    mem_limit: 6g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8091/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
