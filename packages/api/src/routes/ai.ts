@@ -29,16 +29,19 @@ aiRouter.post('/chat', async (req: AuthRequest, res: Response) => {
       res.status(429).json(fail(`Лимит AI-сообщений: ${limit.used}/${limit.limit} в день. Перейдите на Pro Max для безлимита.`));
       return;
     }
-    // Build vault context for AI (scoped to user)
-    let vaultContext = '';
-    try { vaultContext = obsidian.forUser(getUserId(req)).readAllForContext(); } catch {}
-
+    // Instead of dumping the entire vault into the prompt on every message
+    // (slow + huge token cost), let the model search on demand via tools —
+    // all scoped to this user in tools.service.
+    const userId = getUserId(req);
+    const today = new Date().toISOString().slice(0, 10);
     const systemPrompt = [
       parsed.data.context ?? '',
-      vaultContext ? `\n\nДанные из Obsidian Vault (проекты, задачи, встречи, идеи, люди):\n\n${vaultContext}` : '',
-    ].filter(Boolean).join('\n');
+      `Ты — персональный ассистент в системе Clarity Space. Отвечай на русском, кратко и по делу. Сегодня ${today}.`,
+      `У тебя есть инструменты для поиска в данных этого пользователя: задачи, встречи (с полными транскрипциями), проекты, идеи, люди. ` +
+      `Прежде чем отвечать на вопросы о встречах, задачах, проектах или людях — ОБЯЗАТЕЛЬНО используй инструменты поиска (search_vault, search_meetings_full, get_entity_details), не выдумывай и не полагайся на память.`,
+    ].filter(Boolean).join('\n\n');
 
-    const reply = await claude.chat(parsed.data.messages, systemPrompt, 'gpt-4.1-mini', false, false, getUserId(req));
+    const reply = await claude.chat(parsed.data.messages, systemPrompt, 'gpt-4.1-mini', true, false, userId);
     res.json(ok({ reply }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
