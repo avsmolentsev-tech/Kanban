@@ -238,7 +238,10 @@ export async function startBot(): Promise<void> {
       const buf = Buffer.from(await res.arrayBuffer());
       const outDir = path.join(cfg.stateDir, 'inputs', String(ctx.from!.id));
       await fs.mkdirp(outDir);
-      const outPath = path.join(outDir, `${Date.now()}-${doc.file_name ?? 'file'}`);
+      // basename() strips any ../ in the Telegram-supplied filename — otherwise a
+      // name like ../../../etc/cron.d/x would write outside outDir (as root).
+      const safeName = path.basename(doc.file_name ?? 'file') || 'file';
+      const outPath = path.join(outDir, `${Date.now()}-${safeName}`);
       await fs.writeFile(outPath, buf);
       await ctx.reply(`📎 сохранён: ${outPath}`);
       await dispatchText(ctx, `Файл доступен локально: ${outPath}\n\n${ctx.message.caption ?? 'Посмотри и действуй.'}`);
