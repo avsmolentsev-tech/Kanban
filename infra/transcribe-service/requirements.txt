@@ -1,4 +1,9 @@
+# faster-whisper 1.0.3 targets the pre-1.0 huggingface-hub API (requests-based).
+# The current default hub (1.x, httpx-based) breaks its model download, so pin
+# the compatible hub + requests explicitly.
 faster-whisper==1.0.3
+huggingface-hub==0.23.5
+requests==2.32.3
 fastapi==0.115.2
 uvicorn[standard]==0.30.6
 python-multipart==0.0.12
