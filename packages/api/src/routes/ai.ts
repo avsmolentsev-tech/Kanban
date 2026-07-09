@@ -15,6 +15,16 @@ export const aiRouter = Router();
 const claude = new ClaudeService();
 const obsidian = new ObsidianService(config.vaultPath);
 
+/** Enforce the per-user daily AI limit. Responds 429 and returns false if exceeded. */
+async function enforceAiLimit(req: AuthRequest, res: Response): Promise<boolean> {
+  const limit = await checkAiLimit(req);
+  if (!limit.allowed) {
+    res.status(429).json(fail(`Лимит AI-сообщений: ${limit.used}/${limit.limit} в день. Перейдите на Pro Max для безлимита.`));
+    return false;
+  }
+  return true;
+}
+
 const ChatSchema = z.object({
   messages: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })),
   context: z.string().optional(),
@@ -50,6 +60,7 @@ aiRouter.post('/chat', async (req: AuthRequest, res: Response) => {
 
 aiRouter.post('/daily-brief', async (req: AuthRequest, res: Response) => {
   try {
+    if (!(await enforceAiLimit(req, res))) return;
     const userId = getUserId(req);
     const today = moscowDateString();
     const userParams: unknown[] = userId != null ? [userId] : [];
@@ -64,6 +75,7 @@ aiRouter.post('/daily-brief', async (req: AuthRequest, res: Response) => {
 
 aiRouter.post('/weekly-brief', async (req: AuthRequest, res: Response) => {
   try {
+    if (!(await enforceAiLimit(req, res))) return;
     const userId = getUserId(req);
     const today = moscowDateString();
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -91,7 +103,7 @@ ${JSON.stringify(completedTasks)}
 ${JSON.stringify(activeTasks)}
 
 Встречи за неделю:
-${JSON.stringify(weekMeetings)}
+${JSON.stringify((weekMeetings as Array<Record<string, unknown>>).slice(0, 15).map(m => ({ title: m['title'], date: m['date'], summary: String(m['summary_raw'] ?? '').slice(0, 800) })))}
 
 Предстоящие встречи:
 ${JSON.stringify(upcomingMeetings)}
@@ -669,6 +681,7 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
 
 aiRouter.post('/daily-plan', async (req: AuthRequest, res: Response) => {
   try {
+    if (!(await enforceAiLimit(req, res))) return;
     const userId = getUserId(req);
     const today = moscowDateString();
 
@@ -748,6 +761,7 @@ aiRouter.post('/daily-plan', async (req: AuthRequest, res: Response) => {
 
 aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) => {
   try {
+    if (!(await enforceAiLimit(req, res))) return;
     const userId = getUserId(req);
     const today = moscowDateString();
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -790,10 +804,13 @@ aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) 
     const habits = userId != null
       ? await queryAll<{ id: number; title: string }>(`SELECT id, title FROM habits WHERE archived = 0 AND user_id = $1`, [userId])
       : await queryAll<{ id: number; title: string }>(`SELECT id, title FROM habits WHERE archived = 0`, []);
-    const habitLogs = await queryAll<{ habit_id: number; completed_days: number }>(
-      "SELECT habit_id, COUNT(*) as completed_days FROM habit_logs WHERE date >= $1 AND completed = 1 GROUP BY habit_id",
-      [weekAgo]
-    );
+    const habitLogs = userId != null
+      ? await queryAll<{ habit_id: number; completed_days: number }>(
+          "SELECT hl.habit_id, COUNT(*) as completed_days FROM habit_logs hl JOIN habits h ON h.id = hl.habit_id WHERE hl.date >= $1 AND hl.completed = 1 AND h.user_id = $2 GROUP BY hl.habit_id",
+          [weekAgo, userId])
+      : await queryAll<{ habit_id: number; completed_days: number }>(
+          "SELECT habit_id, COUNT(*) as completed_days FROM habit_logs WHERE date >= $1 AND completed = 1 GROUP BY habit_id",
+          [weekAgo]);
     const habitStats = habits.map(h => {
       const log = habitLogs.find(l => l.habit_id === h.id);
       return { title: h.title, completed_days: log?.completed_days ?? 0, total_days: 7 };
@@ -835,6 +852,7 @@ aiRouter.get('/search', async (req: AuthRequest, res: Response) => {
   const q = req.query['q'];
   if (typeof q !== 'string' || !q) { res.status(400).json(fail('Query parameter q is required')); return; }
   try {
+    if (!(await enforceAiLimit(req, res))) return;
     const tasks = await queryAll("SELECT title FROM tasks WHERE title LIKE $1 AND user_id = $2 LIMIT 10", [`%${q}%`, userId]);
     const meetings = await queryAll("SELECT title, summary_raw FROM meetings WHERE (title LIKE $1 OR summary_raw LIKE $2) AND user_id = $3 LIMIT 5", [`%${q}%`, `%${q}%`, userId]);
     const result = await claude.searchKnowledge(q, JSON.stringify({ tasks, meetings }));
