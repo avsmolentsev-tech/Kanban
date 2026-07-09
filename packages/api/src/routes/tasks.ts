@@ -10,12 +10,13 @@ import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
+import { attachmentFileFilter } from '../utils/upload-filter';
 
 const obsidian = new ObsidianService(config.vaultPath);
 
 const attachDir = path.join(config.vaultPath, 'Attachments');
 if (!fs.existsSync(attachDir)) fs.mkdirSync(attachDir, { recursive: true });
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 }, fileFilter: attachmentFileFilter });
 
 export const tasksRouter = Router();
 

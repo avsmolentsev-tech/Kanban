@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { router } from './routes';
@@ -21,6 +22,15 @@ process.on('unhandledRejection', (reason) => {
 
 const app = express();
 app.set('trust proxy', 1);
+
+// Security headers (HSTS, nosniff, frameguard, etc.). CSP is disabled here — the
+// API serves JSON + file downloads, not HTML pages — and attachment routes force
+// download + nosniff to neutralize any uploaded HTML/SVG. cross-origin resource
+// policy stays open so the SPA can embed attachment images.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 
 app.use(cors({
   origin: ['https://clarity-space.ru', 'http://localhost:5173', 'http://localhost:3000'],
