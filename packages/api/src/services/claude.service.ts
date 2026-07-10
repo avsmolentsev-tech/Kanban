@@ -202,6 +202,81 @@ ${qa.slice(0, 10000)}` }], '', 'gpt-4.1-mini');
     return { notes, qa, ...(actions ? { actions } : {}) };
   }
 
+  /**
+   * Extract REAL action items from a meeting transcript — structured, attributed,
+   * and quote-backed so nothing is invented. Processes the full transcript in
+   * chunks (no 8k truncation) and returns deduplicated items.
+   */
+  async extractActionItems(
+    transcript: string,
+    title: string,
+    people: string[] = [],
+  ): Promise<Array<{ title: string; owner: string | null; type: 'my_task' | 'their_commitment' | 'mutual_agreement' | 'idea'; due: string | null; quote: string }>> {
+    const CHUNK = 12000;
+    const MAX_CHUNKS = 8; // bound cost on very long recordings
+    const chunks: string[] = [];
+    for (let i = 0; i < transcript.length && chunks.length < MAX_CHUNKS; i += CHUNK) {
+      chunks.push(transcript.slice(i, i + CHUNK));
+    }
+
+    type Item = { title: string; owner: string | null; type: 'my_task' | 'their_commitment' | 'mutual_agreement' | 'idea'; due: string | null; quote: string };
+    const collected: Item[] = [];
+
+    for (const chunk of chunks) {
+      const prompt = `Ты извлекаешь ТОЛЬКО реальные действия из встречи. Никаких выдумок.
+
+Встреча: "${title}"
+Участники: ${people.join(', ') || 'не указаны'}
+
+ЖЁСТКИЕ ПРАВИЛА:
+1. Бери ТОЛЬКО явно проговоренные действия: обязательства, договорённости, задачи «нужно сделать».
+2. Если действие не сказано явно — НЕ включай. Лучше меньше, но точно.
+3. Для КАЖДОГО пункта обязательна ЦИТАТА из транскрипции (дословно, коротко), подтверждающая его. Нет цитаты — не включай пункт.
+4. Определи type:
+   - "my_task" — делает владелец заметок / наша сторона («я», «мы», «нам нужно»)
+   - "their_commitment" — обещал сделать кто-то другой (укажи кто в owner)
+   - "mutual_agreement" — совместная договорённость обеих сторон
+   - "idea" — идея/предложение БЕЗ явного обязательства
+5. owner: имя ответственного из участников, "я" для себя, или null если не ясно.
+6. due: дата в формате YYYY-MM-DD, только если срок назван явно, иначе null.
+
+Верни ТОЛЬКО JSON: {"items":[{"title":"краткое действие","owner":"имя|я|null","type":"my_task|their_commitment|mutual_agreement|idea","due":"YYYY-MM-DD|null","quote":"дословная цитата"}]}
+Если действий нет — {"items":[]}
+
+Транскрипция:
+${chunk}`;
+
+      try {
+        const resp = await this.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini', false, true);
+        const parsed = JSON.parse(resp) as { items?: Item[] };
+        if (Array.isArray(parsed.items)) {
+          for (const it of parsed.items) {
+            if (!it || typeof it.title !== 'string' || it.title.trim().length < 3) continue;
+            if (!it.quote || typeof it.quote !== 'string' || it.quote.trim().length < 3) continue; // no quote → drop (anti-fabrication)
+            collected.push({
+              title: it.title.trim(),
+              owner: it.owner && it.owner !== 'null' ? String(it.owner).trim() : null,
+              type: (['my_task', 'their_commitment', 'mutual_agreement', 'idea'].includes(it.type) ? it.type : 'my_task'),
+              due: it.due && /^\d{4}-\d{2}-\d{2}$/.test(String(it.due)) ? String(it.due) : null,
+              quote: it.quote.trim().slice(0, 300),
+            });
+          }
+        }
+      } catch { /* skip unparseable chunk */ }
+    }
+
+    // Dedup by normalized title
+    const seen = new Set<string>();
+    const deduped: Item[] = [];
+    for (const it of collected) {
+      const key = it.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(it);
+    }
+    return deduped;
+  }
+
   // ── Prompt builders per meeting type ──────────────────────────────────────
 
   private getNotesPrompt(meetingType: string, context: string): string {

@@ -293,50 +293,77 @@ export class SearchService {
     }
   }
 
-  /** Extract tasks from meeting content using AI */
+  /** Extract real, attributed, quote-backed action items from a meeting and create tasks. */
   private async extractTasksFromMeeting(meetingId: number, title: string, body: string, projectId: number | null, userId?: number | null): Promise<void> {
     try {
       const { ClaudeService } = require('./claude.service');
       const claude = new ClaudeService();
 
-      const prompt = `Из текста встречи извлеки список конкретных задач (action items, договорённости, что-то нужно сделать). Верни ТОЛЬКО JSON массив строк (без markdown), например:
-["Подготовить презентацию", "Связаться с клиентом", "Написать отчёт"]
+      // Participants for owner attribution (scoped to this meeting)
+      const peopleRows = await queryAll<{ name: string }>(
+        'SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1',
+        [meetingId]
+      );
+      const peopleNames = peopleRows.map(p => p.name);
 
-Если задач нет — верни пустой массив [].
+      const items = await claude.extractActionItems(body, title, peopleNames);
+      if (!Array.isArray(items) || items.length === 0) return;
 
-Текст встречи:
-${body.slice(0, 8000)}`;
-
-      const result = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
-      const jsonMatch = result.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) return;
-      const tasks = JSON.parse(jsonMatch[0]) as string[];
-      if (!Array.isArray(tasks) || tasks.length === 0) return;
+      // Existing tasks from THIS meeting (dedup across re-syncs)
+      const existing = await queryAll<{ title: string }>(
+        "SELECT title FROM tasks WHERE description LIKE $1 AND user_id IS NOT DISTINCT FROM $2",
+        [`%[meeting #${meetingId}]%`, userId ?? null]
+      );
+      const norm = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+      const existingKeys = new Set(existing.map(e => norm(e.title)));
 
       const selfRow = await queryOne<{ id: number }>(
-        "SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1"
+        "SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') AND user_id IS NOT DISTINCT FROM $1 LIMIT 1",
+        [userId ?? null]
       );
 
+      const typeLabel: Record<string, string> = {
+        my_task: 'Моя задача', their_commitment: 'Обязательство другой стороны',
+        mutual_agreement: 'Взаимная договорённость', idea: 'Идея',
+      };
+
       let created = 0;
-      for (const taskTitle of tasks) {
-        if (!taskTitle || typeof taskTitle !== 'string' || taskTitle.length < 3) continue;
+      for (const it of items as Array<{ title: string; owner: string | null; type: string; due: string | null; quote: string }>) {
+        // Ideas are not actionable commitments — don't pollute the task board
+        if (it.type === 'idea') continue;
+        if (existingKeys.has(norm(it.title))) continue;
+
+        const ownerLabel = it.owner || (it.type === 'my_task' ? 'я' : 'не указан');
+        const description = `[meeting #${meetingId}] Из встречи: ${title}\nТип: ${typeLabel[it.type] ?? it.type}\nОтветственный: ${ownerLabel}\nЦитата: «${it.quote}»`;
         try {
           const newTask = await queryOne<{ id: number }>(
-            'INSERT INTO tasks (project_id, title, description, status, priority, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-            [projectId, taskTitle, `Из встречи: ${title}`, 'backlog', 3, userId ?? null]
+            'INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+            [projectId, it.title, description, 'backlog', 3, it.due, userId ?? null]
           );
           const newTaskId = newTask!.id;
-          if (selfRow) {
+          existingKeys.add(norm(it.title));
+
+          // Link the responsible person: named owner if we can resolve them, else self
+          let ownerPersonId: number | null = null;
+          if (it.owner && !['я', 'me', 'self'].includes(it.owner.toLowerCase())) {
+            const person = await queryOne<{ id: number }>(
+              'SELECT id FROM people WHERE LOWER(name) = LOWER($1) AND user_id IS NOT DISTINCT FROM $2 LIMIT 1',
+              [it.owner, userId ?? null]
+            );
+            ownerPersonId = person?.id ?? null;
+          }
+          if (ownerPersonId === null && selfRow) ownerPersonId = selfRow.id;
+          if (ownerPersonId !== null) {
             await execute(
               'INSERT INTO task_people (task_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-              [newTaskId, selfRow.id]
+              [newTaskId, ownerPersonId]
             );
           }
           created++;
-        } catch {}
+        } catch { /* skip failed insert */ }
       }
       if (created > 0) {
-        console.log(`[vault-sync] extracted ${created} tasks from meeting #${meetingId}`);
+        console.log(`[vault-sync] extracted ${created} action items from meeting #${meetingId}`);
       }
     } catch (err) {
       console.warn('[vault-sync] extractTasksFromMeeting error:', err);
