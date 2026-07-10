@@ -182,7 +182,7 @@ export function TodaySwipePage() {
           )}
 
           {/* Title */}
-          <div className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-3">{currentTask.title}</div>
+          <div className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-3 w-full break-words [overflow-wrap:anywhere]">{currentTask.title}</div>
 
           {/* Priority */}
           <div className="flex items-center gap-1 mb-4">
