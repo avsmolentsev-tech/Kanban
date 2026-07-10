@@ -20,9 +20,13 @@ export class ClaudeService {
   // Public alias so newer code (and tests) can reference `this.openai` / monkey-patch `svc.openai`.
   public openai: OpenAI;
 
+  // Dedicated client for Advisory Board calls (separate key/billing; falls back to main).
+  private readonly advisorClient: OpenAI;
+
   constructor() {
     this.client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
     this.openai = this.client;
+    this.advisorClient = new OpenAI({ apiKey: config.advisorApiKey || config.openaiApiKey, baseURL: config.openaiBaseUrl });
   }
 
   private buildSystemPrompt(extra = ''): string {
@@ -283,12 +287,12 @@ ${chunk}`;
 
   /** One-tap разбор: a persona analyses a situation and returns structured output. */
   async advisorAnalyze(personaPrompt: string, context: string): Promise<{ opinion: string; risks: string[]; would_do: string; questions: string[] }> {
-    const model = process.env['ADVISOR_MODEL'] || 'gpt-4.1';
+    const model = config.advisorModel;
     const system = `${personaPrompt}
 
 Верни ТОЛЬКО валидный JSON:
 {"opinion":"твоя оценка ситуации от первого лица","risks":["риск/красный флаг", "..."],"would_do":"что бы ты сделал — конкретные шаги","questions":["уточняющий вопрос к пользователю", "..."]}`;
-    const resp = await this.client.chat.completions.create({
+    const resp = await this.advisorClient.chat.completions.create({
       model,
       temperature: 0.7,
       response_format: { type: 'json_object' },
@@ -313,9 +317,9 @@ ${chunk}`;
 
   /** Live dialogue: a persona replies in character, holding the situation context + history. */
   async advisorReply(personaPrompt: string, context: string, history: Array<{ role: 'user' | 'assistant'; content: string }>): Promise<string> {
-    const model = process.env['ADVISOR_MODEL'] || 'gpt-4.1';
+    const model = config.advisorModel;
     const system = `${personaPrompt}${context ? `\n\nКонтекст встречи/ситуации, которую вы обсуждаете:\n${context}` : ''}`;
-    const resp = await this.client.chat.completions.create({
+    const resp = await this.advisorClient.chat.completions.create({
       model,
       temperature: 0.8,
       messages: [

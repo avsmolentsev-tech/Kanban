@@ -6,6 +6,7 @@ import type { AuthRequest } from '../middleware/auth';
 import { getUserId } from '../middleware/user-scope';
 import { checkAiLimit } from '../middleware/plan';
 import { ClaudeService } from '../services/claude.service';
+import { config } from '../config';
 
 export const advisorsRouter = Router();
 const claude = new ClaudeService();
@@ -43,7 +44,7 @@ async function buildContext(userId: number | null, meetingId?: number): Promise<
 async function logAiUsage(userId: number | null): Promise<void> {
   try {
     await execute("INSERT INTO usage_logs (type, model, detail) VALUES ($1, $2, $3)",
-      ['ai_chat', process.env['ADVISOR_MODEL'] || 'gpt-4.1', `user:${userId}`]);
+      ['ai_chat', config.advisorModel, `user:${userId}`]);
   } catch { /* non-fatal */ }
 }
 
