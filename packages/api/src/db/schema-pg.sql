@@ -460,6 +460,9 @@ CREATE TABLE IF NOT EXISTS advisor_messages (
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free';
 
+-- Person profile photo (auto-pulled from public Telegram t.me/<username>)
+ALTER TABLE people ADD COLUMN IF NOT EXISTS photo_url TEXT;
+
 -- Commitments tracking on tasks (populated by meeting action-item extraction)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_type TEXT;      -- my_task | their_commitment | mutual_agreement
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_owner TEXT;     -- who is responsible (name / "я")

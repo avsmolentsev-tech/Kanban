@@ -7,6 +7,7 @@ export interface Person {
   email: string;
   phone: string;
   notes: string;
+  photo_url?: string | null;
   vault_path: string | null;
   project_id: number | null;
   project_ids?: number[];

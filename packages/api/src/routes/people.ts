@@ -7,9 +7,19 @@ import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
 import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
+import { fetchTelegramPhoto } from '../utils/telegram-photo';
 
 export const peopleRouter = Router();
 const obsidian = new ObsidianService(config.vaultPath);
+
+/** Pull a person's Telegram avatar into photo_url (fire-and-forget on save). */
+async function refreshPersonPhoto(personId: number, telegram: string): Promise<string | null> {
+  try {
+    const url = await fetchTelegramPhoto(telegram);
+    if (url) { await execute('UPDATE people SET photo_url = $1 WHERE id = $2', [url, personId]); return url; }
+  } catch { /* ignore */ }
+  return null;
+}
 
 function syncPersonToVault(personId: number, userId: number | null): void {
   if (userId == null) return;
@@ -112,6 +122,7 @@ peopleRouter.post('/', async (req: AuthRequest, res: Response) => {
   const person = await queryOne<Record<string, unknown>>('SELECT * FROM people WHERE id = $1', [newId]);
   searchService.indexRecord('person', newId, name, notes ?? '');
   syncPersonToVault(newId, userId);
+  if (telegram) void refreshPersonPhoto(newId, telegram); // pull Telegram avatar in background
   const [withProjects] = await attachProjects([person!]);
   res.status(201).json(ok(withProjects));
 });
@@ -174,8 +185,21 @@ peopleRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
   const person = await queryOne<Record<string, unknown>>('SELECT * FROM people WHERE id = $1', [id]);
   if (person) searchService.indexRecord('person', person['id'] as number, person['name'] as string, (person['notes'] as string) ?? '');
   syncPersonToVault(id, userId);
+  if (typeof rest.telegram === 'string' && rest.telegram) void refreshPersonPhoto(id, rest.telegram); // pull Telegram avatar
   const [withProjects] = await attachProjects([person!]);
   res.json(ok(withProjects));
+});
+
+// POST /people/:id/refresh-photo — pull the Telegram avatar now, return the url
+peopleRouter.post('/:id/refresh-photo', async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params['id']);
+  const userId = getUserId(req);
+  const person = await queryOne<{ telegram: string | null }>('SELECT telegram FROM people WHERE id = $1 AND user_id = $2', [id, userId]);
+  if (!person) { res.status(404).json(fail('Person not found')); return; }
+  if (!person.telegram) { res.status(400).json(fail('У человека не указан Telegram')); return; }
+  const url = await refreshPersonPhoto(id, person.telegram);
+  if (!url) { res.status(404).json(fail('Не удалось получить фото (профиль закрыт или нет @username)')); return; }
+  res.json(ok({ photo_url: url }));
 });
 
 function NOW_ISO(): string {

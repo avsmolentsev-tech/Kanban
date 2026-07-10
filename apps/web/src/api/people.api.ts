@@ -7,4 +7,5 @@ export const peopleApi = {
   history: (id: number) => apiGet<PersonHistory>(`/people/${id}/history`),
   update: (id: number, data: Partial<CreatePersonDto & { project_id: number | null; meet_asap: boolean; project_ids: number[] }>) => apiPatch<Person>(`/people/${id}`, data),
   delete: (id: number) => apiDelete<{ deleted: boolean }>(`/people/${id}`),
+  refreshPhoto: (id: number) => apiPost<{ photo_url: string }>(`/people/${id}/refresh-photo`, {}),
 };

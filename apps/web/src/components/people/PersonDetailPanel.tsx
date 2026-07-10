@@ -18,7 +18,22 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDele
   const [form, setForm] = useState<Partial<Person>>({});
   const [projectIds, setProjectIds] = useState<number[]>([]);
   const [history, setHistory] = useState<PersonHistory | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const navigate = useNavigate();
+
+  const refreshPhoto = async () => {
+    if (!person) return;
+    setPhotoBusy(true);
+    try {
+      const { photo_url } = await peopleApi.refreshPhoto(person.id);
+      setForm((f) => ({ ...f, photo_url }));
+      onUpdated();
+    } catch {
+      alert('Не удалось получить фото — профиль закрыт или @username не задан.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (person) {
@@ -62,7 +77,14 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDele
       {person && (
         <div className="space-y-4">
           <div className="flex items-center gap-3 mb-4">
-            <Avatar name={form.name ?? person.name} size="md" />
+            <div className="flex flex-col items-center gap-0.5">
+              <Avatar name={form.name ?? person.name} size="md" url={form.photo_url} />
+              {(form.telegram ?? person.telegram) && (
+                <button onClick={refreshPhoto} disabled={photoBusy} className="text-[10px] text-indigo-500 hover:underline disabled:opacity-50" title="Подтянуть фото из Telegram">
+                  {photoBusy ? '…' : 'фото из TG'}
+                </button>
+              )}
+            </div>
             <input className="flex-1 text-lg font-semibold border-b border-transparent hover:border-gray-300 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
               value={form.name ?? ''} onChange={(e) => handleChange('name', e.target.value)} onBlur={() => handleBlur('name')} />
           </div>
