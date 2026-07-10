@@ -277,6 +277,55 @@ ${chunk}`;
     return deduped;
   }
 
+  // ── Advisory Board (persona engine) ───────────────────────────────────────
+  // Personas call the model with their pure system prompt (NOT buildSystemPrompt,
+  // which injects a generic assistant identity that would dilute the character).
+
+  /** One-tap разбор: a persona analyses a situation and returns structured output. */
+  async advisorAnalyze(personaPrompt: string, context: string): Promise<{ opinion: string; risks: string[]; would_do: string; questions: string[] }> {
+    const model = process.env['ADVISOR_MODEL'] || 'gpt-4.1';
+    const system = `${personaPrompt}
+
+Верни ТОЛЬКО валидный JSON:
+{"opinion":"твоя оценка ситуации от первого лица","risks":["риск/красный флаг", "..."],"would_do":"что бы ты сделал — конкретные шаги","questions":["уточняющий вопрос к пользователю", "..."]}`;
+    const resp = await this.client.chat.completions.create({
+      model,
+      temperature: 0.7,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: `Разбери эту встречу/ситуацию:\n\n${context}` },
+      ],
+    });
+    const text = resp.choices[0]?.message?.content ?? '{}';
+    try {
+      const p = JSON.parse(text) as Record<string, unknown>;
+      return {
+        opinion: typeof p['opinion'] === 'string' ? p['opinion'] as string : text,
+        risks: Array.isArray(p['risks']) ? (p['risks'] as string[]) : [],
+        would_do: typeof p['would_do'] === 'string' ? p['would_do'] as string : '',
+        questions: Array.isArray(p['questions']) ? (p['questions'] as string[]) : [],
+      };
+    } catch {
+      return { opinion: text, risks: [], would_do: '', questions: [] };
+    }
+  }
+
+  /** Live dialogue: a persona replies in character, holding the situation context + history. */
+  async advisorReply(personaPrompt: string, context: string, history: Array<{ role: 'user' | 'assistant'; content: string }>): Promise<string> {
+    const model = process.env['ADVISOR_MODEL'] || 'gpt-4.1';
+    const system = `${personaPrompt}${context ? `\n\nКонтекст встречи/ситуации, которую вы обсуждаете:\n${context}` : ''}`;
+    const resp = await this.client.chat.completions.create({
+      model,
+      temperature: 0.8,
+      messages: [
+        { role: 'system', content: system },
+        ...history,
+      ],
+    });
+    return resp.choices[0]?.message?.content ?? '';
+  }
+
   // ── Prompt builders per meeting type ──────────────────────────────────────
 
   private getNotesPrompt(meetingType: string, context: string): string {

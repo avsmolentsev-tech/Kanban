@@ -26,6 +26,7 @@ import { yandexCalendarRouter } from './yandex-calendar';
 import { authRouter } from './auth';
 import { requireAuth } from '../middleware/auth';
 import { adminRouter } from './admin';
+import { advisorsRouter } from './advisors';
 
 export const router = Router();
 
@@ -75,4 +76,5 @@ router.use('/journal', journalRouter);
 router.use('/export', exportRouter);
 router.use('/tags', tagsRouter);
 router.use('/templates', templatesRouter);
+router.use('/advisors', advisorsRouter);
 router.use('/admin', adminRouter);

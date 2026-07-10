@@ -6,6 +6,7 @@ import { config } from './config';
 import { router } from './routes';
 import { initPg, runSchema } from './db/db';
 import { seedDb } from './db/seed';
+import { seedAdvisors } from './db/advisors.seed';
 import { searchService } from './services/search.service';
 import { telegramService } from './services/telegram.service';
 import { startNotificationScheduler } from './services/notification.service';
@@ -69,6 +70,7 @@ async function start(): Promise<void> {
   await initPg(config.databaseUrl);
   await runSchema();
   seedDb();
+  await seedAdvisors();
   searchService.reindexAll();
   searchService.startVaultWatcher();
   telegramService.start();
