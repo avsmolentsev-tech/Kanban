@@ -20,7 +20,7 @@ function DraggablePersonCard({ person, project, onClick }: { person: Person; pro
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={onClick}
       className="bg-white rounded-lg border border-gray-200 p-3 w-56 cursor-pointer hover:border-indigo-300 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] transition-all duration-200">
       <div className="flex items-center gap-2 mb-1.5">
-        <Avatar name={person.name} size="sm" url={person.photo_url} />
+        <Avatar name={person.name} size="md" url={person.photo_url} />
         <div className="font-medium text-sm text-gray-800 truncate">{person.name}</div>
       </div>
       <div className="text-xs text-gray-500 truncate">{person.role}{person.company ? ` @ ${person.company}` : ''}</div>

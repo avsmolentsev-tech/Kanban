@@ -19,6 +19,7 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDele
   const [projectIds, setProjectIds] = useState<number[]>([]);
   const [history, setHistory] = useState<PersonHistory | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [lightbox, setLightbox] = useState(false);
   const navigate = useNavigate();
 
   const refreshPhoto = async () => {
@@ -76,9 +77,10 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDele
     <SlidePanel open={!!person} onClose={onClose} title={person?.name ?? ''}>
       {person && (
         <div className="space-y-4">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex flex-col items-center gap-0.5">
-              <Avatar name={form.name ?? person.name} size="md" url={form.photo_url} />
+          <div className="flex items-center gap-4 mb-4">
+            <div className="flex flex-col items-center gap-1">
+              <Avatar name={form.name ?? person.name} size="lg" url={form.photo_url}
+                onClick={form.photo_url ? () => setLightbox(true) : undefined} />
               {(form.telegram ?? person.telegram) && (
                 <button onClick={refreshPhoto} disabled={photoBusy} className="text-[10px] text-indigo-500 hover:underline disabled:opacity-50" title="Подтянуть фото из Telegram">
                   {photoBusy ? '…' : 'фото из TG'}
@@ -88,6 +90,13 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDele
             <input className="flex-1 text-lg font-semibold border-b border-transparent hover:border-gray-300 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
               value={form.name ?? ''} onChange={(e) => handleChange('name', e.target.value)} onBlur={() => handleBlur('name')} />
           </div>
+
+          {lightbox && form.photo_url && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6" onClick={() => setLightbox(false)}>
+              <img src={form.photo_url} alt={form.name ?? ''} className="max-w-full max-h-full rounded-2xl object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
+              <button onClick={() => setLightbox(false)} className="absolute top-4 right-4 text-white/80 hover:text-white text-2xl">✕</button>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Компания" value={form.company ?? ''} onChange={(v) => handleChange('company', v)} onBlur={() => handleBlur('company')} />
