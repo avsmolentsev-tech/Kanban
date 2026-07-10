@@ -330,6 +330,34 @@ ${chunk}`;
     return resp.choices[0]?.message?.content ?? '';
   }
 
+  /** Chairman synthesis: combine several advisors' разборы into consensus/disagreement/recommendation. */
+  async advisorSynthesize(items: Array<{ name: string; opinion?: string; risks?: string[]; would_do?: string }>): Promise<{ agreement: string[]; disagreement: string[]; recommendation: string }> {
+    const model = config.advisorModel;
+    const board = items.map(it => `### ${it.name}\nМнение: ${it.opinion ?? ''}\nРиски: ${(it.risks ?? []).join('; ')}\nЧто бы сделал: ${it.would_do ?? ''}`).join('\n\n');
+    const system = `Ты — беспристрастный председатель совета директоров. Тебе дали разборы ОДНОЙ ситуации от нескольких советников. Сведи их: где СОГЛАСИЕ между ними, где РАСХОЖДЕНИЯ (кто с кем и в чём), и дай итоговую взвешенную РЕКОМЕНДАЦИЮ. Не выдумывай — опирайся только на эти разборы.
+Верни ТОЛЬКО JSON: {"agreement":["пункт согласия"],"disagreement":["расхождение: кто vs кто и в чём"],"recommendation":"итоговая рекомендация"}`;
+    const resp = await this.advisorClient.chat.completions.create({
+      model,
+      temperature: 0.5,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: `Разборы советников:\n\n${board}` },
+      ],
+    });
+    const text = resp.choices[0]?.message?.content ?? '{}';
+    try {
+      const p = JSON.parse(text) as Record<string, unknown>;
+      return {
+        agreement: Array.isArray(p['agreement']) ? (p['agreement'] as string[]) : [],
+        disagreement: Array.isArray(p['disagreement']) ? (p['disagreement'] as string[]) : [],
+        recommendation: typeof p['recommendation'] === 'string' ? p['recommendation'] as string : '',
+      };
+    } catch {
+      return { agreement: [], disagreement: [], recommendation: text };
+    }
+  }
+
   // ── Prompt builders per meeting type ──────────────────────────────────────
 
   private getNotesPrompt(meetingType: string, context: string): string {

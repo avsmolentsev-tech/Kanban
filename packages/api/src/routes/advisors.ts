@@ -143,6 +143,31 @@ advisorsRouter.post('/chat', async (req: AuthRequest, res: Response) => {
   }
 });
 
+const SynthSchema = z.object({
+  analyses: z.array(z.object({
+    name: z.string(),
+    opinion: z.string().optional(),
+    risks: z.array(z.string()).optional(),
+    would_do: z.string().optional(),
+  })).min(2).max(15),
+});
+
+// POST /advisors/synthesize — chairman combines several разборы into a verdict
+advisorsRouter.post('/synthesize', async (req: AuthRequest, res: Response) => {
+  const parsed = SynthSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const userId = getUserId(req);
+  try {
+    const limit = await checkAiLimit(req);
+    if (!limit.allowed) { res.status(429).json(fail(`Лимит AI-сообщений: ${limit.used}/${limit.limit} в день. Перейдите на Pro Max для безлимита.`)); return; }
+    const result = await claude.advisorSynthesize(parsed.data.analyses);
+    await logAiUsage(userId);
+    res.json(ok(result));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Synthesize error'));
+  }
+});
+
 // GET /advisors/sessions/:id — full transcript of a session
 advisorsRouter.get('/sessions/:id', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);

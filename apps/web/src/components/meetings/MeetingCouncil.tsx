@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Sparkles, Send, Loader2, AlertTriangle, CheckCircle2, HelpCircle } from 'lucide-react';
-import { advisorsApi, type Advisor, type AdvisorAnalysis } from '../../api/advisors.api';
+import { Sparkles, Send, Loader2, AlertTriangle, CheckCircle2, HelpCircle, MessageSquare, Scale, Landmark } from 'lucide-react';
+import { advisorsApi, type Advisor, type AdvisorAnalysis, type AdvisorSynthesis } from '../../api/advisors.api';
 
 function initials(name: string): string {
   return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
@@ -14,11 +14,25 @@ export function MeetingCouncil({ meetingId }: { meetingId: number }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [synthesis, setSynthesis] = useState<AdvisorSynthesis | null>(null);
+  const [synthLoading, setSynthLoading] = useState(false);
+
   const [chatAdvisor, setChatAdvisor] = useState<Advisor | null>(null);
   const [chatMsgs, setChatMsgs] = useState<Array<{ role: 'user' | 'advisor'; content: string }>>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatSession, setChatSession] = useState<number | undefined>(undefined);
   const [chatBusy, setChatBusy] = useState(false);
+
+  const runSynthesis = async () => {
+    const real = analyses.filter(a => !a.error);
+    if (real.length < 2) return;
+    setSynthLoading(true); setSynthesis(null);
+    try {
+      const res = await advisorsApi.synthesize(real.map(a => ({ name: a.name, opinion: a.opinion, risks: a.risks, would_do: a.would_do })));
+      setSynthesis(res);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка синтеза'); }
+    finally { setSynthLoading(false); }
+  };
 
   useEffect(() => { advisorsApi.list().then(setAdvisors).catch(e => setError(e.message)); }, []);
 
@@ -28,7 +42,7 @@ export function MeetingCouncil({ meetingId }: { meetingId: number }) {
 
   const run = async () => {
     if (selected.size === 0) return;
-    setLoading(true); setError(''); setAnalyses([]);
+    setLoading(true); setError(''); setAnalyses([]); setSynthesis(null);
     try {
       const res = await advisorsApi.analyze([...selected], { meeting_id: meetingId });
       setAnalyses(res.analyses);
@@ -88,7 +102,7 @@ export function MeetingCouncil({ meetingId }: { meetingId: number }) {
                 <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">{an.name}</div>
               </div>
               {advisors.find(a => a.id === an.advisor_id) && (
-                <button onClick={() => openChat(advisors.find(a => a.id === an.advisor_id)!)} className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200">Обсудить</button>
+                <button onClick={() => openChat(advisors.find(a => a.id === an.advisor_id)!)} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 font-medium"><MessageSquare size={12} /> Обсудить</button>
               )}
             </div>
             {an.error ? <div className="mt-2 text-sm text-red-500">{an.error}</div> : (
@@ -111,6 +125,36 @@ export function MeetingCouncil({ meetingId }: { meetingId: number }) {
           </div>
         ))}
       </div>
+
+      {analyses.filter(a => !a.error).length >= 2 && (
+        <div className="pt-1">
+          <button onClick={runSynthesis} disabled={synthLoading}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 text-sm font-medium disabled:opacity-40 hover:bg-indigo-50 dark:hover:bg-indigo-900/30">
+            {synthLoading ? <Loader2 size={16} className="animate-spin" /> : <Scale size={16} />}
+            Свести мнения совета
+          </button>
+        </div>
+      )}
+
+      {synthesis && (
+        <div className="rounded-xl border-2 border-indigo-300 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-900/20 p-4">
+          <div className="flex items-center gap-2 mb-2 text-sm font-bold text-indigo-800 dark:text-indigo-200"><Landmark size={16} /> Вердикт совета</div>
+          <div className="space-y-3 text-sm text-gray-700 dark:text-gray-200">
+            {synthesis.agreement.length > 0 && (
+              <div><div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1">Согласие</div>
+                <ul className="list-disc list-inside space-y-0.5">{synthesis.agreement.map((a, i) => <li key={i}>{a}</li>)}</ul></div>
+            )}
+            {synthesis.disagreement.length > 0 && (
+              <div><div className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1">Расхождения</div>
+                <ul className="list-disc list-inside space-y-0.5">{synthesis.disagreement.map((d, i) => <li key={i}>{d}</li>)}</ul></div>
+            )}
+            {synthesis.recommendation && (
+              <div><div className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mb-1">Итоговая рекомендация</div>
+                <p className="whitespace-pre-wrap font-medium">{synthesis.recommendation}</p></div>
+            )}
+          </div>
+        </div>
+      )}
 
       {chatAdvisor && (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40" onClick={() => setChatAdvisor(null)}>
