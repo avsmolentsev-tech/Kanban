@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Sparkles, Send, Loader2, AlertTriangle, CheckCircle2, HelpCircle, MessageSquare, Scale, Landmark } from 'lucide-react';
 import { advisorsApi, type Advisor, type AdvisorAnalysis, type AdvisorSynthesis } from '../../api/advisors.api';
-
-function initials(name: string): string {
-  return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
-}
+import { AdvisorAvatar } from '../AdvisorAvatar';
 
 /** Advisory Board panel scoped to a meeting — pulls the meeting content server-side. */
 export function MeetingCouncil({ meetingId }: { meetingId: number }) {
@@ -95,7 +92,7 @@ export function MeetingCouncil({ meetingId }: { meetingId: number }) {
               className={`flex items-center gap-2 text-left rounded-xl border p-2 transition-all ${
                 on ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 ring-1 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300'
               }`}>
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">{initials(a.name)}</div>
+              <AdvisorAvatar name={a.name} url={a.avatar_url} size={28} />
               <div className="min-w-0">
                 <div className="text-[12px] font-semibold text-gray-800 dark:text-gray-100 truncate">{a.name}</div>
                 <div className="text-[9px] text-gray-400 truncate">{a.domain}</div>
@@ -118,7 +115,7 @@ export function MeetingCouncil({ meetingId }: { meetingId: number }) {
           <div key={an.advisor_id} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-[10px] font-bold">{initials(an.name)}</div>
+                <AdvisorAvatar name={an.name} url={an.avatar_url} size={28} />
                 <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">{an.name}</div>
               </div>
               {advisors.find(a => a.id === an.advisor_id) && (
@@ -216,7 +213,7 @@ export function MeetingCouncil({ meetingId }: { meetingId: number }) {
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40" onClick={() => setChatAdvisor(null)}>
           <div className="bg-white dark:bg-gray-800 w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2 p-3 border-b border-gray-200 dark:border-gray-700">
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-[10px] font-bold">{initials(chatAdvisor.name)}</div>
+              <AdvisorAvatar name={chatAdvisor.name} url={chatAdvisor.avatar_url} size={28} />
               <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">{chatAdvisor.name}</div>
               <button onClick={() => setChatAdvisor(null)} className="ml-auto text-gray-400 hover:text-gray-600 text-sm">✕</button>
             </div>
