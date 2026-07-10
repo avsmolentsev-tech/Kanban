@@ -6,6 +6,7 @@ import { TimelinePage } from './pages/TimelinePage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { MeetingsPage } from './pages/MeetingsPage';
 import { CouncilPage } from './pages/CouncilPage';
+import { CommitmentsPage } from './pages/CommitmentsPage';
 import { PeoplePage } from './pages/PeoplePage';
 import { IdeasPage } from './pages/IdeasPage';
 import { DocumentsPage } from './pages/DocumentsPage';
@@ -45,7 +46,7 @@ import { PrivacyPage } from './pages/PrivacyPage';
 import {
   LayoutDashboard, Columns3, BarChart3, FolderKanban, Users, CalendarDays,
   Lightbulb, FileText, MessageCircle, Target, BookOpen, GanttChart,
-  Flame, Sun, PieChart, LogOut, ChevronLeft, ChevronRight, Shield, Send, Landmark
+  Flame, Sun, PieChart, LogOut, ChevronLeft, ChevronRight, Shield, Send, Landmark, Handshake
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -75,6 +76,7 @@ const getDesktopNav = (t: (ru: string, en: string) => string): NavSection[] => [
     items: [
       { to: '/chat', label: t('AI Чат', 'AI Chat'), icon: MessageCircle },
       { to: '/council', label: t('Совет', 'Council'), icon: Landmark },
+      { to: '/commitments', label: t('Договорённости', 'Commitments'), icon: Handshake },
       { to: '/meetings', label: t('Встречи', 'Meetings'), icon: Users },
       { to: '/people', label: t('Люди', 'People'), icon: Users },
     ],
@@ -307,6 +309,7 @@ export default function App() {
               <Route path="/projects" element={<AnimatedPage><ProjectsPage /></AnimatedPage>} />
               <Route path="/meetings" element={<AnimatedPage><MeetingsPage /></AnimatedPage>} />
               <Route path="/council" element={<AnimatedPage><CouncilPage /></AnimatedPage>} />
+              <Route path="/commitments" element={<AnimatedPage><CommitmentsPage /></AnimatedPage>} />
               <Route path="/people" element={<AnimatedPage><PeoplePage /></AnimatedPage>} />
               <Route path="/brief" element={<AnimatedPage><DailyBriefPage /></AnimatedPage>} />
               <Route path="/calendar" element={<AnimatedPage><CalendarPage /></AnimatedPage>} />

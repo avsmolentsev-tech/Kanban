@@ -337,8 +337,8 @@ export class SearchService {
         const description = `[meeting #${meetingId}] Из встречи: ${title}\nТип: ${typeLabel[it.type] ?? it.type}\nОтветственный: ${ownerLabel}\nЦитата: «${it.quote}»`;
         try {
           const newTask = await queryOne<{ id: number }>(
-            'INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-            [projectId, it.title, description, 'backlog', 3, it.due, userId ?? null]
+            'INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id, commitment_type, commitment_owner, source_meeting_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
+            [projectId, it.title, description, 'backlog', 3, it.due, userId ?? null, it.type, ownerLabel, meetingId]
           );
           const newTaskId = newTask!.id;
           existingKeys.add(norm(it.title));

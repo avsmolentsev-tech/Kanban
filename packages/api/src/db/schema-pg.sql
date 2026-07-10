@@ -459,3 +459,8 @@ CREATE TABLE IF NOT EXISTS advisor_messages (
 -- ─── Migrations (idempotent) ────────────────────────────────────────────────
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free';
+
+-- Commitments tracking on tasks (populated by meeting action-item extraction)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_type TEXT;      -- my_task | their_commitment | mutual_agreement
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_owner TEXT;     -- who is responsible (name / "я")
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_meeting_id INTEGER; -- meeting it was extracted from

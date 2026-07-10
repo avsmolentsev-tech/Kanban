@@ -27,6 +27,7 @@ import { authRouter } from './auth';
 import { requireAuth } from '../middleware/auth';
 import { adminRouter } from './admin';
 import { advisorsRouter } from './advisors';
+import { commitmentsRouter } from './commitments';
 
 export const router = Router();
 
@@ -77,4 +78,5 @@ router.use('/export', exportRouter);
 router.use('/tags', tagsRouter);
 router.use('/templates', templatesRouter);
 router.use('/advisors', advisorsRouter);
+router.use('/commitments', commitmentsRouter);
 router.use('/admin', adminRouter);
