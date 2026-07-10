@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type MutableRefObject } from 'react';
+import { MeetingCouncil } from './MeetingCouncil';
 import { SlidePanel } from '../ui/SlidePanel';
 import { meetingsApi } from '../../api/meetings.api';
 import { tasksApi } from '../../api/tasks.api';
@@ -26,7 +27,7 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
   const { t } = useLangStore();
   const [form, setForm] = useState<Partial<Meeting>>({});
   const [projectIds, setProjectIds] = useState<number[]>([]);
-  const [tab, setTab] = useState<'details' | 'chat'>('details');
+  const [tab, setTab] = useState<'details' | 'chat' | 'council'>('details');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -211,6 +212,14 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
               }`}
             >
               {t('Обсудить с AI', 'Discuss with AI')}
+            </button>
+            <button
+              onClick={() => setTab('council')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                tab === 'council' ? 'border-indigo-600 text-indigo-500 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
+            >
+              {t('Совет', 'Council')}
             </button>
           </div>
 
@@ -557,6 +566,12 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
                   →
                 </button>
               </div>
+            </div>
+          )}
+
+          {tab === 'council' && (
+            <div className="flex-1 overflow-auto">
+              <MeetingCouncil meetingId={meeting.id} />
             </div>
           )}
         </div>
