@@ -17,11 +17,31 @@ export function MeetingCouncil({ meetingId }: { meetingId: number }) {
   const [synthesis, setSynthesis] = useState<AdvisorSynthesis | null>(null);
   const [synthLoading, setSynthLoading] = useState(false);
 
+  // Council chat (ask the whole board)
+  const [councilMsgs, setCouncilMsgs] = useState<Array<{ role: 'user' | 'council'; content: string; per?: Array<{ name: string; reply: string }> }>>([]);
+  const [councilInput, setCouncilInput] = useState('');
+  const [councilBusy, setCouncilBusy] = useState(false);
+  const [showPer, setShowPer] = useState<number | null>(null);
+
   const [chatAdvisor, setChatAdvisor] = useState<Advisor | null>(null);
   const [chatMsgs, setChatMsgs] = useState<Array<{ role: 'user' | 'advisor'; content: string }>>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatSession, setChatSession] = useState<number | undefined>(undefined);
   const [chatBusy, setChatBusy] = useState(false);
+
+  const askCouncil = async () => {
+    if (selected.size === 0 || !councilInput.trim()) return;
+    const q = councilInput.trim();
+    const history = councilMsgs.map(m => ({ role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant', content: m.content }));
+    setCouncilMsgs(m => [...m, { role: 'user', content: q }]);
+    setCouncilInput(''); setCouncilBusy(true);
+    try {
+      const res = await advisorsApi.councilChat([...selected], q, { meeting_id: meetingId, history });
+      setCouncilMsgs(m => [...m, { role: 'council', content: res.answer, per: res.per_persona }]);
+    } catch (e) {
+      setCouncilMsgs(m => [...m, { role: 'council', content: `⚠️ ${e instanceof Error ? e.message : 'ошибка'}` }]);
+    } finally { setCouncilBusy(false); }
+  };
 
   const runSynthesis = async () => {
     const real = analyses.filter(a => !a.error);
@@ -152,6 +172,42 @@ export function MeetingCouncil({ meetingId }: { meetingId: number }) {
               <div><div className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mb-1">Итоговая рекомендация</div>
                 <p className="whitespace-pre-wrap font-medium">{synthesis.recommendation}</p></div>
             )}
+          </div>
+        </div>
+      )}
+
+      {selected.size > 0 && (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2"><Landmark size={15} /> Чат с советом ({selected.size})</div>
+          <div className="space-y-2 mb-2 max-h-[50vh] overflow-auto">
+            {councilMsgs.length === 0 && <div className="text-xs text-gray-400">Задай вопрос — совет обсудит и даст общий ответ.</div>}
+            {councilMsgs.map((m, i) => (
+              <div key={i}>
+                <div className={`text-sm rounded-xl px-3 py-2 max-w-[90%] ${m.role === 'user' ? 'ml-auto bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100'}`}>
+                  <span className="whitespace-pre-wrap">{m.content}</span>
+                </div>
+                {m.per && m.per.length > 0 && (
+                  <div className="mt-1">
+                    <button onClick={() => setShowPer(showPer === i ? null : i)} className="text-[11px] text-indigo-500 hover:underline">
+                      {showPer === i ? 'скрыть мнения' : `показать мнения каждого (${m.per.length})`}
+                    </button>
+                    {showPer === i && (
+                      <div className="mt-1 space-y-1.5 pl-2 border-l-2 border-indigo-200 dark:border-indigo-800">
+                        {m.per.map((p, j) => (
+                          <div key={j} className="text-xs text-gray-600 dark:text-gray-300"><span className="font-semibold">{p.name}:</span> <span className="whitespace-pre-wrap">{p.reply}</span></div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            {councilBusy && <div className="text-xs text-gray-400"><Loader2 size={14} className="animate-spin inline" /> совет совещается…</div>}
+          </div>
+          <div className="flex gap-2">
+            <input value={councilInput} onChange={e => setCouncilInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && askCouncil()}
+              placeholder="Спросить совет…" className="flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <button onClick={askCouncil} disabled={councilBusy || !councilInput.trim()} className="px-3 rounded-xl bg-indigo-600 text-white disabled:opacity-40"><Send size={16} /></button>
           </div>
         </div>
       )}

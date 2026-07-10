@@ -42,4 +42,6 @@ export const advisorsApi = {
     apiPost<AdvisorChatReply>('/advisors/chat', { advisor_id, message, ...opts }),
   synthesize: (analyses: Array<{ name: string; opinion?: string; risks?: string[]; would_do?: string }>) =>
     apiPost<AdvisorSynthesis>('/advisors/synthesize', { analyses }),
+  councilChat: (advisor_ids: number[], message: string, opts: { meeting_id?: number; context?: string; history?: Array<{ role: 'user' | 'assistant'; content: string }> }) =>
+    apiPost<{ answer: string; per_persona: Array<{ name: string; reply: string }> }>('/advisors/council-chat', { advisor_ids, message, ...opts }),
 };

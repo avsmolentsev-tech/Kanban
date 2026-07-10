@@ -168,6 +168,47 @@ advisorsRouter.post('/synthesize', async (req: AuthRequest, res: Response) => {
   }
 });
 
+const CouncilChatSchema = z.object({
+  advisor_ids: z.array(z.number().int()).min(1).max(8),
+  message: z.string().min(1),
+  meeting_id: z.number().int().optional(),
+  context: z.string().optional(),
+  history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).optional().default([]),
+});
+
+// POST /advisors/council-chat — ask the whole council; each persona replies, chairman merges
+advisorsRouter.post('/council-chat', async (req: AuthRequest, res: Response) => {
+  const parsed = CouncilChatSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const userId = getUserId(req);
+  try {
+    const limit = await checkAiLimit(req);
+    if (!limit.allowed) { res.status(429).json(fail(`Лимит AI-сообщений: ${limit.used}/${limit.limit} в день. Перейдите на Pro Max для безлимита.`)); return; }
+    const advisors = await loadAdvisors(userId, parsed.data.advisor_ids);
+    if (advisors.length === 0) { res.status(404).json(fail('Советники не найдены')); return; }
+    const context = parsed.data.context || await buildContext(userId, parsed.data.meeting_id);
+    const history = parsed.data.history as Array<{ role: 'user' | 'assistant'; content: string }>;
+
+    // Each persona answers the question (in character, with context + council history), in parallel
+    const replies = (await Promise.all(advisors.map(async (a) => {
+      try {
+        const reply = await claude.advisorReply(a.persona_prompt, context, [...history, { role: 'user', content: parsed.data.message }]);
+        await logAiUsage(userId);
+        return { name: a.name, reply };
+      } catch { return null; }
+    }))).filter(Boolean) as Array<{ name: string; reply: string }>;
+
+    if (replies.length === 0) { res.status(502).json(fail('Совет не ответил')); return; }
+
+    // Chairman merges into one collective answer
+    const answer = await claude.advisorCouncilReply(parsed.data.message, replies);
+    await logAiUsage(userId);
+    res.json(ok({ answer, per_persona: replies }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Council chat error'));
+  }
+});
+
 // GET /advisors/sessions/:id — full transcript of a session
 advisorsRouter.get('/sessions/:id', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);

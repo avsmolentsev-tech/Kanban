@@ -358,6 +358,22 @@ ${chunk}`;
     }
   }
 
+  /** Council chat: chairman merges several personas' replies to a question into one collective answer. */
+  async advisorCouncilReply(question: string, replies: Array<{ name: string; reply: string }>): Promise<string> {
+    const model = config.advisorModel;
+    const board = replies.map(r => `### ${r.name}\n${r.reply}`).join('\n\n');
+    const system = `Ты — председатель совета директоров. Советники ответили на вопрос пользователя. Дай ОДИН коллективный ответ от лица совета: по делу, без воды. Где советники расходятся — отметь это прямо («X считает …, но Y возражает …»). Не выдумывай, опирайся только на их ответы. Пиши на русском.`;
+    const resp = await this.advisorClient.chat.completions.create({
+      model,
+      temperature: 0.6,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: `Вопрос пользователя: ${question}\n\nОтветы советников:\n\n${board}` },
+      ],
+    });
+    return resp.choices[0]?.message?.content ?? '';
+  }
+
   // ── Prompt builders per meeting type ──────────────────────────────────────
 
   private getNotesPrompt(meetingType: string, context: string): string {
