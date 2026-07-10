@@ -4,6 +4,7 @@ import { tasksApi } from '../api/tasks.api';
 import { useLangStore } from '../store/lang.store';
 import { Zap } from 'lucide-react';
 import type { Task } from '@pis/shared';
+import { cleanTaskTitle, priorityPill } from '../lib/format';
 
 export function TodaySwipePage() {
   const { t } = useLangStore();
@@ -182,14 +183,16 @@ export function TodaySwipePage() {
           )}
 
           {/* Title */}
-          <div className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-3 w-full break-words [overflow-wrap:anywhere]">{currentTask.title}</div>
+          <div className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-3 w-full break-words [overflow-wrap:anywhere]">{cleanTaskTitle(currentTask.title)}</div>
 
           {/* Priority */}
-          <div className="flex items-center gap-1 mb-4">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <span key={n} className={n <= currentTask.priority ? 'text-yellow-400' : 'text-gray-200 dark:text-gray-600'}>⭐</span>
-            ))}
-          </div>
+          {priorityPill(currentTask.priority) && (
+            <div className="mb-4">
+              <span className={`inline-block text-xs font-medium px-2.5 py-1 rounded-full ${priorityPill(currentTask.priority)!.cls}`}>
+                {priorityPill(currentTask.priority)!.label}
+              </span>
+            </div>
+          )}
 
           {/* Status */}
           <div className="mb-4">
