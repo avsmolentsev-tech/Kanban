@@ -376,7 +376,8 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
 2. ЧЕЛОВЕК ≠ ПРОЕКТ! Имена людей (Сергей, Ольга, Иван) → create_person. Проекты — это направления работы (Robots, V-Cards, Стройка).
 3. "Добавь Сергея к проекту Robots" = create_person с project_id, НЕ create_project!
 4. "Добавь к проекту X" (задачу) = update_task с project_id.
-5. Если пользователь просит обработать НЕСКОЛЬКО → отдельный action для КАЖДОГО.
+5. Если пользователь просит обработать НЕСКОЛЬКО КОНКРЕТНЫХ объектов → отдельный action для КАЖДОГО.
+5b. Если команда над МНОЖЕСТВОМ задач по ПРИЗНАКУ (по теме/слову, по проекту, по статусу) — например «убери ВСЕ задачи по роботам из приоритета и поставь someday», «перенеси всё по VPN на потом» — используй ОДИН bulk_update_tasks с filter (query="роботы"/project_id/status) и changes. НЕ перечисляй задачи по одной. «Убрать из приоритетных» / «на потом» / «когда-нибудь» = changes.status="someday".
 6. Для вопросов (что, как, когда) → actions пусты, ответ в response.
 7. Контекст предыдущих сообщений — "её", "эту", "ту", "его" = предыдущий объект.
 8. "Привяжи X к проекту Y" = найди person_id по имени → update_person с project_id. ОБЯЗАТЕЛЬНО action!
@@ -392,6 +393,7 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
     {"type": "move_task", "task_id": number, "status": "string"},
     {"type": "delete_task", "task_id": number},
     {"type": "update_task", "task_id": number, ...fields},
+    {"type": "bulk_update_tasks", "filter": {"query": "слово для поиска по названию", "project_id": number|null, "status": "backlog|todo|in_progress|someday"}, "changes": {"status": "someday|backlog|todo|done?", "priority": 1-5?, "project_id": number|null, "due_date": "YYYY-MM-DD"|null}},
     {"type": "create_project", "name": "string", "color": "#hex"},
     {"type": "create_idea", "title": "string", "body": "string?", "project_id": number|null, "category": "business|product|personal|growth"},
     {"type": "create_bundle", "project_name": "string (название проекта или 'все')"},
@@ -484,6 +486,26 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
             }
             if (fields.length > 0) await execute(`UPDATE tasks SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`, [...values, action['task_id'], userId]);
             results.push({ type: 'update_task', success: true, detail: `Задача #${action['task_id']} обновлена` });
+            break;
+          }
+          case 'bulk_update_tasks': {
+            // Apply changes to ALL tasks matching a filter (user-scoped), not just the ones in context
+            const filter = (action['filter'] || {}) as Record<string, unknown>;
+            const changes = (action['changes'] || {}) as Record<string, unknown>;
+            const wparts: string[] = ['user_id = $1', 'archived = 0']; const wv: unknown[] = [userId];
+            if (typeof filter['query'] === 'string' && filter['query']) { wv.push(`%${filter['query']}%`); wparts.push(`title ILIKE $${wv.length}`); }
+            if (filter['project_id'] != null) { wv.push(filter['project_id']); wparts.push(`project_id = $${wv.length}`); }
+            if (typeof filter['status'] === 'string' && filter['status']) { wv.push(filter['status']); wparts.push(`status = $${wv.length}`); }
+            const whereSql = wparts.join(' AND ');
+            const matched = await queryAll<{ title: string }>(`SELECT title FROM tasks WHERE ${whereSql}`, wv);
+            const setParts: string[] = []; const params = [...wv];
+            for (const key of ['status', 'priority', 'project_id', 'due_date']) {
+              if (changes[key] !== undefined) { params.push(changes[key]); setParts.push(`${key} = $${params.length}`); }
+            }
+            if (setParts.length === 0) { results.push({ type: 'bulk_update_tasks', success: false, detail: 'Не указано, что менять' }); break; }
+            if (matched.length === 0) { results.push({ type: 'bulk_update_tasks', success: true, detail: 'Задач по фильтру не найдено' }); break; }
+            await execute(`UPDATE tasks SET ${setParts.join(', ')}, updated_at = NOW() WHERE ${whereSql}`, params);
+            results.push({ type: 'bulk_update_tasks', success: true, detail: `Обновлено задач: ${matched.length} — ${matched.slice(0, 6).map(m => m.title).join(', ')}${matched.length > 6 ? '…' : ''}` });
             break;
           }
           case 'create_project': {
