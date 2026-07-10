@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SlidePanel } from '../ui/SlidePanel';
 import { Avatar } from '../ui/Avatar';
@@ -20,7 +20,22 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDele
   const [history, setHistory] = useState<PersonHistory | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [lightbox, setLightbox] = useState(false);
+  const photoFileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+
+  const uploadPhoto = async (file: File) => {
+    if (!person) return;
+    setPhotoBusy(true);
+    try {
+      const { photo_url } = await peopleApi.uploadPhoto(person.id, file);
+      setForm((f) => ({ ...f, photo_url }));
+      onUpdated();
+    } catch {
+      alert('Не удалось загрузить фото.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   const refreshPhoto = async () => {
     if (!person) return;
@@ -81,11 +96,18 @@ export function PersonDetailPanel({ person, projects, onClose, onUpdated, onDele
             <div className="flex flex-col items-center gap-1">
               <Avatar name={form.name ?? person.name} size="lg" url={form.photo_url}
                 onClick={form.photo_url ? () => setLightbox(true) : undefined} />
-              {(form.telegram ?? person.telegram) && (
-                <button onClick={refreshPhoto} disabled={photoBusy} className="text-[10px] text-indigo-500 hover:underline disabled:opacity-50" title="Подтянуть фото из Telegram">
-                  {photoBusy ? '…' : 'фото из TG'}
+              <div className="flex items-center gap-2">
+                {(form.telegram ?? person.telegram) && (
+                  <button onClick={refreshPhoto} disabled={photoBusy} className="text-[10px] text-indigo-500 hover:underline disabled:opacity-50" title="Подтянуть фото из Telegram">
+                    {photoBusy ? '…' : 'из TG'}
+                  </button>
+                )}
+                <button onClick={() => photoFileRef.current?.click()} disabled={photoBusy} className="text-[10px] text-indigo-500 hover:underline disabled:opacity-50" title="Загрузить фото">
+                  загрузить
                 </button>
-              )}
+              </div>
+              <input ref={photoFileRef} type="file" accept="image/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhoto(f); e.target.value = ''; }} />
             </div>
             <input className="flex-1 text-lg font-semibold border-b border-transparent hover:border-gray-300 focus:border-indigo-400 focus:outline-none px-1 py-0.5"
               value={form.name ?? ''} onChange={(e) => handleChange('name', e.target.value)} onBlur={() => handleBlur('name')} />

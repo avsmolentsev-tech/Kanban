@@ -1,5 +1,8 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
+import * as fs from 'fs';
+import * as path from 'path';
+import multer from 'multer';
 import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
@@ -11,6 +14,20 @@ import { fetchTelegramPhoto } from '../utils/telegram-photo';
 
 export const peopleRouter = Router();
 const obsidian = new ObsidianService(config.vaultPath);
+
+// Person photo uploads go to the (publicly served) Attachments dir.
+const attachDir = path.join(config.vaultPath, 'Attachments');
+if (!fs.existsSync(attachDir)) fs.mkdirSync(attachDir, { recursive: true });
+const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+const photoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (IMAGE_EXT.has(ext)) cb(null, true);
+    else cb(new Error('Только изображения (jpg, png, webp, gif)'), false);
+  },
+});
 
 /** Pull a person's Telegram avatar into photo_url (fire-and-forget on save). */
 async function refreshPersonPhoto(personId: number, telegram: string): Promise<string | null> {
@@ -188,6 +205,25 @@ peopleRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
   if (typeof rest.telegram === 'string' && rest.telegram) void refreshPersonPhoto(id, rest.telegram); // pull Telegram avatar
   const [withProjects] = await attachProjects([person!]);
   res.json(ok(withProjects));
+});
+
+// POST /people/:id/photo — upload a photo manually (fallback for private/no-username)
+peopleRouter.post('/:id/photo', photoUpload.single('file'), async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params['id']);
+  const userId = getUserId(req);
+  const owner = await queryOne('SELECT id FROM people WHERE id = $1 AND user_id = $2', [id, userId]);
+  if (!owner) { res.status(404).json(fail('Person not found')); return; }
+  if (!req.file) { res.status(400).json(fail('Файл не передан')); return; }
+  const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
+  const filename = `person-${id}-${Date.now()}${ext}`;
+  try {
+    fs.writeFileSync(path.join(attachDir, filename), req.file.buffer);
+  } catch (err) {
+    res.status(500).json(fail('Не удалось сохранить фото')); return;
+  }
+  const photoUrl = `/v1/documents/attachments/file/${filename}`;
+  await execute('UPDATE people SET photo_url = $1 WHERE id = $2', [photoUrl, id]);
+  res.json(ok({ photo_url: photoUrl }));
 });
 
 // POST /people/:id/refresh-photo — pull the Telegram avatar now, return the url
