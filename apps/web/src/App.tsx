@@ -7,6 +7,7 @@ import { ProjectsPage } from './pages/ProjectsPage';
 import { MeetingsPage } from './pages/MeetingsPage';
 import { CouncilPage } from './pages/CouncilPage';
 import { CommitmentsPage } from './pages/CommitmentsPage';
+import { WelcomeIntro } from './components/WelcomeIntro';
 import { PeoplePage } from './pages/PeoplePage';
 import { IdeasPage } from './pages/IdeasPage';
 import { DocumentsPage } from './pages/DocumentsPage';
@@ -213,6 +214,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <HotkeyProvider />
+      <WelcomeIntro />
       <div
         className="flex h-screen bg-gray-50 dark:bg-gray-900"
         style={isTg ? { height: 'var(--tg-vh, 100vh)' } : undefined}
