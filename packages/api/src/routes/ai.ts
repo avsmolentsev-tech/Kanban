@@ -207,6 +207,15 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
             SELECT habit_id FROM habit_logs WHERE date = $1 AND completed = 1
           )
         `, [today]);
+    // Habits NOT done today (for proactive nudging)
+    const undoneHabits = userId != null
+      ? await queryAll<{ title: string; icon: string }>(`
+          SELECT h.title, h.icon FROM habits h
+          WHERE h.archived = 0 AND h.user_id = $1 AND h.id NOT IN (
+            SELECT habit_id FROM habit_logs WHERE date = $2 AND completed = 1
+          )
+        `, [userId, today])
+      : [];
     const streakCounts = userId != null
       ? await queryAll<{ id: number; title: string; icon: string; recent_count: number }>(`
           SELECT h.id, h.title, h.icon,
@@ -343,6 +352,7 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
 1. ВСЕГДА начинай ответ с чего-то позитивного! Даже если прямых "побед" нет — найди что похвалить: "Ты уже в деле — это главное!", "Круто что следишь за задачами!"
 2. Если завершил задачи за неделю — "За эту неделю ты закрыл ${doneThisWeek.c} задач — отличный темп! 💪"
 3. Если есть привычки — "Привычки работают! ${habitStreaks.length > 0 ? habitStreaks.map(h => `${h.icon || '✓'} ${h.title} сделана сегодня` ).join(', ') : 'Сегодня ещё есть время отметить'} 🔥"
+3b. ПРОАКТИВНО НАПОМИНАЙ о невыполненных привычках (список "ЕЩЁ НЕ СДЕЛАНЫ" ниже), по-дружески и с учётом времени: "Кстати, зарядку ещё не отметил, а уже 10 утра — точно не хочешь? 💪", "Медитация ждёт — самое время ✨". Не дави, но подначивай. Если пользователь просто зашёл поболтать/поздороваться — вверни лёгкое напоминание про 1-2 несделанные привычки. Если все привычки сделаны — похвали.
 4. Если провёл встречи — "Продуктивная неделя: ${weekMeetings.c} встреч!"
 5. Если задач в работе — "У тебя ${inProgress} задач в работе — двигаешься!"
 6. ПОСЛЕ позитива — мягко напомни что осталось, без давления и негатива
@@ -355,7 +365,8 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
 ✅ Завершено задач: сегодня ${doneRecently.c}, за неделю ${doneThisWeek.c}, всего ${totalDone}
 📋 В работе сейчас: ${inProgress} задач
 📅 Встречи: сегодня ${todayMeetings.c}, за неделю ${weekMeetings.c}
-${habitStreaks.length > 0 ? `🔥 Привычки сегодня: ${habitStreaks.map(h => `${h.icon || '✓'} ${h.title}`).join(', ')}` : '🌱 Привычки сегодня пока не отмечены — можно напомнить!'}
+${habitStreaks.length > 0 ? `🔥 Привычки сделаны сегодня: ${habitStreaks.map(h => `${h.icon || '✓'} ${h.title}`).join(', ')}` : ''}
+${undoneHabits.length > 0 ? `⏳ ЕЩЁ НЕ СДЕЛАНЫ сегодня: ${undoneHabits.map(h => `${h.icon || '•'} ${h.title}`).join(', ')} (сейчас ${moscowDateTimeString()})` : '✅ Все привычки на сегодня отмечены!'}
 ${streakCounts.filter(h => h.recent_count >= 3).map(h => `🏆 ${h.icon || '✓'} ${h.title}: ${h.recent_count} дней за месяц`).join('\n')}
 
 ДАННЫЕ СИСТЕМЫ:
