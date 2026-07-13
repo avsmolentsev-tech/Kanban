@@ -552,13 +552,17 @@ meetingsRouter.post('/:id/download-token', async (req: AuthRequest, res: Respons
 // the auth. The handler verifies a session OR a download-scoped token itself.
 export async function downloadMeetingHandler(req: AuthRequest, res: Response): Promise<void> {
   const id = Number(req.params['id']);
-  // Accept a normal session (Authorization header) OR a scoped download token in ?token=.
-  let userId = getUserId(req);
-  if (userId == null) {
+  // Auth: a real session ONLY via the Authorization header. Via the URL (no
+  // header — a browser navigation) accept ONLY a scoped download token, never a
+  // full session JWT in ?token=. This keeps session tokens out of shareable URLs.
+  let userId: number | null = null;
+  if (req.headers['authorization']) {
+    userId = getUserId(req);
+  } else {
     try {
       const p = jwt.verify(String(req.query['token'] || ''), config.jwtSecret) as { id?: number; purpose?: string; meeting_id?: number };
       if (p.purpose === 'download' && p.meeting_id === id && typeof p.id === 'number') userId = p.id;
-    } catch { /* invalid/expired download token */ }
+    } catch { /* invalid/expired/non-download token */ }
   }
   if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
   const exists = await queryOne('SELECT id FROM meetings WHERE id = $1 AND user_id = $2', [id, userId]);
