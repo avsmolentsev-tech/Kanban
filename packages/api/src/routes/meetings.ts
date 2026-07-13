@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
+import jwt from 'jsonwebtoken';
 import * as fs from 'fs';
 import * as path from 'path';
 import { query, queryAll, queryOne, execute } from '../db/db';
@@ -534,9 +535,28 @@ meetingsRouter.post('/:id/regenerate-summaries', async (req: AuthRequest, res: R
 });
 
 // Download meeting file (summary or full) as md/pdf/docx
-meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
+// POST /meetings/:id/download-token — short-lived (10 min) token scoped to THIS
+// meeting's download. Keeps the full 30-day session JWT out of shareable URLs.
+meetingsRouter.post('/:id/download-token', async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
+  if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
+  const owns = await queryOne('SELECT id FROM meetings WHERE id = $1 AND user_id = $2', [id, userId]);
+  if (!owns) { res.status(404).json(fail('Meeting not found')); return; }
+  const token = jwt.sign({ id: userId, purpose: 'download', meeting_id: id }, config.jwtSecret, { expiresIn: '10m' });
+  res.json(ok({ token }));
+});
+
+meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params['id']);
+  // Accept a normal session (Authorization header) OR a scoped download token in ?token=.
+  let userId = getUserId(req);
+  if (userId == null) {
+    try {
+      const p = jwt.verify(String(req.query['token'] || ''), config.jwtSecret) as { id?: number; purpose?: string; meeting_id?: number };
+      if (p.purpose === 'download' && p.meeting_id === id && typeof p.id === 'number') userId = p.id;
+    } catch { /* invalid/expired download token */ }
+  }
   if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
   const exists = await queryOne('SELECT id FROM meetings WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!exists) { res.status(404).json(fail('Meeting not found')); return; }

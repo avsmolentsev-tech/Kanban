@@ -16,4 +16,5 @@ export const meetingsApi = {
   get: (id: number) => apiGet<Meeting & { agreements: unknown[]; people: unknown[] }>(`/meetings/${id}`),
   update: (id: number, dto: UpdateMeetingDto) => apiPatch<Meeting>(`/meetings/${id}`, dto),
   delete: (id: number) => apiDelete<{ deleted: boolean }>(`/meetings/${id}`),
+  downloadToken: (id: number) => apiPost<{ token: string }>(`/meetings/${id}/download-token`, {}),
 };

@@ -125,12 +125,16 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
     save('project_id', projectId);
   };
 
-  const downloadFile = (kind: string) => {
+  const downloadFile = async (kind: string) => {
     if (!meeting) return;
-    // Direct link to API — works on mobile Safari (no blob black screen)
-    const token = localStorage.getItem('auth_token') || '';
-    const url = `/v1/meetings/${meeting.id}/download?type=${kind}&format=${sendFormat}&token=${encodeURIComponent(token)}`;
-    window.open(url, '_blank');
+    // Use a short-lived, download-scoped token (not the full session JWT) in the URL.
+    try {
+      const { token } = await meetingsApi.downloadToken(meeting.id);
+      const url = `/v1/meetings/${meeting.id}/download?type=${kind}&format=${sendFormat}&token=${encodeURIComponent(token)}`;
+      window.open(url, '_blank');
+    } catch {
+      alert('Не удалось подготовить файл к скачиванию.');
+    }
   };
 
   const handleCreateTasks = useCallback(async () => {
