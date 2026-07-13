@@ -45,10 +45,15 @@ function DownloadButton({ meetingId, type, label, icon: Icon }: {
   meetingId: number; type: 'summary' | 'full' | 'notes' | 'qa' | 'actions'; label: string; icon: typeof Download;
 }) {
   const handleDownload = async () => {
+    // Open the tab synchronously (Safari blocks window.open after await), then
+    // set its URL once the short-lived download token is ready.
+    const win = window.open('', '_blank');
     try {
       const { token } = await meetingsApi.downloadToken(meetingId);
-      window.open(`/v1/meetings/${meetingId}/download?type=${type}&format=pdf&token=${encodeURIComponent(token)}`, '_blank');
+      const url = `/v1/meetings/${meetingId}/download?type=${type}&format=pdf&token=${encodeURIComponent(token)}`;
+      if (win) win.location.href = url; else window.location.href = url;
     } catch {
+      if (win) win.close();
       alert('Не удалось подготовить файл к скачиванию.');
     }
   };

@@ -127,12 +127,16 @@ export function MeetingDetailPanel({ meeting, projects, onClose, onUpdated, onDe
 
   const downloadFile = async (kind: string) => {
     if (!meeting) return;
-    // Use a short-lived, download-scoped token (not the full session JWT) in the URL.
+    // Open the tab SYNCHRONOUSLY in the click gesture (Safari/mobile blocks
+    // window.open after an await), then point it at the URL once we have the
+    // short-lived download-scoped token.
+    const win = window.open('', '_blank');
     try {
       const { token } = await meetingsApi.downloadToken(meeting.id);
       const url = `/v1/meetings/${meeting.id}/download?type=${kind}&format=${sendFormat}&token=${encodeURIComponent(token)}`;
-      window.open(url, '_blank');
+      if (win) win.location.href = url; else window.location.href = url;
     } catch {
+      if (win) win.close();
       alert('Не удалось подготовить файл к скачиванию.');
     }
   };
