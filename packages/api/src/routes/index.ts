@@ -26,6 +26,7 @@ import { yandexCalendarRouter } from './yandex-calendar';
 import { authRouter } from './auth';
 import { requireAuth } from '../middleware/auth';
 import { adminRouter } from './admin';
+import { downloadMeetingHandler } from './meetings';
 import { advisorsRouter } from './advisors';
 import { commitmentsRouter } from './commitments';
 import { transcribeRouter } from './transcribe';
@@ -58,6 +59,10 @@ router.get('/documents/attachments/file/:filename', (req, res) => {
   }
   res.sendFile(filePath);
 });
+
+// Public: meeting file download — authorized by a scoped ?token= (browser
+// navigations can't send an Authorization header). The handler auths itself.
+router.get('/meetings/:id/download', downloadMeetingHandler);
 
 // All routes below require authentication
 router.use(requireAuth);

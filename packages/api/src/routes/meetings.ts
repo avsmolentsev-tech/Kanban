@@ -547,7 +547,10 @@ meetingsRouter.post('/:id/download-token', async (req: AuthRequest, res: Respons
   res.json(ok({ token }));
 });
 
-meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
+// Exported + mounted PUBLICLY (before requireAuth) in routes/index.ts, because a
+// browser navigation can't send an Authorization header — the scoped ?token= is
+// the auth. The handler verifies a session OR a download-scoped token itself.
+export async function downloadMeetingHandler(req: AuthRequest, res: Response): Promise<void> {
   const id = Number(req.params['id']);
   // Accept a normal session (Authorization header) OR a scoped download token in ?token=.
   let userId = getUserId(req);
@@ -575,7 +578,7 @@ meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Download failed'));
   }
-});
+}
 
 meetingsRouter.post('/:id/send-to-telegram', async (req: AuthRequest, res: Response) => {
   const parsed = SendToTelegramSchema.safeParse(req.body);
