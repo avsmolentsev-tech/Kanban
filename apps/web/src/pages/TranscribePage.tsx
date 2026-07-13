@@ -7,6 +7,7 @@ export function TranscribePage() {
   const [active, setActive] = useState<TranscriptionJob | null>(null);
   const [uploading, setUploading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -49,6 +50,13 @@ export function TranscribePage() {
     a.download = (active.filename || 'transcript').replace(/\.[^.]+$/, '') + '.txt'; a.click();
   };
   const remove = async (id: number) => { await transcribeApi.delete(id); if (active?.id === id) setActive(null); loadList(); };
+  const summarize = async () => {
+    if (!active) return;
+    setSummarizing(true);
+    try { const { summary } = await transcribeApi.summarize(active.id); setActive(a => a ? { ...a, summary } : a); }
+    catch { alert('Не удалось сделать резюме.'); }
+    finally { setSummarizing(false); }
+  };
 
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6 max-w-3xl mx-auto w-full">
@@ -78,6 +86,9 @@ export function TranscribePage() {
             <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{active.filename}</div>
             {active.status === 'done' && (
               <div className="flex items-center gap-1 flex-shrink-0">
+                {!active.summary && (
+                  <button onClick={summarize} disabled={summarizing} className="text-xs px-2 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 inline-flex items-center gap-1 font-medium disabled:opacity-50">{summarizing ? <Loader2 size={13} className="animate-spin" /> : '✨'} Резюме</button>
+                )}
                 <button onClick={copy} className="text-xs px-2 py-1 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 inline-flex items-center gap-1">{copied ? <Check size={13} /> : <Copy size={13} />} Копировать</button>
                 <button onClick={download} className="text-xs px-2 py-1 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 inline-flex items-center gap-1"><Download size={13} /> .txt</button>
               </div>
@@ -85,6 +96,12 @@ export function TranscribePage() {
           </div>
           {active.status === 'processing' && <div className="text-sm text-gray-400 flex items-center gap-2 py-3"><Loader2 size={16} className="animate-spin" /> Расшифровываю… (можно уйти со страницы — сохранится в списке)</div>}
           {active.status === 'error' && <div className="text-sm text-red-500">Ошибка: {active.error}</div>}
+          {active.summary && (
+            <div className="mb-3 p-3 rounded-xl bg-indigo-50/60 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800">
+              <div className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 mb-1">✨ Резюме</div>
+              <div className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">{active.summary}</div>
+            </div>
+          )}
           {active.status === 'done' && <div className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap leading-relaxed max-h-[50vh] overflow-auto">{active.text}</div>}
         </div>
       )}

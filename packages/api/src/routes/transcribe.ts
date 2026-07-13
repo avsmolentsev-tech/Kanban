@@ -49,16 +49,38 @@ transcribeRouter.get('/', async (req: AuthRequest, res: Response) => {
   res.json(ok(rows));
 });
 
-// GET /transcribe/:id — status + text
+// GET /transcribe/:id — status + text + summary
 transcribeRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   const id = Number(req.params['id']);
   const row = await queryOne(
-    'SELECT id, filename, status, text, error, created_at FROM transcriptions WHERE id = $1 AND user_id IS NOT DISTINCT FROM $2',
+    'SELECT id, filename, status, text, summary, error, created_at FROM transcriptions WHERE id = $1 AND user_id IS NOT DISTINCT FROM $2',
     [id, userId]
   );
   if (!row) { res.status(404).json(fail('Не найдено')); return; }
   res.json(ok(row));
+});
+
+// POST /transcribe/:id/summarize — structured AI summary of the transcript (no meeting)
+transcribeRouter.post('/:id/summarize', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  const id = Number(req.params['id']);
+  const row = await queryOne<{ text: string | null; summary: string | null }>(
+    'SELECT text, summary FROM transcriptions WHERE id = $1 AND user_id IS NOT DISTINCT FROM $2', [id, userId]
+  );
+  if (!row) { res.status(404).json(fail('Не найдено')); return; }
+  if (row.summary) { res.json(ok({ summary: row.summary })); return; }
+  if (!row.text || !row.text.trim()) { res.status(400).json(fail('Нет текста для резюме')); return; }
+  try {
+    const { ClaudeService } = require('../services/claude.service');
+    const claude = new ClaudeService();
+    const sys = 'Ты редактор. Сделай структурированное резюме в markdown: ## Ключевые темы, ## Решения, ## Задачи, ## Следующие шаги. Кратко, по делу, без воды. Опирайся только на текст.';
+    const summary = (await claude.chat([{ role: 'user', content: (row.text as string).slice(0, 40000) }], sys, 'gpt-4.1-mini', false, false, userId)).trim();
+    await execute('UPDATE transcriptions SET summary = $1 WHERE id = $2', [summary, id]);
+    res.json(ok({ summary }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Ошибка резюме'));
+  }
 });
 
 // DELETE /transcribe/:id

@@ -470,9 +470,11 @@ CREATE TABLE IF NOT EXISTS transcriptions (
   filename   TEXT,
   status     TEXT NOT NULL DEFAULT 'processing',
   text       TEXT,
+  summary    TEXT,
   error      TEXT,
   created_at TEXT NOT NULL DEFAULT NOW()
 );
+ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS summary TEXT;
 
 -- Commitments tracking on tasks (populated by meeting action-item extraction)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_type TEXT;      -- my_task | their_commitment | mutual_agreement
