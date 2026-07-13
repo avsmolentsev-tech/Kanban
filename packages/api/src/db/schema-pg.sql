@@ -463,6 +463,17 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free';
 -- Person profile photo (auto-pulled from public Telegram t.me/<username>)
 ALTER TABLE people ADD COLUMN IF NOT EXISTS photo_url TEXT;
 
+-- Standalone transcriptions (not tied to a meeting)
+CREATE TABLE IF NOT EXISTS transcriptions (
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER REFERENCES users(id),
+  filename   TEXT,
+  status     TEXT NOT NULL DEFAULT 'processing',
+  text       TEXT,
+  error      TEXT,
+  created_at TEXT NOT NULL DEFAULT NOW()
+);
+
 -- Commitments tracking on tasks (populated by meeting action-item extraction)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_type TEXT;      -- my_task | their_commitment | mutual_agreement
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_owner TEXT;     -- who is responsible (name / "я")

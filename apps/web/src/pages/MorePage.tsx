@@ -7,7 +7,7 @@ import {
   Columns3, BarChart3, CalendarDays, Users, Lightbulb, Flame,
   Target, FileText, LayoutDashboard, BookOpen, MessageCircle,
   PieChart, GanttChart, FolderKanban, Sun, LogOut, Shield, HelpCircle,
-  Landmark, Handshake
+  Landmark, Handshake, Mic
 } from 'lucide-react';
 import { resetOnboarding } from '../components/layout/OnboardingWelcome';
 import type { LucideIcon } from 'lucide-react';
@@ -25,6 +25,7 @@ const getItems = (t: (ru: string, en: string) => string): MenuItem[] => [
   { to: '/projects', label: t('Проекты', 'Projects'), icon: FolderKanban, color: 'from-violet-500 to-violet-600' },
   { to: '/calendar', label: t('Календарь', 'Calendar'), icon: CalendarDays, color: 'from-cyan-500 to-cyan-600' },
   { to: '/meetings', label: t('Встречи', 'Meetings'), icon: Users, color: 'from-emerald-500 to-emerald-600' },
+  { to: '/transcribe', label: t('Транскрипция', 'Transcribe'), icon: Mic, color: 'from-fuchsia-500 to-fuchsia-600' },
   { to: '/council', label: t('Совет', 'Council'), icon: Landmark, color: 'from-indigo-500 to-purple-600' },
   { to: '/commitments', label: t('Договорённости', 'Commitments'), icon: Handshake, color: 'from-amber-500 to-amber-600' },
   { to: '/people', label: t('Люди', 'People'), icon: Users, color: 'from-teal-500 to-teal-600' },

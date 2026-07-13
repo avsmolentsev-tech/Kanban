@@ -28,6 +28,7 @@ import { requireAuth } from '../middleware/auth';
 import { adminRouter } from './admin';
 import { advisorsRouter } from './advisors';
 import { commitmentsRouter } from './commitments';
+import { transcribeRouter } from './transcribe';
 
 export const router = Router();
 
@@ -79,4 +80,5 @@ router.use('/tags', tagsRouter);
 router.use('/templates', templatesRouter);
 router.use('/advisors', advisorsRouter);
 router.use('/commitments', commitmentsRouter);
+router.use('/transcribe', transcribeRouter);
 router.use('/admin', adminRouter);
