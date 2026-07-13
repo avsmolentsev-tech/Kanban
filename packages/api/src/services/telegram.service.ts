@@ -23,6 +23,7 @@ export class TelegramService {
   private recentActions = new Map<number, Array<{ type: string; title: string; id: number; table: string; date: string; savedAt: number }>>();
   private proMode = new Set<number>(); // tg_id → next audio uses OpenAI Whisper API
   private contentType = new Map<number, string>(); // tg_id → 'lecture'|'interview' for next audio
+  private transcribeOnly = new Set<number>(); // tg_id → next audio: just transcript, NO meeting
   private lastCreatedPerson = new Map<number, { name: string; id: number; ts: number }>(); // tg_id → last created contact
   private pendingPhotoData = new Map<number, { data: Record<string, string>; ts: number }>(); // tg_id → buffered photo data waiting for name
   private drafts = new DraftSession({
@@ -1583,6 +1584,13 @@ BHAG (Большая Дерзкая Цель на год):
       // Clear pro mode if user sends text instead of audio
       this.proMode.delete(tgId);
 
+      // Enter transcribe-only mode by keyword: next audio/file → just text, no meeting
+      if (!this.pendingLogins.has(tgId) && /^(транскриб|расшифр|транскрипц)/i.test(text.trim())) {
+        this.transcribeOnly.add(tgId);
+        ctx.reply('🎤 Ок! Пришли аудио, видео или голосовое — расшифрую в текст. Встречу создавать не буду.');
+        return;
+      }
+
       // Handle login flow (email → password)
       const loginState = this.pendingLogins.get(tgId);
       if (loginState === 'email') {
@@ -1777,6 +1785,13 @@ BHAG (Большая Дерзкая Цель на год):
           : await this.transcribeAudio(buffer, 'voice.ogg');
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
 
+        // Transcribe-only mode: return the text and stop (no meeting/draft)
+        if (this.transcribeOnly.has(tgId)) {
+          this.transcribeOnly.delete(tgId);
+          await sendLong(ctx, `📝 Транскрипция:\n\n${transcript}`);
+          return;
+        }
+
         // Show transcript
         ctx.reply(`📝 Распознано:\n${transcript}`);
 
@@ -1859,6 +1874,13 @@ BHAG (Большая Дерзкая Цель на год):
             ? await this.transcribeProAudio(buffer, filename)
             : await this.transcribeAudio(buffer, filename);
           if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
+
+          // Transcribe-only mode: return the full text and stop (no meeting/draft)
+          if (this.transcribeOnly.has(tgId)) {
+            this.transcribeOnly.delete(tgId);
+            await sendLong(ctx, `📝 Транскрипция:\n\n${transcript}`);
+            return;
+          }
 
           // Show transcript
           const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
