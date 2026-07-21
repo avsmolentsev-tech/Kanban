@@ -4,7 +4,7 @@ import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId } from '../middleware/user-scope';
-import { compressForTranscription, transcribeLocal } from '../services/whisper-local.service';
+import { compressForTranscription, transcribeLocal, looksLikeGarbage } from '../services/whisper-local.service';
 
 export const transcribeRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
@@ -16,7 +16,9 @@ async function processTranscription(jobId: number, buffer: Buffer, filename: str
     try { buf = await compressForTranscription(buffer, filename); } catch { /* use original */ }
     const audioName = filename.replace(/\.[^.]+$/, '') + '.mp3';
     const text = await transcribeLocal(buf, audioName); // faster-whisper service (local, free)
-    await execute('UPDATE transcriptions SET status = $1, text = $2 WHERE id = $3', ['done', text, jobId]);
+    // Flag hallucinated/garbage output so the UI can warn instead of showing noise as a result.
+    const status = looksLikeGarbage(text) ? 'unintelligible' : 'done';
+    await execute('UPDATE transcriptions SET status = $1, text = $2 WHERE id = $3', [status, text, jobId]);
   } catch (err) {
     await execute('UPDATE transcriptions SET status = $1, error = $2 WHERE id = $3',
       ['error', err instanceof Error ? err.message : 'unknown', jobId]);

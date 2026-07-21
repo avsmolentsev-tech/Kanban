@@ -11,7 +11,7 @@ import { ObsidianService } from '../services/obsidian.service';
 import { ClaudeService } from '../services/claude.service';
 import { mdToPdf, mdToDocx } from '../services/converter.service';
 import { telegramService } from '../services/telegram.service';
-import { isLocalWhisperAvailable, transcribeLocal, compressForTranscription } from '../services/whisper-local.service';
+import { isLocalWhisperAvailable, transcribeLocal, compressForTranscription, looksLikeGarbage } from '../services/whisper-local.service';
 import { config } from '../config';
 import OpenAI from 'openai';
 import type { AuthRequest } from '../middleware/auth';
@@ -289,18 +289,29 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
       throw new Error('No transcription backend available');
     }
 
+    // Guard: whisper hallucinates looping garbage on unintelligible audio. Save the
+    // raw text so nothing is lost, but flag it and skip the AI summary — otherwise
+    // Claude confidently "summarizes" pure noise into a plausible-looking meeting.
+    const isGarbage = looksLikeGarbage(transcript);
+    if (isGarbage) {
+      console.warn(`[bg-job ${meetingId}] transcript looks like garbage (${transcript.length} chars) — flagging, skipping summary`);
+    }
+
     // Step 3: save transcript
     const meeting = await queryOne<Record<string, unknown>>('SELECT * FROM meetings WHERE id = $1', [meetingId]);
     if (!meeting) throw new Error('Meeting deleted while processing');
     const existingSummary = (meeting['summary_raw'] as string) || '';
-    let mergedBody = existingSummary
-      ? `${existingSummary}\n\n---\nТранскрипция (${new Date().toLocaleString('ru')}):\n${transcript}`
+    const transcriptBody = isGarbage
+      ? `⚠️ Запись неразборчива — не удалось распознать речь (возможно, тихий звук, шум или искажение). Автоматическое резюме не составлялось.\n\n---\nСырой результат распознавания:\n${transcript}`
       : transcript;
+    let mergedBody = existingSummary
+      ? `${existingSummary}\n\n---\nТранскрипция (${new Date().toLocaleString('ru')}):\n${transcriptBody}`
+      : transcriptBody;
     await execute('UPDATE meetings SET summary_raw = $1, updated_at = NOW() WHERE id = $2', [mergedBody, meetingId]);
     searchService.indexRecord('meeting', meetingId, meeting['title'] as string, mergedBody);
 
     // Step 4: AI summary
-    if (autoSummarize && transcript.trim()) {
+    if (autoSummarize && transcript.trim() && !isGarbage) {
       await setStatus('summarizing');
       try {
         const sys = 'Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды.';
