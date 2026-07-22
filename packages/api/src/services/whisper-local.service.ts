@@ -86,18 +86,36 @@ export async function transcribeViaService(buffer: Buffer, filename: string): Pr
       if (segmentPaths.length === 0) throw new Error('segmentation produced no chunks');
       console.log(`[transcribe] ${Math.round(duration)}s → ${segmentPaths.length} segments`);
 
-      // Transcribe with bounded concurrency, preserving order.
+      // Transcribe with bounded concurrency, preserving order. Segment failures are
+      // tolerated (retry once, then skip) so one timed-out chunk under load can't sink
+      // the whole recording — we keep every segment that succeeded.
       const parts: string[] = new Array(segmentPaths.length).fill('');
       let next = 0;
+      let failed = 0;
       const worker = async (): Promise<void> => {
         for (;;) {
           const i = next++;
           if (i >= segmentPaths.length) return;
           const segBuf = fs.readFileSync(segmentPaths[i]!);
-          parts[i] = await serviceRequest(segBuf, `seg-${i}.mp3`);
+          let done = false;
+          for (let attempt = 0; attempt < 2 && !done; attempt++) {
+            try {
+              parts[i] = await serviceRequest(segBuf, `seg-${i}.mp3`);
+              done = true;
+            } catch (err) {
+              if (attempt === 1) {
+                failed++;
+                console.warn(`[transcribe] segment ${i}/${segmentPaths.length} failed:`, err instanceof Error ? err.message : err);
+              }
+            }
+          }
         }
       };
       await Promise.all(Array.from({ length: Math.min(CHUNK_CONCURRENCY, segmentPaths.length) }, () => worker()));
+      // Only give up (→ whisper.cpp fallback) if EVERY segment failed. Any partial
+      // transcript is more useful than none.
+      if (failed >= segmentPaths.length) throw new Error(`all ${segmentPaths.length} segments failed`);
+      if (failed > 0) console.warn(`[transcribe] ${failed}/${segmentPaths.length} segments dropped, returning partial transcript`);
       transcript = parts.join(' ').replace(/\s+/g, ' ').trim();
     } else {
       transcript = await serviceRequest(buffer, filename);
