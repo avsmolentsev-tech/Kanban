@@ -11,7 +11,7 @@ import { ObsidianService } from '../services/obsidian.service';
 import { ClaudeService } from '../services/claude.service';
 import { mdToPdf, mdToDocx } from '../services/converter.service';
 import { telegramService } from '../services/telegram.service';
-import { isLocalWhisperAvailable, transcribeLocal, compressForTranscription, looksLikeGarbage, safeTmpName } from '../services/whisper-local.service';
+import { isLocalWhisperAvailable, isTranscribeServiceAvailable, transcribeLocal, compressForTranscription, looksLikeGarbage, safeTmpName } from '../services/whisper-local.service';
 import { config } from '../config';
 import OpenAI from 'openai';
 import type { AuthRequest } from '../middleware/auth';
@@ -257,9 +257,10 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
     await setStatus('transcribing');
     let transcript = '';
     const finalMb = audioBuffer.length / 1024 / 1024;
-    const useOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
+    const canUseOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
 
-    if (useOpenAI) {
+    /** Платный облачный бэкенд. Держим только как страховку. */
+    const viaOpenAI = async (): Promise<string> => {
       // Имя нужно только чтобы whisper-1 угадал формат по расширению. `audioName`
       // тянется из req.file.originalname и слэши в нём сохраняются, поэтому в путь
       // идёт лишь обеззараженное расширение — иначе загрузка с именем вида
@@ -274,22 +275,33 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
           file: fs.createReadStream(tmp),
           language: 'ru',
         });
-        transcript = result.text;
-        console.log(`[bg-job ${meetingId}] OpenAI returned ${transcript.length} chars`);
-      } catch (err) {
-        console.error(`[bg-job ${meetingId}] OpenAI failed:`, err instanceof Error ? err.message : err);
-        if (isLocalWhisperAvailable()) {
-          console.log(`[bg-job ${meetingId}] falling back to local whisper`);
-          transcript = await transcribeLocal(audioBuffer, audioName);
-        } else {
-          throw err;
-        }
+        console.log(`[bg-job ${meetingId}] OpenAI returned ${result.text.length} chars`);
+        return result.text;
       } finally {
         try { fs.unlinkSync(tmp); } catch {}
       }
-    } else if (isLocalWhisperAvailable()) {
-      console.log(`[bg-job ${meetingId}] local whisper.cpp for ${finalMb.toFixed(1)}MB`);
-      transcript = await transcribeLocal(audioBuffer, audioName);
+    };
+
+    // Локальная расшифровка идёт первой: она бесплатна и не выпускает запись за
+    // пределы сервера. transcribeLocal сам предпочитает микросервис faster-whisper
+    // и откатывается на whisper.cpp. Облако — только если локально совсем никак.
+    // Раньше порядок был обратный, и веб-загрузка молча уезжала в платный whisper-1,
+    // хотя рядом стоял бесплатный локальный бэкенд.
+    const localReady = (await isTranscribeServiceAvailable()) || isLocalWhisperAvailable();
+
+    if (localReady) {
+      try {
+        console.log(`[bg-job ${meetingId}] local transcription for ${finalMb.toFixed(1)}MB`);
+        transcript = await transcribeLocal(audioBuffer, audioName);
+      } catch (err) {
+        console.error(`[bg-job ${meetingId}] local transcription failed:`, err instanceof Error ? err.message : err);
+        if (!canUseOpenAI) throw err;
+        console.log(`[bg-job ${meetingId}] falling back to OpenAI whisper-1`);
+        transcript = await viaOpenAI();
+      }
+    } else if (canUseOpenAI) {
+      console.warn(`[bg-job ${meetingId}] no local backend available, using paid OpenAI whisper-1`);
+      transcript = await viaOpenAI();
     } else {
       throw new Error('No transcription backend available');
     }
