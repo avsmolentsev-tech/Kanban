@@ -79,6 +79,16 @@ async function start(): Promise<void> {
   try { const { startTodoistBackgroundSync } = require('./routes/todoist'); startTodoistBackgroundSync(); } catch (e) { console.warn('[todoist] background sync not started:', (e as Error).message); }
   app.listen(config.port, () => {
     console.log(`[Clarity Space API] running on port ${config.port}`);
+    // Догоняем расшифровки, оборванные прошлым перезапуском. Асинхронно и после
+    // listen: восстановление не должно задерживать подъём API.
+    void (async () => {
+      try {
+        const { resumeInterruptedTranscriptions } = require('./routes/meetings');
+        await resumeInterruptedTranscriptions();
+      } catch (e) {
+        console.warn('[jobs] восстановление не запустилось:', (e as Error).message);
+      }
+    })();
     // Start Obsidian vault watcher for bidirectional sync
     startVaultWatcher(null);
   });

@@ -1781,8 +1781,8 @@ BHAG (Большая Дерзкая Цель на год):
 
         // Transcribe via Whisper (pro → OpenAI, normal → local)
         const transcript = isPro
-          ? await this.transcribeProAudio(buffer, 'voice.ogg')
-          : await this.transcribeAudio(buffer, 'voice.ogg');
+          ? await this.transcribeTracked(ctx.from!.id, buffer, 'voice.ogg', true)
+          : await this.transcribeTracked(ctx.from!.id, buffer, 'voice.ogg', false);
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
 
         // Transcribe-only mode: return the text and stop (no meeting/draft)
@@ -1871,8 +1871,8 @@ BHAG (Большая Дерзкая Цель на год):
             }
           }
           const transcript = isPro
-            ? await this.transcribeProAudio(buffer, filename)
-            : await this.transcribeAudio(buffer, filename);
+            ? await this.transcribeTracked(ctx.from!.id, buffer, filename, true)
+            : await this.transcribeTracked(ctx.from!.id, buffer, filename, false);
           if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
 
           // Transcribe-only mode: return the full text and stop (no meeting/draft)
@@ -1937,8 +1937,8 @@ BHAG (Большая Дерзкая Цель на год):
         const buffer = await this.downloadTelegramFile(ctx, audio.file_id);
 
         const transcript = isPro
-          ? await this.transcribeProAudio(buffer, audio.file_name ?? 'audio.mp3')
-          : await this.transcribeAudio(buffer, audio.file_name ?? 'audio.mp3');
+          ? await this.transcribeTracked(ctx.from!.id, buffer, audio.file_name ?? 'audio.mp3', true)
+          : await this.transcribeTracked(ctx.from!.id, buffer, audio.file_name ?? 'audio.mp3', false);
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
 
         const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
@@ -1987,8 +1987,8 @@ BHAG (Большая Дерзкая Цель на год):
         const filename = (video as unknown as Record<string, unknown>).file_name as string ?? 'video.mp4';
 
         const transcript = isPro
-          ? await this.transcribeProAudio(buffer, filename)
-          : await this.transcribeAudio(buffer, filename);
+          ? await this.transcribeTracked(ctx.from!.id, buffer, filename, true)
+          : await this.transcribeTracked(ctx.from!.id, buffer, filename, false);
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь в видео'); return; }
 
         const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
@@ -2022,8 +2022,8 @@ BHAG (Большая Дерзкая Цель на год):
         const buffer = await this.downloadTelegramFile(ctx, videoNote.file_id);
 
         const transcript = isPro
-          ? await this.transcribeProAudio(buffer, 'video_note.mp4')
-          : await this.transcribeAudio(buffer, 'video_note.mp4');
+          ? await this.transcribeTracked(ctx.from!.id, buffer, 'video_note.mp4', true)
+          : await this.transcribeTracked(ctx.from!.id, buffer, 'video_note.mp4', false);
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
 
         const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
@@ -2237,6 +2237,53 @@ BHAG (Большая Дерзкая Цель на год):
   }
 
   /** Send notification to a specific Telegram user by tg_id */
+  /**
+   * Расшифровка с защитой от перезапуска: аудио заранее кладётся на диск, и если
+   * процесс умрёт посреди работы, задача возобновится при следующем старте.
+   * Ошибку транскрибации это не страхует — о ней пользователь и так узнаёт,
+   * страхует только внезапную смерть процесса.
+   */
+  private async transcribeTracked(tgId: number | string, buffer: Buffer, filename: string, isPro: boolean): Promise<string> {
+    const { registerJob, completeJob } = require('./pending-jobs');
+    const jobId = await registerJob({ kind: 'telegram-audio', buffer, filename, tgId: String(tgId) });
+    try {
+      return isPro ? await this.transcribeProAudio(buffer, filename) : await this.transcribeAudio(buffer, filename);
+    } finally {
+      await completeJob(jobId);
+    }
+  }
+
+  /**
+   * Доводит расшифровку, оборванную перезапуском, и выдаёт обычную карточку драфта.
+   * ctx у нас уже нет, но buildAndSendDraft пользуется от него только reply —
+   * подменяем его отправкой в тот же чат.
+   */
+  async resumeInterruptedAudio(tgId: string | null, buffer: Buffer, filename: string, jobId: number): Promise<void> {
+    if (!tgId || !this.bot) return;
+    const chatId = Number(tgId);
+    const { completeJob } = require('./pending-jobs');
+
+    await this.notifyUser(tgId, '🔄 Сервер перезапускался и расшифровка прервалась. Доделываю — перезаливать не нужно.');
+    try {
+      const transcript = await this.transcribeAudio(buffer, filename);
+      if (!transcript.trim()) {
+        await this.notifyUser(tgId, '⚠️ Речь распознать не удалось.');
+        await completeJob(jobId);
+        return;
+      }
+      const userId = await this.resolveUserId(chatId);
+      const fakeCtx = {
+        reply: (text: string, extra?: unknown) => this.bot!.telegram.sendMessage(chatId, text, extra as never),
+      };
+      await this.buildAndSendDraft(fakeCtx, userId!, chatId, 'audio', transcript, null);
+      await completeJob(jobId);
+    } catch (err) {
+      // строку не закрываем: следующий старт попробует ещё раз (до лимита попыток)
+      await this.notifyUser(tgId, `⚠️ Не удалось доделать расшифровку: ${err instanceof Error ? err.message : 'ошибка'}`);
+      throw err;
+    }
+  }
+
   async notifyUser(tgId: string, message: string): Promise<void> {
     if (!this.bot || !tgId) return;
     try {

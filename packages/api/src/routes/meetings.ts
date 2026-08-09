@@ -13,6 +13,7 @@ import { mdToPdf, mdToDocx } from '../services/converter.service';
 import { telegramService } from '../services/telegram.service';
 import { isLocalWhisperAvailable, isTranscribeServiceAvailable, transcribeLocal, compressForTranscription, looksLikeGarbage, safeTmpName } from '../services/whisper-local.service';
 import { config } from '../config';
+import { registerJob, completeJob, resumePendingJobs, type PendingJob } from '../services/pending-jobs';
 import OpenAI from 'openai';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
@@ -228,7 +229,7 @@ meetingsRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
 });
 
 // Heavy background pipeline: compress → transcribe → summarize → save → sync vault
-async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, originalName: string, userId: number | null, autoSummarize: boolean): Promise<void> {
+async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, originalName: string, userId: number | null, autoSummarize: boolean, jobId: number | null = null): Promise<void> {
   const setStatus = async (status: string | null, errMsg?: string | null): Promise<void> => {
     await execute('UPDATE meetings SET processing_status = $1, processing_error = $2 WHERE id = $3', [status, errMsg ?? null, meetingId]);
   };
@@ -371,11 +372,13 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
       console.warn(`[bg-job ${meetingId}] vault sync failed:`, err instanceof Error ? err.message : err);
     }
 
+    await completeJob(jobId);
     await setStatus('done', null);
     console.log(`[bg-job ${meetingId}] DONE`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[bg-job ${meetingId}] FAILED:`, msg);
+    await completeJob(jobId);
     await setStatus('failed', msg);
   }
 }
@@ -393,7 +396,12 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthR
     const autoSummarize = req.body?.summarize !== 'false';
     // Mark as queued + kick off background job (don't await)
     await execute('UPDATE meetings SET processing_status = $1, processing_error = NULL WHERE id = $2', ['queued', id]);
-    void processAudioInBackground(id, buffer, originalName, userId, autoSummarize);
+    // Аудио на диск ДО старта: перезапуск в первые же секунды иначе снова всё потеряет.
+    const jobId = await registerJob({
+      kind: 'meeting', buffer, filename: originalName, userId, meetingId: id,
+      payload: { autoSummarize },
+    });
+    void processAudioInBackground(id, buffer, originalName, userId, autoSummarize, jobId);
     res.status(202).json(ok({ id, status: 'queued', message: 'Транскрипция запущена в фоне. Можно закрыть окно.' }));
     return;
   }
@@ -627,3 +635,33 @@ meetingsRouter.post('/:id/send-to-telegram', async (req: AuthRequest, res: Respo
     res.status(500).json(fail(err instanceof Error ? err.message : 'Send failed'));
   }
 });
+
+/**
+ * Возобновление расшифровок, прерванных перезапуском API.
+ * Вызывается один раз при старте (см. index.ts).
+ */
+export async function resumeInterruptedTranscriptions(): Promise<void> {
+  await resumePendingJobs({
+    meeting: async (job: PendingJob, buffer: Buffer) => {
+      if (job.meeting_id == null) throw new Error('в задаче нет meeting_id');
+      let autoSummarize = true;
+      try { autoSummarize = JSON.parse(job.payload || '{}').autoSummarize !== false; } catch {}
+      await execute('UPDATE meetings SET processing_status = $1, processing_error = NULL WHERE id = $2', ['queued', job.meeting_id]);
+      await processAudioInBackground(job.meeting_id, buffer, job.filename, job.user_id, autoSummarize, job.id);
+    },
+
+    telegramAudio: async (job: PendingJob, buffer: Buffer) => {
+      await telegramService.resumeInterruptedAudio(job.tg_id, buffer, job.filename, job.id);
+    },
+
+    giveUp: async (job: PendingJob, reason: string) => {
+      const text = `Расшифровка не была доведена до конца: сервер перезапустился, ${reason}. Пришлите запись ещё раз.`;
+      if (job.meeting_id != null) {
+        await execute('UPDATE meetings SET processing_status = $1, processing_error = $2 WHERE id = $3', ['failed', text, job.meeting_id]);
+      }
+      if (job.tg_id) {
+        try { await telegramService.notifyUser(job.tg_id, `⚠️ ${text}`); } catch {}
+      }
+    },
+  });
+}
