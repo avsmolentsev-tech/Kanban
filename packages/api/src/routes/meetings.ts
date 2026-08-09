@@ -11,7 +11,7 @@ import { ObsidianService } from '../services/obsidian.service';
 import { ClaudeService } from '../services/claude.service';
 import { mdToPdf, mdToDocx } from '../services/converter.service';
 import { telegramService } from '../services/telegram.service';
-import { isLocalWhisperAvailable, transcribeLocal, compressForTranscription, looksLikeGarbage } from '../services/whisper-local.service';
+import { isLocalWhisperAvailable, transcribeLocal, compressForTranscription, looksLikeGarbage, safeTmpName } from '../services/whisper-local.service';
 import { config } from '../config';
 import OpenAI from 'openai';
 import type { AuthRequest } from '../middleware/auth';
@@ -260,7 +260,12 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
     const useOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
 
     if (useOpenAI) {
-      const tmp = path.join(require('os').tmpdir(), `oa-${Date.now()}-${audioName}`);
+      // Имя нужно только чтобы whisper-1 угадал формат по расширению. `audioName`
+      // тянется из req.file.originalname и слэши в нём сохраняются, поэтому в путь
+      // идёт лишь обеззараженное расширение — иначе загрузка с именем вида
+      // `../../../etc/cron.d/x` пишет буфер за пределы /tmp.
+      const oaExt = path.extname(safeTmpName(audioName)) || '.mp3';
+      const tmp = path.join(require('os').tmpdir(), `oa-${Date.now()}-${Math.random().toString(36).slice(2)}${oaExt}`);
       fs.writeFileSync(tmp, audioBuffer);
       try {
         console.log(`[bg-job ${meetingId}] OpenAI whisper-1 for ${finalMb.toFixed(1)}MB`);

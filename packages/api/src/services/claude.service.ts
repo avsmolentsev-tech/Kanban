@@ -174,7 +174,9 @@ ${text}`;
    * meetingType: 'meeting' | 'lecture' | 'interview' — selects prompt style.
    */
   async generateProSummaries(transcript: string, title: string, people: string[], meetingType: string = 'meeting'): Promise<{ notes: string; qa: string; actions?: string }> {
-    const context = `Название: ${title}\nУчастники: ${people.join(', ') || 'не указаны'}\n\nТранскрипция:\n${transcript.slice(0, 30000)}`;
+    // 30 000 символов — это ~30 минут речи: у часовой встречи половина не доезжала
+    // до конспекта. У модели контекст на порядки больше, берём с запасом.
+    const context = `Название: ${title}\nУчастники: ${people.join(', ') || 'не указаны'}\n\nТранскрипция:\n${transcript.slice(0, 300000)}`;
 
     const notesPrompt = this.getNotesPrompt(meetingType, context);
     const qaPrompt = this.getQaPrompt(meetingType, context);

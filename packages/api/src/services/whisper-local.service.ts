@@ -2,6 +2,8 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as http from 'http';
+import * as crypto from 'crypto';
 
 const WHISPER_CLI = '/opt/whisper.cpp/build/bin/whisper-cli';
 const WHISPER_MODEL = '/opt/whisper.cpp/models/ggml-small.bin';
@@ -13,6 +15,21 @@ const TRANSCRIBE_SERVICE_URL = process.env['TRANSCRIBE_SERVICE_URL'] || 'http://
 /** Check if local whisper.cpp is available */
 export function isLocalWhisperAvailable(): boolean {
   return fs.existsSync(WHISPER_CLI) && fs.existsSync(WHISPER_MODEL);
+}
+
+/**
+ * Обеззараживает имя загруженного файла перед подстановкой в путь.
+ *
+ * `req.file.originalname` приходит от клиента как есть, multer его не трогает.
+ * `path.join('/tmp', 'svc-1-' + '../../../etc/cron.d/x')` схлопывается в
+ * `/etc/cron.d/x`: первый `..` съедает литеральный сегмент `svc-1-..`, остальные
+ * выводят за пределы /tmp — и буфер пишется (а в finally удаляется) по
+ * произвольному пути. Формат ffmpeg определяет по содержимому, поэтому исходное
+ * имя здесь ни на что не влияет.
+ */
+export function safeTmpName(filename: string): string {
+  const base = path.basename(filename || '').replace(/[^A-Za-z0-9._-]/g, '_');
+  return base.replace(/^[._]+/, '').slice(0, 80) || 'audio';
 }
 
 /** Is the faster-whisper microservice healthy? (short timeout, never throws) */
@@ -31,18 +48,81 @@ const CHUNK_SECONDS = 300;          // 5-min segments
 const CHUNK_THRESHOLD_SECONDS = 480; // only split files longer than 8 min
 const CHUNK_CONCURRENCY = 2;         // matches the service's MAX_CONCURRENCY
 
+/**
+ * Потолок ожидания одного сегмента. Это таймаут бездействия сокета, а не общего
+ * времени: пока сервис считает, байты не идут, поэтому запас берём с большим полем.
+ */
+const SEGMENT_TIMEOUT_MS = 20 * 60 * 1000;
+
+/**
+ * POST multipart через node:http.
+ *
+ * Здесь намеренно НЕ используется fetch. У undici, на котором построен
+ * глобальный fetch, есть собственный `headersTimeout` — 300 секунд по умолчанию,
+ * и снаружи он настраивается только через `dispatcher`, то есть через пакет
+ * `undici`, которого в зависимостях нет. Сервис транскрибации общий на все
+ * проекты сервера и держит `MAX_CONCURRENCY=2`, поэтому под нагрузкой сегмент
+ * ждёт своей очереди дольше пяти минут — и undici убивает запрос с безликим
+ * `TypeError: fetch failed` ещё до того, как сработает `AbortSignal.timeout`.
+ * Именно так часовая запись теряла все сегменты разом и уезжала в фолбэк на
+ * whisper.cpp, где превращалась в петлю «Музыка. Музыка. Музыка».
+ * У node:http скрытого таймаута заголовков нет — временем управляем мы.
+ */
+function postMultipart(
+  url: string,
+  fileBuffer: Buffer,
+  filename: string,
+  fields: Record<string, string>,
+  timeoutMs: number,
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const boundary = '----clarity' + crypto.randomBytes(16).toString('hex');
+
+    const head: Buffer[] = [];
+    for (const [name, value] of Object.entries(fields)) {
+      head.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+    }
+    head.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeTmpName(filename)}"\r\n` +
+      `Content-Type: application/octet-stream\r\n\r\n`
+    ));
+    const body = Buffer.concat([...head, fileBuffer, Buffer.from(`\r\n--${boundary}--\r\n`)]);
+
+    const req = http.request({
+      hostname: target.hostname,
+      port: target.port || 80,
+      path: target.pathname + target.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': body.length,
+      },
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf-8') }));
+    });
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`no response within ${Math.round(timeoutMs / 1000)}s`));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
 /** One request to the faster-whisper service. Throws on non-2xx or timeout. */
 async function serviceRequest(buffer: Buffer, filename: string): Promise<string> {
-  const form = new FormData();
-  form.append('file', new Blob([new Uint8Array(buffer)]), filename || 'audio');
-  form.append('language', 'ru');
-  const res = await fetch(`${TRANSCRIBE_SERVICE_URL}/transcribe`, {
-    method: 'POST',
-    body: form,
-    signal: AbortSignal.timeout(600_000), // 10 min per segment — segments are short
-  });
-  if (!res.ok) throw new Error(`transcribe service ${res.status}: ${await res.text().catch(() => '')}`);
-  const data = await res.json() as { text?: string };
+  const { status, body } = await postMultipart(
+    `${TRANSCRIBE_SERVICE_URL}/transcribe`,
+    buffer,
+    filename || 'audio',
+    { language: 'ru' },
+    SEGMENT_TIMEOUT_MS,
+  );
+  if (status < 200 || status >= 300) throw new Error(`transcribe service ${status}: ${body.slice(0, 200)}`);
+  const data = JSON.parse(body) as { text?: string };
   return (data.text ?? '').trim();
 }
 
@@ -64,7 +144,7 @@ async function probeDurationSeconds(filePath: string): Promise<number> {
 export async function transcribeViaService(buffer: Buffer, filename: string): Promise<string> {
   const tmpDir = os.tmpdir();
   const id = Date.now() + '-' + Math.random().toString(36).slice(2);
-  const inputPath = path.join(tmpDir, `svc-${id}-${filename}`);
+  const inputPath = path.join(tmpDir, `svc-${id}-${safeTmpName(filename)}`);
   fs.writeFileSync(inputPath, buffer);
   const segmentPaths: string[] = [];
 
@@ -103,10 +183,19 @@ export async function transcribeViaService(buffer: Buffer, filename: string): Pr
               parts[i] = await serviceRequest(segBuf, `seg-${i}.mp3`);
               done = true;
             } catch (err) {
-              if (attempt === 1) {
-                failed++;
-                console.warn(`[transcribe] segment ${i}/${segmentPaths.length} failed:`, err instanceof Error ? err.message : err);
+              if (attempt === 0) {
+                // Пауза перед повтором: если сервис занят чужой задачей, мгновенный
+                // ретрай просто встаёт в ту же очередь и падает следом за первым.
+                await new Promise((r) => setTimeout(r, 15000));
+                continue;
               }
+              failed++;
+              console.warn(`[transcribe] segment ${i}/${segmentPaths.length} failed:`, err instanceof Error ? err.message : err);
+              // Потерянные минуты помечаем прямо в тексте. Молчаливый пропуск читается
+              // как «здесь ничего не говорили» — а на деле кусок записи просто выпал.
+              const from = Math.round((i * CHUNK_SECONDS) / 60);
+              const to = Math.round(((i + 1) * CHUNK_SECONDS) / 60);
+              parts[i] = `[фрагмент ${from}–${to} мин не распознан]`;
             }
           }
         }
@@ -148,7 +237,7 @@ const SPEECH_NORMALIZE_FILTER = 'highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11';
 export async function compressForTranscription(buffer: Buffer, filename: string): Promise<Buffer> {
   const tmpDir = os.tmpdir();
   const id = Date.now() + '-' + Math.random().toString(36).slice(2);
-  const inputPath = path.join(tmpDir, `pre-${id}-${filename}`);
+  const inputPath = path.join(tmpDir, `pre-${id}-${safeTmpName(filename)}`);
   const outputPath = path.join(tmpDir, `pre-${id}.mp3`);
   fs.writeFileSync(inputPath, buffer);
   try {
@@ -210,7 +299,7 @@ export function looksLikeGarbage(text: string): boolean {
 export async function compressForOpenAI(buffer: Buffer, filename: string): Promise<Buffer> {
   const tmpDir = os.tmpdir();
   const id = Date.now() + '-' + Math.random().toString(36).slice(2);
-  const inputPath = path.join(tmpDir, `oai-${id}-${filename}`);
+  const inputPath = path.join(tmpDir, `oai-${id}-${safeTmpName(filename)}`);
   const outputPath = path.join(tmpDir, `oai-${id}.mp3`);
   fs.writeFileSync(inputPath, buffer);
   try {
@@ -268,7 +357,7 @@ export async function transcribeLocal(buffer: Buffer, filename: string): Promise
   const id = Date.now() + '-' + Math.random().toString(36).slice(2);
 
   // Save buffer to temp file
-  const inputPath = path.join(tmpDir, `whisper-${id}-${filename}`);
+  const inputPath = path.join(tmpDir, `whisper-${id}-${safeTmpName(filename)}`);
   fs.writeFileSync(inputPath, buffer);
 
   const wavPath = path.join(tmpDir, `whisper-${id}.wav`);
