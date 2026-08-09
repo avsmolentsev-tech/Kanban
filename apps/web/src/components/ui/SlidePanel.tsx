@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useLangStore } from '../../store/lang.store';
+import { pushBackHandler } from '../../lib/telegram';
 
 interface SlidePanelProps { open: boolean; onClose: () => void; title: string; children: React.ReactNode; expandable?: boolean; }
 
@@ -25,6 +26,16 @@ export function SlidePanel({ open, onClose, title, children, expandable }: Slide
   }, [onClose, fullscreen]);
 
   useEffect(() => { if (!open) { setFullscreen(false); setSwipeX(0); } }, [open]);
+
+  // Пока панель открыта — в шапке Telegram видна кнопка «назад», и она закрывает
+  // именно эту панель. onClose держим в ref: родители передают его новой стрелкой
+  // на каждый рендер, а перевешивать обработчик на каждый рендер незачем.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    if (!open) return;
+    return pushBackHandler(() => { setFullscreen(false); closeRef.current(); });
+  }, [open]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (fullscreen) return;
