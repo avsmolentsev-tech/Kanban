@@ -39,7 +39,7 @@ export class ClaudeService {
     ].filter(Boolean).join('\n');
   }
 
-  async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = '', model?: string, useTools = false, jsonMode = false, userId?: number | null): Promise<string> {
+  async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = '', model?: string, useTools = false, jsonMode = false, userId?: number | null, maxTokens = 8192): Promise<string> {
     const chatMessages: Array<Record<string, unknown>> = [
       { role: 'system', content: this.buildSystemPrompt(systemPrompt) },
       ...messages,
@@ -53,9 +53,9 @@ export class ClaudeService {
     };
     // o3/o4 models use max_completion_tokens, others use max_tokens
     if (isO3) {
-      requestOpts['max_completion_tokens'] = 8192;
+      requestOpts['max_completion_tokens'] = maxTokens;
     } else {
-      requestOpts['max_tokens'] = 8192;
+      requestOpts['max_tokens'] = maxTokens;
     }
 
     if (useTools) {
@@ -89,6 +89,12 @@ export class ClaudeService {
         messages: chatMessages,
       } as Parameters<typeof this.client.chat.completions.create>[0]);
       message = response.choices[0]?.message;
+    }
+
+    // Упёрлись в потолок вывода — ответ оборван на полуслове. Раньше это уходило
+    // молча, и конспект часовой встречи просто заканчивался на середине.
+    if (response.choices[0]?.finish_reason === 'length') {
+      console.warn(`[ai] ответ обрезан лимитом вывода (${maxTokens} токенов, модель ${selectedModel}) — часть содержимого потеряна`);
     }
 
     // Log usage
@@ -181,14 +187,22 @@ ${text}`;
     const notesPrompt = this.getNotesPrompt(meetingType, context);
     const qaPrompt = this.getQaPrompt(meetingType, context);
 
+    // Подробный конспект часовой встречи не влезал в дефолтные 8192 токена вывода
+    // и обрывался на полуслове — вместе с задачами из последней части разговора.
+    // У gpt-4.1-mini потолок вывода 32768, берём половину с запасом.
+    const SUMMARY_MAX_TOKENS = 16384;
+
     const [notes, qa] = await Promise.all([
-      this.chat([{ role: 'user', content: notesPrompt }], '', 'gpt-4.1-mini'),
-      this.chat([{ role: 'user', content: qaPrompt }], '', 'gpt-4.1-mini'),
+      this.chat([{ role: 'user', content: notesPrompt }], '', 'gpt-4.1-mini', false, false, null, SUMMARY_MAX_TOKENS),
+      this.chat([{ role: 'user', content: qaPrompt }], '', 'gpt-4.1-mini', false, false, null, SUMMARY_MAX_TOKENS),
     ]);
 
     // Extract unique tasks/actions — deduplicate
     let actions: string | undefined;
     try {
+      // 10 000 символов покрывали примерно две трети конспекта часовой встречи —
+      // задачи из последней части в этот запрос просто не попадали. 60 000 заведомо
+      // больше, чем может выдать модель при SUMMARY_MAX_TOKENS.
       const actionsLabel = meetingType === 'lecture' ? 'учебные задачи' : meetingType === 'interview' ? 'задачи и инсайты к применению' : 'задачи и обязательства';
       const actionsResp = await this.chat([{ role: 'user', content: `Из двух документов ниже извлеки ВСЕ уникальные ${actionsLabel}. Убери дубли. Каждая задача — одна строка с чекбоксом.
 
@@ -198,10 +212,10 @@ ${text}`;
 Если одна и та же задача встречается в обоих документах — оставь ОДНУ, более подробную версию.
 
 ДОКУМЕНТ 1 (Notes):
-${notes.slice(0, 10000)}
+${notes.slice(0, 60000)}
 
 ДОКУМЕНТ 2 (Q&A):
-${qa.slice(0, 10000)}` }], '', 'gpt-4.1-mini');
+${qa.slice(0, 60000)}` }], '', 'gpt-4.1-mini', false, false, null, SUMMARY_MAX_TOKENS);
       if (actionsResp.trim()) actions = actionsResp;
     } catch {}
 
