@@ -1056,13 +1056,17 @@ BHAG (Большая Дерзкая Цель на год):
         const buffer = require('fs').readFileSync(tmpFile);
         let transcript: string;
 
+        // Без await здесь лежал Promise, и следующая же строка падала на .trim().
+        // Команда /transcribe <ссылка> — единственный путь для файлов тяжелее 20 МБ,
+        // пока не поднят локальный Bot API, и она не работала вовсе.
         if (isLocalWhisperAvailable()) {
-          transcript = transcribeLocal(buffer, 'download.mp3');
+          transcript = await transcribeLocal(buffer, 'download.mp3');
         } else {
           const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
           const file = new File([buffer], 'audio.mp3', { type: 'audio/mpeg' });
           const result = await openai.audio.transcriptions.create({ model: 'whisper-1', file, language: 'ru' });
-          transcript = result.text;
+          const { sanitizeTranscript } = require('./transcript-sanitize');
+          transcript = sanitizeTranscript(result.text).text;
         }
 
         // Cleanup
@@ -1843,7 +1847,7 @@ BHAG (Большая Дерзкая Цель на год):
         const fileSizeMb = (doc.file_size ?? 0) / (1024 * 1024);
         // Local Bot API server removes 20MB limit; only block if no local API
         if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
-          await ctx.reply(`⚠️ Файл слишком большой (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
+          await ctx.reply(`⚠️ Файл ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 500 МБ.`);
           return;
         }
         if (fileSizeMb > 20) {
@@ -1913,7 +1917,7 @@ BHAG (Большая Дерзкая Цель на год):
         const audio = ctx.message.audio;
         const fileSizeMb = (audio.file_size ?? 0) / (1024 * 1024);
         if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
-          await ctx.reply(`⚠️ Аудио слишком большое (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
+          await ctx.reply(`⚠️ Аудио ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 500 МБ.`);
           return;
         }
         const tgId = ctx.from?.id ?? 0;
@@ -1964,7 +1968,7 @@ BHAG (Большая Дерзкая Цель на год):
         const video = ctx.message.video;
         const fileSizeMb = (video.file_size ?? 0) / (1024 * 1024);
         if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
-          await ctx.reply(`⚠️ Видео слишком большое (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
+          await ctx.reply(`⚠️ Видео ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 500 МБ.`);
           return;
         }
         const tgId = ctx.from?.id ?? 0;

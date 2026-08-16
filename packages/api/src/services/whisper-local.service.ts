@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
 import * as crypto from 'crypto';
+import { sanitizeTranscript, transcriptQuality } from './transcript-sanitize';
 
 const WHISPER_CLI = '/opt/whisper.cpp/build/bin/whisper-cli';
 const WHISPER_MODEL = '/opt/whisper.cpp/models/ggml-small.bin';
@@ -343,14 +344,39 @@ function runCommand(cmd: string, args: string[], timeoutMs: number): Promise<voi
  * Transcribe audio buffer using local whisper.cpp (FREE, no API calls).
  * ASYNC — does not block Node.js event loop, so other API requests keep flowing.
  */
+/**
+ * Сообщает, что расшифровка идёт на запасной, заметно более слабой модели.
+ * Шлётся не чаще раза в час, чтобы серия загрузок не превратилась в спам.
+ */
+let lastDegradedNotice = 0;
+function notifyDegraded(reason: string): void {
+  console.warn(`[transcribe] ДЕГРАДАЦИЯ: ${reason}. Использую whisper.cpp (модель small) — качество будет заметно хуже.`);
+  const HOUR = 3600_000;
+  const now = Date.now();
+  if (now - lastDegradedNotice < HOUR) return;
+  lastDegradedNotice = now;
+  try {
+    const { telegramService } = require('./telegram.service');
+    void telegramService.notify(
+      `⚠️ <b>Транскрибация деградировала</b>\n${reason}\n\nИдёт запасной путь whisper.cpp (small), качество хуже. Проверь контейнер transcribe-service.`
+    );
+  } catch {}
+}
+
 export async function transcribeLocal(buffer: Buffer, filename: string): Promise<string> {
   // Prefer the faster-whisper microservice; fall back to whisper.cpp if it's down.
-  if (await isTranscribeServiceAvailable()) {
+  const serviceUp = await isTranscribeServiceAvailable();
+  if (serviceUp) {
     try {
       return await transcribeViaService(buffer, filename);
     } catch (err) {
       console.warn('[transcribe] service failed, falling back to whisper.cpp:', err instanceof Error ? err.message : err);
+      notifyDegraded('микросервис ответил ошибкой: ' + (err instanceof Error ? err.message : 'unknown'));
     }
+  } else {
+    // Тихая деградация на слабую модель однажды стоила четырёх дней плохих
+    // расшифровок: снаружи всё выглядело работающим. Теперь про это узнают.
+    notifyDegraded('микросервис faster-whisper не отвечает (' + TRANSCRIBE_SERVICE_URL + ')');
   }
 
   const tmpDir = os.tmpdir();
@@ -379,6 +405,10 @@ export async function transcribeLocal(buffer: Buffer, filename: string): Promise
       '-m', WHISPER_MODEL,
       '-f', wavPath,
       '-l', 'ru',
+      // По умолчанию whisper.cpp тащит текст предыдущего окна промптом в следующее.
+      // Стоит модели раз выдать «[Музыка]», как заглушка подкрепляет сама себя до
+      // конца файла — именно так фолбэк 13.08 съел половину полуторачасовой записи.
+      '-mc', '0',
       '--no-timestamps',
       '-otxt',
       '-of', outputBase,
@@ -386,7 +416,27 @@ export async function transcribeLocal(buffer: Buffer, filename: string): Promise
 
     // 3. Read output
     if (!fs.existsSync(txtPath)) throw new Error('Whisper output file not found');
-    const transcript = fs.readFileSync(txtPath, 'utf-8').trim();
+    const raw = fs.readFileSync(txtPath, 'utf-8').trim();
+
+    // whisper.cpp на нераспознаваемом участке скатывается в петлю из служебных
+    // меток. `-mc 0` не даёт ей заводиться, чистка убирает то, что всё же прошло.
+    const cleaned = sanitizeTranscript(raw);
+    if (cleaned.loopDetected) {
+      console.warn(`[transcribe] петля-галлюцинация в фолбэке, вычищено ${cleaned.removedUnits} фрагментов`);
+    }
+    const transcript = cleaned.text;
+
+    // Плотность речи: слишком мало символов на минуту — распознавание провалилось,
+    // даже если текст на вид приличный. Именно этой проверки не хватило 10 августа.
+    const durationSec = await probeDurationSeconds(wavPath);
+    const quality = transcriptQuality(transcript, durationSec || null);
+    if (quality.suspicious) {
+      console.warn(
+        `[transcribe] подозрительно мало текста: ${quality.chars} символов на ` +
+        `${Math.round(durationSec / 60)} мин (${quality.charsPerMinute} симв/мин)`
+      );
+      notifyDegraded(`распознано всего ${quality.charsPerMinute} симв/мин при норме ~700 — вероятна потеря содержимого`);
+    }
 
     // Log
     try {
