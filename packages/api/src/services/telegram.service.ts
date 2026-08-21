@@ -8,6 +8,7 @@ import { IngestService } from './ingest.service';
 import { ClaudeService } from './claude.service';
 import OpenAI from 'openai';
 import { moscowDateString, moscowDateTimeString } from '../utils/time';
+import { fetchBufferWithRetry, retryAsync, describeFetchError } from '../utils/fetch-retry';
 import { generateBundle, findProjectByName } from './bundle.service';
 import { generateAllFormats } from './converter.service';
 import { DraftSession } from './draft-session';
@@ -54,9 +55,23 @@ export class TelegramService {
       }
       // Fallback: try URL-based download
     }
-    const fileLink = await ctx.telegram.getFileLink(fileId);
-    const response = await fetch(fileLink.href);
-    return Buffer.from(await response.arrayBuffer());
+    // Исходящая сеть этого сервера до api.telegram.org нестабильна: замер
+    // 20.08.2026 дал 2 провала из 30 запросов (ETIMEDOUT, ~7%). Раньше обе
+    // стадии делались одной попыткой, поэтому разовый сетевой чих превращался
+    // в «❌ Ошибка: fetch failed» — примерно каждая четырнадцатая отправка аудио.
+    // Повторяем обе: и получение ссылки (telegraf, node-fetch), и саму докачку.
+    const fileLink = await retryAsync<{ href: string }>(() => ctx.telegram.getFileLink(fileId), {
+      attempts: 3,
+      onRetry: (n, err) =>
+        console.warn(`[telegram] getFileLink попытка ${n} не удалась: ${describeFetchError(err)}`),
+    });
+
+    return fetchBufferWithRetry(fileLink.href, {
+      attempts: 3,
+      timeoutMs: 120_000,
+      onRetry: (n, err) =>
+        console.warn(`[telegram] докачка файла, попытка ${n} не удалась: ${describeFetchError(err)}`),
+    });
   }
 
   /** Resolve internal user id from Telegram user id. Returns null if not linked — user must /login first. */
