@@ -1,0 +1,12 @@
+# Формат: расширенные регулярные выражения (ERE), сравнение без учёта регистра (grep -iE).
+# Один паттерн на строку. Строки, начинающиеся с '#', и пустые строки игнорируются.
+# Внимание: синтаксически сломанный паттерн молча отключает сам себя (grep просто не совпадёт).
+rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+(/|~/?|\$HOME/?)(\s|$)
+git\s+push\s+.*(--force|-f)\s+.*(main|master)
+git\s+push\s+.*(main|master).*(--force|-f)
+(psql|mysql|mariadb|sqlite3)\b[^|;]*DROP\s+TABLE
+curl\s+[^|]*\|\s*(sudo\s+)?(ba)?sh
+wget\s+[^|]*\|\s*(sudo\s+)?(ba)?sh
+(cat|less|more|head|tail|grep)\s+[^|]*(~|/root|/home/[a-z]+)/\.ssh(/|\s|$)
+(cat|base64|xxd|gzip)\s+[^|]*(~|/root)/secrets/[^|]*\|\s*(curl|wget|nc|ssh)
+(cat|base64)\s+[^|]*\.env[^|]*\|\s*(curl|wget|nc)

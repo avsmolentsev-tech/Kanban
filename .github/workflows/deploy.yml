@@ -1,0 +1,275 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build shared
+        run: pnpm --filter @pis/shared build
+
+      - name: Build Web
+        run: pnpm --filter @pis/web build
+
+      - name: Upload Web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist/
+          retention-days: 1
+
+      - name: Upload API source
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-src
+          path: packages/api/src/
+          retention-days: 1
+
+      - name: Upload API manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-manifest
+          path: packages/api/package.json
+          retention-days: 1
+
+      - name: Upload claude-ops-bot source
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-ops-bot
+          path: |
+            apps/claude-ops-bot/src/
+            apps/claude-ops-bot/package.json
+            apps/claude-ops-bot/tsconfig.json
+            apps/claude-ops-bot/jest.config.ts
+            apps/claude-ops-bot/.env.example
+          retention-days: 1
+
+      - name: Upload workspace manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-manifests
+          path: |
+            pnpm-workspace.yaml
+            pnpm-lock.yaml
+            package.json
+          retention-days: 1
+
+      - name: Upload shared types
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-types
+          path: packages/shared/
+          retention-days: 1
+
+      - name: Upload backup scripts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-scripts
+          path: |
+            scripts/backup-obsidian-md-to-drive.sh
+            scripts/logrotate-backup-obsidian-md
+          retention-days: 1
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download Web build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web-dist/
+
+      - name: Download API source
+        uses: actions/download-artifact@v4
+        with:
+          name: api-src
+          path: api-src/
+
+      - name: Download API manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: api-manifest
+          path: api-manifest/
+
+      - name: Download claude-ops-bot
+        uses: actions/download-artifact@v4
+        with:
+          name: claude-ops-bot
+          path: claude-ops-bot/
+
+      - name: Download workspace manifests
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace-manifests
+          path: workspace-manifests/
+
+      - name: Download backup scripts
+        uses: actions/download-artifact@v4
+        with:
+          name: backup-scripts
+          path: backup-scripts/
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Web
+        run: |
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            web-dist/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/clarity-space.ru/public_html/
+
+      - name: Deploy API source
+        run: |
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            --exclude='__tests__' \
+            api-src/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/packages/api/src/
+
+      - name: Deploy API manifest
+        run: |
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            api-manifest/package.json \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/packages/api/package.json
+
+      - name: Deploy claude-ops-bot
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            "mkdir -p /var/www/kanban-app/apps/claude-ops-bot"
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            --exclude='node_modules' \
+            --exclude='dist' \
+            --exclude='.env' \
+            claude-ops-bot/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/apps/claude-ops-bot/
+
+      - name: Download shared types
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-types
+          path: shared-types/
+
+      - name: Deploy shared types
+        run: |
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            --exclude='node_modules' \
+            shared-types/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/packages/shared/
+
+      - name: Deploy workspace manifests
+        run: |
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            workspace-manifests/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/kanban-app/
+
+      - name: Install deps on server
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            "cd /var/www/kanban-app && pnpm install --no-frozen-lockfile"
+
+      - name: Restart API
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "bash -lc '
+            if pm2 describe kanban-api > /dev/null 2>&1; then
+              pm2 restart kanban-api
+            else
+              cd /var/www/kanban-app
+              pm2 start ecosystem.config.cjs 2>/dev/null || pm2 start \"npx tsx packages/api/src/index.ts\" --name kanban-api --cwd /var/www/kanban-app/packages/api
+            fi
+            pm2 save
+          '"
+
+      - name: Start or restart claude-ops-bot
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "bash -lc '
+            if pm2 describe claude-ops-bot > /dev/null 2>&1; then
+              pm2 restart claude-ops-bot
+            else
+              pm2 start --name claude-ops-bot --cwd /var/www/kanban-app/apps/claude-ops-bot npm -- start
+            fi
+            pm2 save
+          '"
+
+      # ── Deploy to SPB (Russia) server ──
+      - name: Setup SSH for SPB
+        if: vars.DEPLOY_SPB == 'true'
+        run: |
+          echo "${{ secrets.SPB_SSH_KEY }}" > ~/.ssh/id_spb
+          chmod 600 ~/.ssh/id_spb
+          ssh-keyscan -H ${{ secrets.SPB_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Web to SPB
+        if: vars.DEPLOY_SPB == 'true'
+        run: |
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_spb" \
+            web-dist/ \
+            ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }}:/var/www/kanban-app/apps/web/dist/
+
+      - name: Deploy API source to SPB
+        if: vars.DEPLOY_SPB == 'true'
+        run: |
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_spb" \
+            --exclude='__tests__' \
+            api-src/ \
+            ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }}:/var/www/kanban-app/packages/api/src/
+
+      - name: Deploy shared types to SPB
+        if: vars.DEPLOY_SPB == 'true'
+        run: |
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_spb" \
+            --exclude='node_modules' \
+            shared-types/ \
+            ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }}:/var/www/kanban-app/packages/shared/
+
+      - name: Install deps and restart API on SPB
+        if: vars.DEPLOY_SPB == 'true'
+        run: |
+          ssh -i ~/.ssh/id_spb ${{ secrets.SPB_USER }}@${{ secrets.SPB_HOST }} "bash -lc '
+            export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+            cd /var/www/kanban-app && pnpm install --no-frozen-lockfile
+            pnpm --filter @pis/shared build
+            pm2 delete kanban-api 2>/dev/null; cd packages/api && pm2 start \"npx tsx src/index.ts\" --name kanban-api && pm2 save
+          '"
+
+      - name: Install Drive backup script + cron + logrotate
+        run: |
+          scp -i ~/.ssh/id_ed25519 backup-scripts/backup-obsidian-md-to-drive.sh \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/usr/local/bin/backup-obsidian-md-to-drive.sh
+          scp -i ~/.ssh/id_ed25519 backup-scripts/logrotate-backup-obsidian-md \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/etc/logrotate.d/backup-obsidian-md
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "bash -lc '
+            chmod 0755 /usr/local/bin/backup-obsidian-md-to-drive.sh
+            chmod 0644 /etc/logrotate.d/backup-obsidian-md
+            mkdir -p /var/lib/backup-obsidian
+            ( crontab -l 2>/dev/null | grep -v backup-obsidian-md-to-drive ; echo \"15 3 * * * /usr/local/bin/backup-obsidian-md-to-drive.sh\" ) | crontab -
+            touch /var/log/backup-obsidian-md.log
+            chmod 0644 /var/log/backup-obsidian-md.log
+          '"

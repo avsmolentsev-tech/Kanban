@@ -1,0 +1,564 @@
+import { useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
+import { useLangStore } from '../store/lang.store';
+import {
+  Mic, Columns3, Bot, Flame, CalendarDays, Link2,
+  Users, Lightbulb, BarChart3, ArrowRight,
+  Sparkles, CheckCircle2, Zap, Target, FileText,
+  Brain, GanttChart, Smartphone, PenLine, BookOpen,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+
+/* ── Scroll reveal ── */
+function useReveal() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const els = root.querySelectorAll<HTMLElement>('.reveal');
+    const io = new IntersectionObserver(
+      (entries) => entries.forEach((e) => { if (e.isIntersecting) { (e.target as HTMLElement).style.animationPlayState = 'running'; io.unobserve(e.target); } }),
+      { threshold: 0.12 },
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+  return ref;
+}
+
+/* ── Feature card ── */
+function Card({ icon: Icon, title, desc, delay }: { icon: LucideIcon; title: string; desc: string; delay: number }) {
+  return (
+    <div className="reveal group relative bg-white/70 dark:bg-white/[0.04] backdrop-blur-md rounded-2xl p-6 border border-gray-200/60 dark:border-white/[0.06] hover:border-indigo-300/60 dark:hover:border-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/[0.04] transition-all duration-300 cursor-pointer" style={{ animationDelay: `${delay}ms` }}>
+      <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/20 dark:to-purple-500/20 flex items-center justify-center mb-4 group-hover:from-indigo-500/20 group-hover:to-purple-500/20 transition-colors duration-300">
+        <Icon size={22} className="text-indigo-600 dark:text-indigo-400" strokeWidth={1.8} />
+      </div>
+      <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white mb-1.5">{title}</h3>
+      <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{desc}</p>
+    </div>
+  );
+}
+
+/* ── iPhone mockup with widget ── */
+function IPhoneMockup({ t }: { t: (ru: string, en: string) => string }) {
+  const AppIcon = ({ color, label, badge }: { color: string; label: string; badge?: number }) => (
+    <div className="flex flex-col items-center gap-0.5">
+      <div className="relative">
+        <div className={`w-[38px] h-[38px] rounded-[10px] ${color} shadow-sm`} />
+        {badge && <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 flex items-center justify-center"><span className="text-[6px] text-white font-bold">{badge}</span></div>}
+      </div>
+      <span className="text-[7px] text-white/70">{label}</span>
+    </div>
+  );
+
+  return (
+    <div className="relative select-none">
+      {/* iPhone frame */}
+      <div className="w-[220px] h-[440px] rounded-[32px] bg-gradient-to-b from-gray-800 to-gray-900 p-[6px] shadow-2xl shadow-black/30">
+        {/* Screen */}
+        <div className="w-full h-full rounded-[26px] bg-gradient-to-br from-amber-700/90 via-amber-800/80 to-amber-900/90 overflow-hidden relative">
+          {/* Status bar */}
+          <div className="flex items-center justify-between px-5 pt-2.5 text-[8px] text-white font-semibold">
+            <span>00:07</span>
+            <div className="w-16 h-4 bg-black rounded-full" />
+            <div className="flex items-center gap-0.5">
+              <span>LTE</span>
+              <div className="w-4 h-2.5 rounded-sm border border-white/60 flex items-center justify-end pr-[1px]"><div className="w-[60%] h-1.5 rounded-[1px] bg-green-400" /></div>
+            </div>
+          </div>
+
+          {/* Home screen content */}
+          <div className="px-3 pt-3">
+            {/* Widget + top icons row */}
+            <div className="flex gap-2 mb-3">
+              {/* Clarity Space Widget */}
+              <div className="w-[100px] h-[100px] rounded-[16px] bg-gradient-to-br from-[#1e1b4b] to-[#312e81] p-2.5 flex flex-col justify-between flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1">
+                    <div className="w-3.5 h-3.5 rounded-[4px] bg-indigo-500 flex items-center justify-center"><span className="text-[5px] font-bold text-white">CS</span></div>
+                    <span className="text-[7px] font-semibold text-white/90">Clarity</span>
+                  </div>
+                  <span className="text-[6px] text-white/40">21.05</span>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-amber-400/80" />
+                    <span className="text-[6px] text-white/70">{t('3 задачи', '3 tasks')}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <CalendarDays size={7} className="text-white/50" />
+                    <span className="text-[6px] text-white/60 truncate">{t('Встреча...', 'Meeting...')}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Flame size={7} className="text-orange-400/70" />
+                    <span className="text-[6px] text-white/60">{t('0/5', '0/5')}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Top right icons */}
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                <AppIcon color="bg-white" label="Calendar" />
+                <AppIcon color="bg-gradient-to-br from-gray-700 to-gray-900" label="Camera" />
+                <AppIcon color="bg-green-500" label="WhatsApp" />
+                <AppIcon color="bg-gradient-to-br from-blue-400 to-blue-600" label="Telegram" badge={3} />
+              </div>
+            </div>
+
+            {/* App grid rows */}
+            <div className="grid grid-cols-4 gap-x-3 gap-y-2.5">
+              <AppIcon color="bg-gradient-to-br from-pink-400 via-yellow-300 to-purple-500" label="Photos" />
+              <AppIcon color="bg-white" label="Clock" />
+              <AppIcon color="bg-blue-500" label="GCal" />
+              <AppIcon color="bg-gradient-to-br from-purple-600 to-indigo-800" label="MAX" />
+              <AppIcon color="bg-blue-600" label="App Store" badge={469} />
+              <AppIcon color="bg-yellow-100" label="Notes" />
+              <AppIcon color="bg-red-500" label="Gmail" badge={53} />
+              <AppIcon color="bg-gradient-to-br from-green-500 to-teal-600" label="Chrome" />
+              <AppIcon color="bg-gray-600" label="Settings" badge={2} />
+              <AppIcon color="bg-yellow-400" label="Yandex Go" />
+              <AppIcon color="bg-gray-900" label="ChatGPT" />
+              <AppIcon color="bg-gradient-to-br from-orange-400 to-amber-600" label="Claude" />
+            </div>
+          </div>
+
+          {/* Dock */}
+          <div className="absolute bottom-2 left-3 right-3">
+            <div className="bg-white/10 backdrop-blur-md rounded-[18px] px-3 py-2 flex justify-around">
+              <div className="w-[34px] h-[34px] rounded-[9px] bg-green-500 shadow-sm" />
+              <div className="w-[34px] h-[34px] rounded-[9px] bg-gradient-to-b from-blue-400 to-blue-600 shadow-sm" />
+              <div className="w-[34px] h-[34px] rounded-[9px] bg-green-400 shadow-sm" />
+              <div className="w-[34px] h-[34px] rounded-[9px] bg-gray-200 shadow-sm" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================ */
+export function LandingPage() {
+  const { t } = useLangStore();
+  const wrapRef = useReveal();
+
+  return (
+    <div ref={wrapRef} className="min-h-screen bg-[#fafbff] dark:bg-[#0a0c1a] text-gray-900 dark:text-gray-100 overflow-x-hidden selection:bg-indigo-500/20">
+      {/* ── Inline anim styles ── */}
+      <style>{`
+        .reveal { opacity:0; transform:translateY(20px); animation:fadeUp .65s ease forwards; animation-play-state:paused; }
+        @keyframes fadeUp { to { opacity:1; transform:translateY(0); } }
+        @keyframes float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-12px); } }
+        @keyframes orbit1 { 0% { transform:translate(0,0) scale(1); } 25% { transform:translate(80px,40px) scale(1.05); } 50% { transform:translate(-30px,80px) scale(0.95); } 75% { transform:translate(-70px,-20px) scale(1.02); } 100% { transform:translate(0,0) scale(1); } }
+        @keyframes orbit2 { 0% { transform:translate(0,0) scale(1); } 33% { transform:translate(-60px,50px) scale(1.08); } 66% { transform:translate(40px,-40px) scale(0.96); } 100% { transform:translate(0,0) scale(1); } }
+        @keyframes orbit3 { 0% { transform:translate(0,0); } 50% { transform:translate(50px,-60px); } 100% { transform:translate(0,0); } }
+        @keyframes pulse-glow { 0%,100% { opacity:0.4; transform:scale(1); } 50% { opacity:0.7; transform:scale(1.1); } }
+      `}</style>
+
+      {/* ── Header ── */}
+      <header className="sticky top-0 z-50 bg-[#fafbff]/80 dark:bg-[#0a0c1a]/80 backdrop-blur-xl border-b border-gray-200/40 dark:border-white/[0.04]">
+        <div className="max-w-6xl mx-auto flex items-center justify-between px-5 py-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+              <span className="text-white font-bold text-xs">CS</span>
+            </div>
+            <span className="font-bold text-base tracking-tight">Clarity Space</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="hidden sm:block text-sm text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer">
+              {t('Возможности', 'Features')}
+            </button>
+            <Link to="/login" className="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer">
+              {t('Войти', 'Sign In')}
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Hero ── */}
+      <section className="relative min-h-[92vh] flex items-center justify-center px-5 overflow-hidden">
+        {/* Animated circles */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full bg-indigo-400/15 dark:bg-indigo-500/[0.07] blur-[40px]" style={{ animation: 'orbit1 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+          <div className="absolute -top-20 left-[15%] w-[450px] h-[450px] rounded-full bg-purple-400/12 dark:bg-purple-500/[0.06] blur-[60px]" style={{ animation: 'orbit2 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+          <div className="absolute bottom-[-5%] -left-32 w-[550px] h-[550px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.06] blur-[80px]" style={{ animation: 'orbit3 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+          <div className="absolute bottom-[20%] right-[10%] w-[350px] h-[350px] rounded-full bg-pink-400/[0.08] dark:bg-pink-500/[0.04] blur-[70px]" style={{ animation: 'orbit1 38s cubic-bezier(0.45,0,0.55,1) infinite reverse' }} />
+          {/* Glowing accent dot */}
+          <div className="absolute top-[30%] right-[25%] w-3 h-3 rounded-full bg-indigo-500/40 dark:bg-indigo-400/30" style={{ animation: 'pulse-glow 4s ease-in-out infinite' }} />
+          <div className="absolute bottom-[40%] left-[20%] w-2 h-2 rounded-full bg-purple-500/30 dark:bg-purple-400/20" style={{ animation: 'pulse-glow 5s ease-in-out infinite 1s' }} />
+        </div>
+
+        <div className="relative z-10 max-w-5xl mx-auto flex flex-col lg:flex-row items-center gap-16">
+          {/* Left: copy */}
+          <div className="flex-1 text-center lg:text-left">
+            <div className="reveal inline-flex items-center gap-2 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-full px-4 py-1.5 text-sm font-medium mb-6">
+              <Sparkles size={15} />
+              {t('AI-ассистент для предпринимателей', 'AI Assistant for Entrepreneurs')}
+            </div>
+
+            <h1 className="reveal text-[40px] sm:text-[56px] lg:text-[64px] font-extrabold tracking-tight leading-[1.08]" style={{ animationDelay: '80ms' }}>
+              {t('Ни одна идея', 'No idea')}<br />
+              <span className="bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">
+                {t('не потеряется', 'gets lost')}
+              </span>
+            </h1>
+
+            <p className="reveal mt-6 text-base sm:text-lg text-gray-500 dark:text-gray-400 leading-relaxed max-w-xl" style={{ animationDelay: '160ms' }}>
+              {t(
+                'Записывай встречи и лекции, ставь задачи голосом, отслеживай привычки и цели. AI создаёт резюме и план на день. Всё связано через Obsidian — люди, проекты, идеи.',
+                'Record meetings and lectures, set tasks by voice, track habits and goals. AI creates summaries and daily plans. Everything connected via Obsidian — people, projects, ideas.',
+              )}
+            </p>
+
+            <div className="reveal mt-8 flex flex-col sm:flex-row items-center lg:items-start gap-3" style={{ animationDelay: '240ms' }}>
+              <Link to="/login" className="inline-flex items-center gap-2 px-7 py-3.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl text-[15px] font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-lg shadow-gray-900/10 dark:shadow-white/10">
+                {t('Начать бесплатно', 'Start for Free')}
+                <ArrowRight size={17} />
+              </Link>
+              <button onClick={() => document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' })} className="inline-flex items-center gap-2 px-7 py-3.5 border border-gray-300 dark:border-gray-700 rounded-xl text-[15px] font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.04] transition-colors cursor-pointer">
+                {t('Как это работает', 'How It Works')}
+              </button>
+            </div>
+          </div>
+
+          {/* Right: real iPhone screenshot */}
+          <div className="reveal flex-shrink-0 hidden md:block" style={{ animationDelay: '300ms' }}>
+            <div className="relative">
+              {/* iPhone frame */}
+              <div className="w-[240px] rounded-[36px] bg-gradient-to-b from-gray-700 to-gray-900 p-[7px] shadow-2xl shadow-black/30">
+                <div className="rounded-[29px] overflow-hidden">
+                  <img src="/img/iphone-widget.jpg" alt="Clarity Space iPhone widget" className="w-full" loading="eager" />
+                </div>
+              </div>
+              {/* Caption */}
+              <div className="text-center mt-4">
+                <span className="text-xs text-gray-400 dark:text-gray-500">{t('Виджет на рабочем столе iPhone', 'iPhone home screen widget')}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Value props ── */}
+      <section className="py-20 px-5 border-t border-gray-200/50 dark:border-white/[0.04]">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-10 text-center">
+          {[
+            { icon: Mic, t1: t('Записал — готово', 'Record — Done'), t2: t('Встречи, лекции, идеи — надиктуй, AI сделает задачи и резюме', 'Meetings, lectures, ideas — dictate, AI creates tasks and summary') },
+            { icon: Link2, t1: t('Всё связано', 'Everything Connected'), t2: t('Люди, проекты, идеи, встречи — Obsidian граф связей', 'People, projects, ideas, meetings — Obsidian knowledge graph') },
+            { icon: Smartphone, t1: t('Работает везде', 'Works Everywhere'), t2: t('Telegram-бот, iPhone виджет, веб — всегда под рукой', 'Telegram bot, iPhone widget, web — always at hand') },
+          ].map((v, i) => (
+            <div key={v.t1} className="reveal" style={{ animationDelay: `${i * 100}ms` }}>
+              <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/15 mb-5">
+                <v.icon size={26} className="text-white" strokeWidth={1.6} />
+              </div>
+              <h3 className="text-lg font-bold mb-2">{v.t1}</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed max-w-xs mx-auto">{v.t2}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Mobile / Swipe ── */}
+      <section className="relative py-20 px-5 overflow-hidden">
+        <div className="pointer-events-none absolute top-[30%] -left-20 w-[350px] h-[350px] rounded-full bg-purple-400/[0.05] dark:bg-purple-500/[0.03] blur-[70px]" style={{ animation: 'orbit3 36s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="pointer-events-none absolute bottom-[10%] right-[-5%] w-[300px] h-[300px] rounded-full bg-indigo-400/[0.06] dark:bg-indigo-500/[0.03] blur-[60px]" style={{ animation: 'orbit1 42s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-10 relative">
+          {/* Two phones */}
+          <div className="reveal flex gap-4 flex-shrink-0">
+            {/* Swipe screenshot */}
+            <div className="w-[170px] sm:w-[190px] rounded-[28px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20">
+              <div className="rounded-[23px] overflow-hidden">
+                <img src="/img/swipe-tasks.jpg" alt={t('Свайп задач', 'Swipe tasks')} className="w-full" loading="lazy" />
+              </div>
+            </div>
+            {/* Widget screenshot */}
+            <div className="w-[170px] sm:w-[190px] rounded-[28px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20 hidden sm:block -mt-6">
+              <div className="rounded-[23px] overflow-hidden">
+                <img src="/img/iphone-widget.jpg" alt={t('Виджет iPhone', 'iPhone widget')} className="w-full" loading="lazy" />
+              </div>
+            </div>
+          </div>
+          {/* Copy */}
+          <div className="reveal flex-1 text-center md:text-left" style={{ animationDelay: '120ms' }}>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">
+              {t('Свайпай задачи как в Tinder', 'Swipe Tasks like Tinder')}
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+              {t(
+                'Вправо — готово. Влево — следующая. Виджет на рабочем столе iPhone показывает задачи, встречи и привычки. Telegram-бот всегда под рукой — голосом или текстом.',
+                'Right — done. Left — next. iPhone home screen widget shows tasks, meetings and habits. Telegram bot always at hand — voice or text.',
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2.5 justify-center md:justify-start">
+              {[
+                t('Свайп задач', 'Task Swipe'),
+                t('iPhone виджет', 'iPhone Widget'),
+                t('Telegram-бот', 'Telegram Bot'),
+                t('PWA', 'PWA'),
+                t('Голосовые команды', 'Voice Commands'),
+              ].map(tag => (
+                <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── AI Chat ── */}
+      <section className="relative py-20 px-5 bg-gray-50/60 dark:bg-white/[0.015] overflow-hidden">
+        <div className="pointer-events-none absolute top-[20%] right-[-8%] w-[400px] h-[400px] rounded-full bg-indigo-400/[0.06] dark:bg-indigo-500/[0.03] blur-[70px]" style={{ animation: 'orbit2 38s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-5xl mx-auto flex flex-col-reverse md:flex-row items-center gap-10 relative">
+          {/* Copy */}
+          <div className="reveal flex-1 text-center md:text-left">
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">
+              {t('AI-ассистент, который понимает контекст', 'AI Assistant That Understands Context')}
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+              {t(
+                'Спроси что обсуждали на встрече, какие задачи в работе, попроси сделать бандл по проекту. Ассистент знает твои задачи, встречи, людей — и отвечает по делу. Голосом или текстом.',
+                'Ask what was discussed at the meeting, what tasks are in progress, request a project bundle. The assistant knows your tasks, meetings, people — and answers to the point. Voice or text.',
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2.5 justify-center md:justify-start">
+              {[
+                t('Контекст задач', 'Task Context'),
+                t('Голосовые команды', 'Voice Commands'),
+                t('Подсказки-кнопки', 'Quick Actions'),
+                t('Мотивация', 'Motivation'),
+              ].map(tag => (
+                <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+          {/* Phone screenshot */}
+          <div className="reveal flex-shrink-0" style={{ animationDelay: '120ms' }}>
+            <div className="w-[190px] sm:w-[210px] rounded-[30px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20">
+              <div className="rounded-[25px] overflow-hidden">
+                <img src="/img/ai-chat.jpg" alt={t('AI чат с ассистентом', 'AI chat assistant')} className="w-full" loading="lazy" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Goals Mind Map ── */}
+      <section className="relative py-20 px-5 overflow-hidden">
+        <div className="pointer-events-none absolute top-[10%] right-[-5%] w-[400px] h-[400px] rounded-full bg-rose-400/[0.05] dark:bg-rose-500/[0.03] blur-[70px]" style={{ animation: 'orbit3 36s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-10 relative">
+          {/* Phone screenshot */}
+          <div className="reveal flex-shrink-0">
+            <div className="w-[190px] sm:w-[210px] rounded-[30px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20">
+              <div className="rounded-[25px] overflow-hidden">
+                <img src="/img/goals-mindmap.jpg" alt={t('Mind Map целей', 'Goals Mind Map')} className="w-full" loading="lazy" />
+              </div>
+            </div>
+          </div>
+          {/* Copy */}
+          <div className="reveal flex-1 text-center md:text-left" style={{ animationDelay: '120ms' }}>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">
+              {t('Большие цели — на карте', 'Big Goals — on a Map')}
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+              {t(
+                'Поставь BHAG — большую амбициозную цель. AI разложит её на milestones, задачи и встречи. Интерактивная Mind Map показывает путь от идеи к результату. Видишь прогресс в реальном времени.',
+                'Set a BHAG — a big ambitious goal. AI decomposes it into milestones, tasks and meetings. Interactive Mind Map shows the path from idea to result. See progress in real time.',
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2.5 justify-center md:justify-start">
+              {[
+                t('BHAG', 'BHAG'),
+                t('AI-декомпозиция', 'AI Decomposition'),
+                t('Mind Map', 'Mind Map'),
+                t('Прогресс', 'Progress'),
+              ].map(tag => (
+                <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Habits ── */}
+      <section className="relative py-20 px-5 overflow-hidden">
+        <div className="pointer-events-none absolute bottom-[15%] -left-16 w-[350px] h-[350px] rounded-full bg-orange-400/[0.05] dark:bg-orange-500/[0.03] blur-[70px]" style={{ animation: 'orbit1 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-10 relative">
+          {/* Phone screenshot */}
+          <div className="reveal flex-shrink-0">
+            <div className="w-[190px] sm:w-[210px] rounded-[30px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20">
+              <div className="rounded-[25px] overflow-hidden">
+                <img src="/img/habits.jpg" alt={t('Трекер привычек', 'Habit tracker')} className="w-full" loading="lazy" />
+              </div>
+            </div>
+          </div>
+          {/* Copy */}
+          <div className="reveal flex-1 text-center md:text-left" style={{ animationDelay: '120ms' }}>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">
+              {t('Привычки, которые работают', 'Habits That Stick')}
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+              {t(
+                'Тапни — и привычка отмечена. Стрики мотивируют не пропускать. Бот напоминает в нужное время и хвалит за прогресс. Статистика за месяц — видишь, как растёшь.',
+                'Tap — and the habit is marked. Streaks motivate you not to skip. Bot reminds at the right time and praises progress. Monthly stats — see how you grow.',
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2.5 justify-center md:justify-start">
+              {[
+                t('Стрики', 'Streaks'),
+                t('Напоминания', 'Reminders'),
+                t('Статистика', 'Statistics'),
+                t('Lucide-иконки', 'Lucide Icons'),
+              ].map(tag => (
+                <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Stats ── */}
+      <section className="relative py-20 px-5 bg-gray-50/60 dark:bg-white/[0.015] overflow-hidden">
+        <div className="pointer-events-none absolute bottom-[20%] right-[-8%] w-[350px] h-[350px] rounded-full bg-cyan-400/[0.05] dark:bg-cyan-500/[0.03] blur-[70px]" style={{ animation: 'orbit2 40s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-5xl mx-auto flex flex-col-reverse md:flex-row items-center gap-10 relative">
+          {/* Copy */}
+          <div className="reveal flex-1 text-center md:text-left">
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">
+              {t('Аналитика, которая мотивирует', 'Analytics That Motivate')}
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
+              {t(
+                'Velocity — сколько задач закрываешь в неделю. Burndown — сколько осталось и когда финиш. Экспорт в CSV для глубокого анализа. Видишь свой темп и корректируешь курс.',
+                'Velocity — how many tasks you close per week. Burndown — how many left and when you finish. CSV export for deep analysis. See your pace and adjust course.',
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2.5 justify-center md:justify-start">
+              {[
+                t('Velocity', 'Velocity'),
+                t('Burndown', 'Burndown'),
+                t('Экспорт CSV', 'CSV Export'),
+                t('Прогноз', 'Forecast'),
+              ].map(tag => (
+                <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+          {/* Phone screenshot */}
+          <div className="reveal flex-shrink-0" style={{ animationDelay: '120ms' }}>
+            <div className="w-[190px] sm:w-[210px] rounded-[30px] bg-gradient-to-b from-gray-700 to-gray-900 p-[5px] shadow-2xl shadow-black/20">
+              <div className="rounded-[25px] overflow-hidden">
+                <img src="/img/stats.jpg" alt={t('Статистика продуктивности', 'Productivity statistics')} className="w-full" loading="lazy" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Features ── */}
+      <section id="features" className="relative py-24 px-5 bg-gray-50/60 dark:bg-white/[0.015] overflow-hidden">
+        {/* Animated circles */}
+        <div className="pointer-events-none absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full bg-indigo-400/[0.07] dark:bg-indigo-500/[0.04] blur-[60px]" style={{ animation: 'orbit2 35s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="pointer-events-none absolute bottom-[-10%] -left-40 w-[400px] h-[400px] rounded-full bg-purple-400/[0.06] dark:bg-purple-500/[0.03] blur-[80px]" style={{ animation: 'orbit3 40s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-6xl mx-auto relative">
+          <div className="reveal text-center mb-14">
+            <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">{t('Возможности', 'Features')}</p>
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">{t('Всё для продуктивности', 'All-in-one Productivity')}</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {([
+              { icon: Mic, t: t('Транскрибация встреч', 'Meeting Transcription'), d: t('Аудио → резюме, задачи, Q&A. Встречи и лекции.', 'Audio → summary, tasks, Q&A. Meetings and lectures.') },
+              { icon: Bot, t: t('AI-ассистент в Telegram', 'AI Telegram Assistant'), d: t('Голосовые команды, брифинг, мотивация каждый день.', 'Voice commands, briefing, daily motivation.') },
+              { icon: Columns3, t: t('Kanban-доска', 'Kanban Board'), d: t('Drag & drop, приоритеты, подзадачи, исполнители.', 'Drag & drop, priorities, subtasks, assignees.') },
+              { icon: GanttChart, t: t('Диаграмма Ганта', 'Gantt Chart'), d: t('Проекты на временной шкале. Сроки и зависимости.', 'Projects on timeline. Deadlines and dependencies.') },
+              { icon: CalendarDays, t: t('Умный календарь', 'Smart Calendar'), d: t('День, 3 дня, неделя, месяц. Google Calendar.', 'Day, 3-day, week, month. Google Calendar.') },
+              { icon: Target, t: t('Цели и BHAG', 'Goals & BHAG'), d: t('AI-декомпозиция больших целей. Mind map.', 'AI decomposition of big goals. Mind map.') },
+              { icon: Flame, t: t('Привычки', 'Habits'), d: t('Стрики, статистика, напоминания.', 'Streaks, statistics, reminders.') },
+              { icon: FileText, t: t('Документы', 'Documents'), d: t('Notion-стиль. Вложенные страницы, проекты.', 'Notion-style. Nested pages, projects.') },
+              { icon: Users, t: t('CRM контактов', 'Contact CRM'), d: t('Люди, компании, история встреч.', 'People, companies, meeting history.') },
+              { icon: Lightbulb, t: t('Банк идей', 'Idea Bank'), d: t('Сохраняй идеи, привязывай к проектам.', 'Save ideas, link to projects.') },
+              { icon: Link2, t: t('Obsidian', 'Obsidian'), d: t('Wiki-ссылки, граф связей, vault.', 'Wiki-links, knowledge graph, vault.') },
+              { icon: BarChart3, t: t('Дашборд', 'Dashboard'), d: t('План дня, аналитика, прогресс проектов.', 'Daily plan, analytics, project progress.') },
+              { icon: Brain, t: t('AI-коуч', 'AI Coach'), d: t('Мотивация, план на день, настроение.', 'Motivation, daily plan, mood.') },
+              { icon: PenLine, t: t('Дневник', 'Journal'), d: t('Фокус дня, настроение, заметки.', 'Daily focus, mood, notes.') },
+              { icon: BookOpen, t: t('Статистика', 'Statistics'), d: t('Продуктивность, активности, привычки.', 'Productivity, activities, habits.') },
+            ]).map((f, i) => (
+              <Card key={f.t} icon={f.icon} title={f.t} desc={f.d} delay={(i % 3) * 80} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── How it works ── */}
+      <section id="how" className="relative py-24 px-5 overflow-hidden">
+        <div className="pointer-events-none absolute top-[20%] right-[-10%] w-[400px] h-[400px] rounded-full bg-violet-400/[0.06] dark:bg-violet-500/[0.03] blur-[70px]" style={{ animation: 'orbit1 32s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+        <div className="max-w-4xl mx-auto relative">
+          <div className="reveal text-center mb-14">
+            <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">{t('Как это работает', 'How It Works')}</p>
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">{t('Записал — и забыл', 'Record — and Forget')}</h2>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {[
+              { n: '01', icon: Mic, t: t('Запиши', 'Record'), d: t('Встречу, лекцию, идею', 'Meeting, lecture, idea') },
+              { n: '02', icon: Bot, t: t('Отправь боту', 'Send to Bot'), d: t('Голосом или файлом в TG', 'Voice or file in TG') },
+              { n: '03', icon: Sparkles, t: t('AI обработает', 'AI Processes'), d: t('Задачи, резюме, проект', 'Tasks, summary, project') },
+              { n: '04', icon: CheckCircle2, t: t('Работай', 'Work'), d: t('Kanban, календарь, TG', 'Kanban, calendar, TG') },
+            ].map((s, i) => (
+              <div key={s.n} className="reveal text-center" style={{ animationDelay: `${i * 100}ms` }}>
+                <div className="relative z-10 mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/15 mb-4">
+                  <s.icon size={28} className="text-white" strokeWidth={1.6} />
+                </div>
+                <div className="text-[11px] font-bold text-indigo-500 dark:text-indigo-400 mb-0.5">{s.n}</div>
+                <h3 className="text-base font-semibold mb-1">{s.t}</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{s.d}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Pricing ── */}
+      <section className="py-24 px-5 bg-gray-50/60 dark:bg-white/[0.015]">
+        <div className="max-w-md mx-auto text-center">
+          <h2 className="reveal text-3xl sm:text-4xl font-bold tracking-tight mb-10">{t('Бесплатно', 'Free')}</h2>
+          <div className="reveal bg-white/80 dark:bg-white/[0.04] backdrop-blur-md rounded-2xl p-8 border border-gray-200/60 dark:border-white/[0.06] shadow-xl shadow-gray-200/20 dark:shadow-none" style={{ animationDelay: '80ms' }}>
+            <div className="inline-flex items-center gap-1.5 bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 rounded-full px-3.5 py-1 text-sm font-medium mb-4">
+              <Zap size={15} />
+              {t('Все функции', 'All Features')}
+            </div>
+            <div className="text-5xl font-extrabold mb-1">0 <span className="text-base font-normal text-gray-400">/ {t('мес', 'mo')}</span></div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{t('AI, транскрибация, бот, Obsidian — без ограничений.', 'AI, transcription, bot, Obsidian — no limits.')}</p>
+            <Link to="/login" className="inline-flex items-center gap-2 px-7 py-3 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity cursor-pointer">
+              {t('Начать', 'Get Started')}
+              <ArrowRight size={15} />
+            </Link>
+            <p className="mt-5 text-xs text-gray-400">{t('Pro и Enterprise — скоро', 'Pro & Enterprise — coming soon')}</p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ── */}
+      <footer className="border-t border-gray-200/50 dark:border-white/[0.04] py-8 px-5">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400 dark:text-gray-500">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-md bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+              <span className="text-white font-bold text-[7px]">CS</span>
+            </div>
+            <span>&copy; 2026 Clarity Space</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <Link to="/terms" className="hover:text-indigo-500 transition-colors cursor-pointer">{t('Условия', 'Terms')}</Link>
+            <Link to="/privacy" className="hover:text-indigo-500 transition-colors cursor-pointer">{t('Конфиденциальность', 'Privacy')}</Link>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}

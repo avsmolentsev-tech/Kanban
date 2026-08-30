@@ -1,0 +1,712 @@
+import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { apiGet, apiPatch, apiPost } from '../api/client';
+import { useAuthStore, type AuthUser } from '../store/auth.store';
+import { useLangStore } from '../store/lang.store';
+import { User, Lock, MessageCircle, Save, CheckCircle, Smartphone, Copy, Check, HelpCircle, X, Code, Sparkles, Zap, Crown, Link2, Unlink, RefreshCw } from 'lucide-react';
+
+function getWidgetScript(key: string) {
+  return `const API_KEY = '${key}';
+const API = 'https://clarity-space.ru/v1/widget/today?key=' + API_KEY;
+
+const req = new Request(API);
+const data = await req.loadJSON();
+
+if (!data.success) {
+  const w = new ListWidget();
+  w.backgroundColor = new Color('#0f172a');
+  const err = w.addText('Invalid API key');
+  err.font = Font.systemFont(12);
+  err.textColor = new Color('#ef4444');
+  Script.setWidget(w);
+  w.presentSmall();
+  Script.complete();
+  return;
+}
+
+const d = data.data;
+const w = new ListWidget();
+w.backgroundColor = new Color('#0f172a');
+w.setPadding(12, 12, 12, 12);
+
+var header = w.addText('CS');
+header.font = Font.boldSystemFont(14);
+header.textColor = Color.white();
+w.addSpacer(4);
+
+if (d.focus) {
+  var f = w.addText('\\uD83C\\uDFAF ' + d.focus);
+  f.font = Font.mediumSystemFont(11);
+  f.textColor = new Color('#fbbf24');
+  f.lineLimit = 2;
+  w.addSpacer(3);
+} else if (d.weekly_goal) {
+  var g = w.addText('\\uD83C\\uDFAF ' + d.weekly_goal);
+  g.font = Font.mediumSystemFont(11);
+  g.textColor = new Color('#a78bfa');
+  g.lineLimit = 2;
+  w.addSpacer(3);
+}
+
+if (d.overdue_count > 0) {
+  var o = w.addText('\\u26A0 Overdue: ' + d.overdue_count);
+  o.font = Font.systemFont(11);
+  o.textColor = new Color('#ef4444');
+  w.addSpacer(2);
+}
+
+if (d.meetings && d.meetings.length > 0) {
+  for (var mi = 0; mi < Math.min(d.meetings.length, 2); mi++) {
+    var row = w.addText(d.meetings[mi].title);
+    row.font = Font.mediumSystemFont(11);
+    row.textColor = new Color('#93c5fd');
+    row.lineLimit = 1;
+  }
+  w.addSpacer(2);
+}
+
+for (var ti = 0; ti < Math.min(d.tasks.length, 4); ti++) {
+  var trow = w.addText('\\u2022 ' + d.tasks[ti].title);
+  trow.font = Font.systemFont(11);
+  trow.textColor = new Color('#e2e8f0');
+  trow.lineLimit = 1;
+}
+
+if (d.habits && d.habits.length > 0) {
+  w.addSpacer(4);
+  var done = d.habits.filter(function(h) { return h.done; }).length;
+  var total = d.habits.length;
+  var hText = w.addText(done + '/' + total + ' habits');
+  hText.font = Font.systemFont(10);
+  hText.textColor = new Color('#f97316');
+}
+
+w.addSpacer();
+var footer = w.addText(d.date);
+footer.font = Font.systemFont(9);
+footer.textColor = new Color('#64748b');
+footer.rightAlignText();
+
+Script.setWidget(w);
+w.presentSmall();
+Script.complete();`;
+}
+
+interface PlanData {
+  plan: 'free' | 'pro_max';
+  ai_used_today: number;
+  ai_limit: number | null;
+}
+
+function PlanSection() {
+  const { t } = useLangStore();
+  const [data, setData] = useState<PlanData | null>(null);
+  const [switching, setSwitching] = useState(false);
+
+  const load = async () => {
+    try {
+      const res = await apiGet<PlanData>('/auth/plan');
+      setData(res);
+    } catch {}
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const switchPlan = async (plan: 'free' | 'pro_max') => {
+    if (switching || data?.plan === plan) return;
+    setSwitching(true);
+    try {
+      await apiPost('/auth/plan', { plan });
+      await load();
+    } catch {} finally {
+      setSwitching(false);
+    }
+  };
+
+  if (!data) return null;
+
+  const isFree = data.plan === 'free';
+  const isProMax = data.plan === 'pro_max';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay: 0.1 }}
+      className="space-y-3"
+    >
+      {/* Section header + badge */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Crown size={14} className="text-indigo-500" />
+          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            {t('Тариф', 'Plan')}
+          </span>
+        </div>
+        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isProMax ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+          {isProMax ? 'Pro Max' : 'Free'}
+        </span>
+      </div>
+
+      {/* AI usage counter */}
+      <div className="p-3 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50">
+        <div className="flex items-center gap-2">
+          <Sparkles size={14} className="text-amber-500" />
+          <span className="text-sm text-gray-700 dark:text-gray-200">
+            {isProMax
+              ? t('AI: Безлимит', 'AI: Unlimited')
+              : `AI: ${data.ai_used_today} / ${data.ai_limit ?? 50} ${t('сообщений сегодня', 'messages today')}`}
+          </span>
+        </div>
+        {isFree && data.ai_limit && (
+          <div className="mt-2 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.min((data.ai_used_today / data.ai_limit) * 100, 100)}%` }}
+              transition={{ duration: 0.6, ease: 'easeOut' }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Plan cards */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* Free card */}
+        <motion.div
+          whileHover={{ y: -4, scale: 1.01 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+          className={`relative p-4 rounded-2xl border-2 transition-colors cursor-pointer ${isFree ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-gray-100 dark:border-gray-700/50 bg-white dark:bg-gray-800/80'}`}
+          onClick={() => switchPlan('free')}
+        >
+          {isFree && (
+            <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center">
+              <Check size={12} className="text-white" />
+            </div>
+          )}
+          <div className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-2">Free</div>
+          <ul className="space-y-1.5 text-xs text-gray-500 dark:text-gray-400 mb-3">
+            <li className="flex items-start gap-1.5">
+              <Zap size={10} className="text-gray-400 mt-0.5 flex-shrink-0" />
+              {t('50 AI-сообщений/день', '50 AI messages/day')}
+            </li>
+            <li className="flex items-start gap-1.5">
+              <Zap size={10} className="text-gray-400 mt-0.5 flex-shrink-0" />
+              {t('Локальная транскрибация', 'Local transcription')}
+            </li>
+          </ul>
+          <div className="text-sm font-bold text-gray-800 dark:text-gray-100">
+            {t('Бесплатно', 'Free')}
+          </div>
+        </motion.div>
+
+        {/* Pro Max card */}
+        <motion.div
+          whileHover={{ y: -4, scale: 1.01 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+          className={`relative p-4 rounded-2xl border-2 transition-colors cursor-pointer ${isProMax ? 'border-indigo-500 bg-gradient-to-br from-indigo-50/80 to-purple-50/80 dark:from-indigo-900/30 dark:to-purple-900/30' : 'border-gray-100 dark:border-gray-700/50 bg-white dark:bg-gray-800/80'}`}
+          onClick={() => switchPlan('pro_max')}
+        >
+          {isProMax && (
+            <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full flex items-center justify-center">
+              <Check size={12} className="text-white" />
+            </div>
+          )}
+          <div className="text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">Pro Max</div>
+          <ul className="space-y-1.5 text-xs text-gray-500 dark:text-gray-400 mb-3">
+            <li className="flex items-start gap-1.5">
+              <Sparkles size={10} className="text-indigo-400 mt-0.5 flex-shrink-0" />
+              {t('Безлимит AI', 'Unlimited AI')}
+            </li>
+            <li className="flex items-start gap-1.5">
+              <Sparkles size={10} className="text-indigo-400 mt-0.5 flex-shrink-0" />
+              {t('Быстрая транскрибация (OpenAI)', 'Fast transcription (OpenAI)')}
+            </li>
+          </ul>
+          <div className="text-sm font-bold text-gray-500 dark:text-gray-400">
+            {t('Скоро', 'Coming soon')}
+          </div>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+function WidgetKeySection() {
+  const { t } = useLangStore();
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
+  const [guideTab, setGuideTab] = useState<'ios' | 'android'>('ios');
+
+  const generate = async () => {
+    setLoading(true);
+    try {
+      const res = await apiGet<{ api_key: string }>('/widget/key');
+      setApiKey(res.api_key);
+    } catch {} finally { setLoading(false); }
+  };
+
+  const copy = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => { setCopied(label); setTimeout(() => setCopied(null), 2000); });
+  };
+
+  return (
+    <>
+    <div className="p-4 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50">
+      <div className="flex items-center gap-2 mb-2">
+        <Smartphone size={14} className="text-indigo-500" />
+        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('Виджет iPhone', 'iPhone Widget')}</span>
+      </div>
+      {apiKey ? (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">{t('API ключ для Scriptable виджета:', 'API key for Scriptable widget:')}</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-[11px] bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded-xl text-gray-700 dark:text-gray-300 truncate">{apiKey}</code>
+            <button onClick={() => copy(apiKey, 'key')} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 transition-colors">
+              {copied === 'key' ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+            </button>
+          </div>
+          <button onClick={() => copy(getWidgetScript(apiKey), 'script')}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">
+            {copied === 'script' ? <><Check size={12} className="text-green-500" /> {t('Скопировано!', 'Copied!')}</> : <><Code size={12} /> {t('Скопировать промт для виджета', 'Copy widget prompt')}</>}
+          </button>
+          <button onClick={() => setShowGuide(true)}
+            className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+            <HelpCircle size={12} /> {t('Как настроить?', 'How to set up?')}
+          </button>
+        </div>
+      ) : (
+        <div>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
+            {t('Установи Scriptable из App Store, получи API ключ и добавь виджет на домашний экран.', 'Install Scriptable from App Store, get API key and add widget to home screen.')}
+          </p>
+          <button onClick={generate} disabled={loading}
+            className="w-full py-2 px-3 rounded-xl text-sm font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 disabled:opacity-50">
+            {loading ? '...' : t('Получить API ключ', 'Get API key')}
+          </button>
+        </div>
+      )}
+    </div>
+
+    {showGuide && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowGuide(false)}>
+        <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">{t('Настройка виджета', 'Widget Setup')}</h3>
+            <button onClick={() => setShowGuide(false)} className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400">
+              <X size={16} />
+            </button>
+          </div>
+          {/* Tab switcher */}
+          <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 mb-1">
+            <button onClick={() => setGuideTab('ios')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${guideTab === 'ios' ? 'bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>
+              iPhone
+            </button>
+            <button onClick={() => setGuideTab('android')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${guideTab === 'android' ? 'bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>
+              Android
+            </button>
+          </div>
+
+          {guideTab === 'ios' ? (
+            <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold">1</span>
+                <p>{t('Установи приложение Scriptable из App Store', 'Install Scriptable app from App Store')}</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold">2</span>
+                <p>{t('Нажми "Скопировать промт для виджета", открой Scriptable, создай новый скрипт и вставь код', 'Tap "Copy widget prompt", open Scriptable, create new script and paste the code')}</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold">3</span>
+                <p>{t('Запусти скрипт один раз, затем добавь виджет Scriptable на домашний экран (зажми экран \u2192 "+" \u2192 Scriptable)', 'Run the script once, then add Scriptable widget to home screen (long press \u2192 "+" \u2192 Scriptable)')}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-bold">1</span>
+                <p>{t('Установи "Web Widget" или "Webpage Widget" из Google Play', 'Install "Web Widget" or "Webpage Widget" from Google Play')}</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-bold">2</span>
+                <p>{t('Скопируй ссылку ниже и вставь как URL виджета', 'Copy the link below and paste as widget URL')}</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-bold">3</span>
+                <p>{t('Добавь виджет на домашний экран (зажми экран \u2192 "Виджеты" \u2192 Web Widget)', 'Add widget to home screen (long press \u2192 "Widgets" \u2192 Web Widget)')}</p>
+              </div>
+              {apiKey && (
+                <button onClick={() => copy('https://clarity-space.ru/v1/widget/render?key=' + apiKey, 'android')}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-medium bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors">
+                  {copied === 'android' ? <><Check size={12} /> {t('Скопировано!', 'Copied!')}</> : <><Copy size={12} /> {t('Скопировать ссылку для Android', 'Copy Android widget URL')}</>}
+                </button>
+              )}
+            </div>
+          )}
+          <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              {t('Фокус дня берётся из Дневника. Заполни поле "На чём сфокусируюсь" \u2014 оно появится на виджете.', 'Focus of the day comes from Journal. Fill in the focus field \u2014 it will appear on the widget.')}
+            </p>
+          </div>
+          <button onClick={() => setShowGuide(false)}
+            className="w-full mt-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-colors">
+            {t('Понятно', 'Got it')}
+          </button>
+        </div>
+      </div>
+    )}
+    </>
+  );
+}
+
+interface IntegrationStatus {
+  google: boolean;
+  yandex: boolean;
+  todoist: boolean;
+}
+
+function IntegrationsSection() {
+  const { t } = useLangStore();
+  const [status, setStatus] = useState<IntegrationStatus>({ google: false, yandex: false, todoist: false });
+  const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [todoistToken, setTodoistToken] = useState('');
+  const [showTodoistInput, setShowTodoistInput] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchStatuses = async () => {
+      const [g, y, td] = await Promise.allSettled([
+        apiGet<{ connected: boolean }>('/google-calendar/status'),
+        apiGet<{ connected: boolean }>('/yandex-calendar/status'),
+        apiGet<{ connected: boolean }>('/todoist/status'),
+      ]);
+      setStatus({
+        google: g.status === 'fulfilled' ? g.value.connected : false,
+        yandex: y.status === 'fulfilled' ? y.value.connected : false,
+        todoist: td.status === 'fulfilled' ? td.value.connected : false,
+      });
+    };
+    fetchStatuses();
+  }, []);
+
+  const disconnect = async (service: 'google' | 'yandex' | 'todoist') => {
+    const urlMap = { google: '/google-calendar/disconnect', yandex: '/yandex-calendar/disconnect', todoist: '/todoist/disconnect' };
+    setLoading(prev => ({ ...prev, [service]: true }));
+    try {
+      await apiPost(urlMap[service]);
+      setStatus(prev => ({ ...prev, [service]: false }));
+    } catch {} finally {
+      setLoading(prev => ({ ...prev, [service]: false }));
+    }
+  };
+
+  const connectOAuth = (path: string) => {
+    const token = localStorage.getItem('auth_token');
+    window.open(`${window.location.origin}/v1/${path}/auth?token=${token}`, '_blank');
+  };
+
+  const connectTodoist = async () => {
+    if (!todoistToken.trim()) return;
+    setLoading(prev => ({ ...prev, todoist: true }));
+    try {
+      await apiPost('/todoist/connect', { token: todoistToken.trim() });
+      setStatus(prev => ({ ...prev, todoist: true }));
+      setShowTodoistInput(false);
+      setTodoistToken('');
+    } catch {} finally {
+      setLoading(prev => ({ ...prev, todoist: false }));
+    }
+  };
+
+  const syncTodoist = async () => {
+    setLoading(prev => ({ ...prev, todoistSync: true }));
+    setSyncResult(null);
+    try {
+      const res = await apiPost<{ imported: number; exported: number }>('/todoist/sync');
+      setSyncResult(`↓${res.imported} ↑${res.exported}`);
+      setTimeout(() => setSyncResult(null), 4000);
+    } catch {} finally {
+      setLoading(prev => ({ ...prev, todoistSync: false }));
+    }
+  };
+
+  const StatusDot = ({ connected }: { connected: boolean }) => (
+    <span className={`inline-block w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-gray-400'}`} />
+  );
+
+  const integrations = [
+    {
+      key: 'google' as const,
+      icon: '\u{1F4C5}',
+      name: 'Google Calendar',
+      connected: status.google,
+      instruction: t(
+        'Подключите Google Calendar чтобы видеть события в календаре Clarity Space. Нажмите «Подключить» и разрешите доступ к календарю.',
+        'Connect Google Calendar to see events in Clarity Space calendar. Click "Connect" and grant calendar access.'
+      ),
+      onConnect: () => connectOAuth('google-calendar'),
+      onDisconnect: () => disconnect('google'),
+    },
+    {
+      key: 'yandex' as const,
+      icon: '\u{1F7E1}',
+      name: t('Яндекс Календарь', 'Yandex Calendar'),
+      connected: status.yandex,
+      instruction: t(
+        'Подключите Яндекс Календарь для синхронизации событий. Нажмите «Подключить» и войдите в Яндекс аккаунт.',
+        'Connect Yandex Calendar to sync events. Click "Connect" and sign in to your Yandex account.'
+      ),
+      onConnect: () => connectOAuth('yandex-calendar'),
+      onDisconnect: () => disconnect('yandex'),
+    },
+    {
+      key: 'todoist' as const,
+      icon: '\u2705',
+      name: 'Todoist',
+      connected: status.todoist,
+      instruction: t(
+        'Двусторонняя синхронизация задач с Todoist. Получите API-токен в Настройках Todoist \u2192 Интеграции \u2192 Developer.',
+        'Two-way task sync with Todoist. Get your API token in Todoist Settings \u2192 Integrations \u2192 Developer.'
+      ),
+      onConnect: () => setShowTodoistInput(true),
+      onDisconnect: () => disconnect('todoist'),
+    },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay: 0.05 }}
+      className="space-y-3"
+    >
+      <div className="flex items-center gap-2">
+        <Link2 size={14} className="text-indigo-500" />
+        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+          {t('Интеграции', 'Integrations')}
+        </span>
+      </div>
+
+      {integrations.map((svc) => (
+        <motion.div
+          key={svc.key}
+          whileHover={{ y: -2 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+          className="p-4 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50 space-y-2"
+        >
+          {/* Header row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">{svc.icon}</span>
+              <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">{svc.name}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <StatusDot connected={svc.connected} />
+              <span className={`text-xs ${svc.connected ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>
+                {svc.connected ? t('Подключён', 'Connected') : t('Не подключён', 'Not connected')}
+              </span>
+            </div>
+          </div>
+
+          {/* Instruction */}
+          <p className="text-xs text-gray-500 dark:text-gray-400">{svc.instruction}</p>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 pt-1">
+            {svc.connected ? (
+              <>
+                <button
+                  onClick={svc.onDisconnect}
+                  disabled={!!loading[svc.key]}
+                  className="flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 transition-colors disabled:opacity-50"
+                >
+                  <Unlink size={12} />
+                  {loading[svc.key] ? '...' : t('Отключить', 'Disconnect')}
+                </button>
+                {svc.key === 'todoist' && (
+                  <button
+                    onClick={syncTodoist}
+                    disabled={!!loading['todoistSync']}
+                    className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={loading['todoistSync'] ? 'animate-spin' : ''} />
+                    {syncResult ?? (loading['todoistSync'] ? '...' : t('Синхронизировать', 'Sync'))}
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                onClick={svc.onConnect}
+                disabled={!!loading[svc.key]}
+                className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors disabled:opacity-50"
+              >
+                <Link2 size={12} />
+                {loading[svc.key] ? '...' : t('Подключить', 'Connect')}
+              </button>
+            )}
+          </div>
+
+          {/* Todoist token input */}
+          {svc.key === 'todoist' && showTodoistInput && !svc.connected && (
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="text"
+                value={todoistToken}
+                onChange={(e) => setTodoistToken(e.target.value)}
+                placeholder="API token"
+                className="flex-1 px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700/50 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+              <button
+                onClick={connectTodoist}
+                disabled={!!loading['todoist'] || !todoistToken.trim()}
+                className="px-3 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl disabled:opacity-50 transition-colors"
+              >
+                {loading['todoist'] ? '...' : 'OK'}
+              </button>
+              <button
+                onClick={() => { setShowTodoistInput(false); setTodoistToken(''); }}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+        </motion.div>
+      ))}
+    </motion.div>
+  );
+}
+
+export function ProfilePage() {
+  const { t } = useLangStore();
+  const { user, updateUser, logout } = useAuthStore();
+  const [name, setName] = useState(user?.name ?? '');
+  const [password, setPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    setSaving(true);
+    setError('');
+    setSaved(false);
+    try {
+      const body: Record<string, string> = {};
+      if (name.trim() && name !== user?.name) body['name'] = name.trim();
+      if (password.length >= 6) body['password'] = password;
+      if (Object.keys(body).length === 0) { setSaving(false); return; }
+
+      const res = await apiPatch<{ token: string; user: AuthUser }>('/auth/me', body);
+      updateUser(res.user);
+      localStorage.setItem('auth_token', res.token);
+      setPassword('');
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Ошибка', 'Error'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: 'easeOut' }} className="relative overflow-hidden flex flex-col h-full pb-20">
+      <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
+      <div className="relative z-10 px-4 pt-5 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+            <User size={20} className="text-white" />
+          </div>
+          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Профиль', 'Profile')}</h1>
+        </div>
+      </div>
+
+      <div className="relative z-10 flex-1 overflow-auto px-4 space-y-6 max-w-lg">
+        {/* Avatar & info */}
+        <div className="flex items-center gap-4 p-4 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-indigo-500/20">
+            {(user?.name || user?.email || '?')[0]?.toUpperCase()}
+          </div>
+          <div>
+            <div className="font-semibold text-gray-800 dark:text-gray-100">{user?.name}</div>
+            <div className="text-sm text-gray-400">{user?.email}</div>
+            <div className="text-xs text-indigo-500 mt-0.5">{user?.role === 'admin' ? 'Admin' : 'User'}</div>
+          </div>
+        </div>
+
+        {/* Name */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+            <User size={12} /> {t('Имя', 'Name')}
+          </label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-2xl bg-gray-50 dark:bg-gray-700/50 text-gray-800 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+          />
+        </div>
+
+        {/* Password */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+            <Lock size={12} /> {t('Новый пароль', 'New password')}
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={t('Минимум 6 символов', 'Minimum 6 characters')}
+            className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-2xl bg-gray-50 dark:bg-gray-700/50 text-gray-800 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+          />
+        </div>
+
+        {/* iPhone Widget */}
+        <WidgetKeySection />
+
+        {/* Integrations */}
+        <IntegrationsSection />
+
+        {/* Plan / Тариф */}
+        <PlanSection />
+
+        {/* Telegram ID */}
+        <div className="p-4 bg-white dark:bg-gray-800/80 rounded-2xl border border-gray-100 dark:border-gray-700/50">
+          <div className="flex items-center gap-2 mb-2">
+            <MessageCircle size={14} className="text-blue-500" />
+            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Telegram</span>
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {t(
+              'Привязка через бот: откройте @MyBestKanban_bot → /start → "У меня есть аккаунт"',
+              'Link via bot: open @MyBestKanban_bot → /start → "I have an account"'
+            )}
+          </p>
+        </div>
+
+        {error && (
+          <div className="text-red-500 text-sm text-center bg-red-50 dark:bg-red-900/20 rounded-xl py-2">
+            {error}
+          </div>
+        )}
+
+        {/* Save button */}
+        <button
+          onClick={save}
+          disabled={saving}
+          className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-semibold disabled:opacity-50 shadow-lg shadow-indigo-500/25 transition-all flex items-center justify-center gap-2"
+        >
+          {saved ? <><CheckCircle size={16} /> {t('Сохранено!', 'Saved!')}</>
+           : saving ? '...'
+           : <><Save size={16} /> {t('Сохранить', 'Save')}</>}
+        </button>
+      </div>
+    </motion.div>
+  );
+}

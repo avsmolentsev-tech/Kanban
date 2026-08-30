@@ -1,0 +1,345 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Hide FAB and Pomodoro when SlidePanel is open */
+body.slide-panel-open .fab-voice,
+body.slide-panel-open .fab-pomodoro { display: none !important; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Dark scrollbars */
+html.dark ::-webkit-scrollbar { width: 6px; height: 6px; }
+html.dark ::-webkit-scrollbar-track { background: transparent; }
+html.dark ::-webkit-scrollbar-thumb { background: rgb(55 65 81); border-radius: 3px; }
+html.dark ::-webkit-scrollbar-thumb:hover { background: rgb(75 85 99); }
+html.dark { scrollbar-color: rgb(55 65 81) transparent; }
+
+html, body {
+  font-family: 'Onest', -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Telegram Mini App safe areas */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Smooth touch scrolling + block Chrome back/forward swipe gesture */
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Prevent pull-to-refresh in Telegram WebView */
+html, body {
+  overscroll-behavior: none;
+}
+
+/* Fix iOS keyboard pushing viewport */
+html {
+  height: 100%;
+  overflow: hidden;
+}
+body {
+  height: 100%;
+  overflow: hidden;
+}
+#root {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Dark theme body */
+html.dark body {
+  background: rgb(17 24 39);
+  color: rgb(243 244 246);
+}
+
+/* Sticky page headers on all pages */
+.page-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: white;
+}
+html.dark .page-header {
+  background: rgb(31 41 55);
+}
+
+/* Dark mode global overrides for cards and backgrounds */
+html.dark .bg-white { background-color: rgb(31 41 55) !important; }
+html.dark .bg-gray-50 { background-color: rgb(17 24 39) !important; }
+html.dark .bg-gray-100 { background-color: rgb(31 41 55) !important; }
+html.dark .text-gray-800 { color: rgb(243 244 246) !important; }
+html.dark .text-gray-700 { color: rgb(229 231 235) !important; }
+html.dark .text-gray-600 { color: rgb(209 213 219) !important; }
+html.dark .text-gray-500 { color: rgb(156 163 175) !important; }
+html.dark .text-gray-400 { color: rgb(107 114 128) !important; }
+html.dark .border-gray-200 { border-color: rgb(55 65 81) !important; }
+html.dark .border-gray-100 { border-color: rgb(55 65 81) !important; }
+html.dark .border-gray-300 { border-color: rgb(75 85 99) !important; }
+html.dark .bg-gray-200 { background-color: rgb(55 65 81) !important; }
+html.dark .hover\:bg-gray-100:hover { background-color: rgb(55 65 81) !important; }
+html.dark .hover\:bg-gray-50:hover { background-color: rgb(55 65 81) !important; }
+html.dark .hover\:bg-gray-200:hover { background-color: rgb(75 85 99) !important; }
+html.dark .hover\:border-gray-300:hover { border-color: rgb(107 114 128) !important; }
+html.dark .hover\:border-gray-400:hover { border-color: rgb(107 114 128) !important; }
+
+/* Dark mode overrides for colored backgrounds */
+html.dark .bg-indigo-50 { background-color: rgba(99 102 241 / 0.15) !important; }
+html.dark .bg-indigo-100 { background-color: rgba(99 102 241 / 0.2) !important; }
+html.dark .bg-red-50 { background-color: rgba(239 68 68 / 0.15) !important; }
+html.dark .bg-red-100 { background-color: rgba(239 68 68 / 0.2) !important; }
+html.dark .bg-blue-50 { background-color: rgba(59 130 246 / 0.15) !important; }
+html.dark .bg-green-50 { background-color: rgba(34 197 94 / 0.15) !important; }
+html.dark .bg-yellow-100 { background-color: rgba(234 179 8 / 0.2) !important; }
+
+/* Dark mode overrides for colored text */
+html.dark .text-gray-900 { color: rgb(249 250 251) !important; }
+html.dark .text-red-700 { color: rgb(252 165 165) !important; }
+html.dark .text-red-500 { color: rgb(248 113 113) !important; }
+html.dark .text-blue-700 { color: rgb(147 197 253) !important; }
+html.dark .text-green-800 { color: rgb(134 239 172) !important; }
+html.dark .text-green-700 { color: rgb(134 239 172) !important; }
+html.dark .text-green-600 { color: rgb(74 222 128) !important; }
+html.dark .text-yellow-700 { color: rgb(253 224 71) !important; }
+html.dark .text-indigo-600 { color: rgb(165 180 252) !important; }
+html.dark .text-indigo-700 { color: rgb(165 180 252) !important; }
+
+/* Dark mode overrides for colored borders */
+html.dark .border-indigo-200 { border-color: rgba(99 102 241 / 0.4) !important; }
+html.dark .border-indigo-300 { border-color: rgba(99 102 241 / 0.5) !important; }
+html.dark .border-red-200 { border-color: rgba(239 68 68 / 0.4) !important; }
+html.dark .border-blue-200 { border-color: rgba(59 130 246 / 0.4) !important; }
+html.dark .border-green-200 { border-color: rgba(34 197 94 / 0.4) !important; }
+html.dark .border-green-300 { border-color: rgba(34 197 94 / 0.5) !important; }
+
+/* Dark mode overrides for hover on colored backgrounds */
+html.dark .hover\:bg-indigo-50:hover { background-color: rgba(99 102 241 / 0.2) !important; }
+html.dark .hover\:bg-red-50:hover { background-color: rgba(239 68 68 / 0.2) !important; }
+
+/* Dark mode for divide colors */
+html.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: rgb(55 65 81) !important; }
+
+/* Dark mode for border-dashed elements (only gray ones, not colored) */
+html.dark .border-dashed.border-gray-300 { border-color: rgb(75 85 99) !important; }
+html.dark .border-dashed.border-gray-200 { border-color: rgb(75 85 99) !important; }
+
+/* Dark mode shadow overrides */
+html.dark .shadow-red-200 { --tw-shadow-color: transparent !important; }
+
+/* Dark mode ring colors */
+html.dark .ring-white { --tw-ring-color: rgb(31 41 55) !important; }
+
+/* Dark mode input/select/textarea backgrounds */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.dark\:bg-gray-900),
+html.dark select:not(.dark\:bg-gray-900),
+html.dark textarea:not(.dark\:bg-gray-900) {
+  background-color: rgb(17 24 39) !important;
+  color: rgb(243 244 246) !important;
+  border-color: rgb(55 65 81) !important;
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: rgb(107 114 128) !important;
+}
+html.dark select option {
+  background-color: rgb(17 24 39);
+  color: rgb(243 244 246);
+}
+
+/* Decorative floating circles — force GPU on iOS */
+.pointer-events-none.absolute.rounded-full {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: transform;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+/* Global circle drift animations — continuous wandering paths */
+@keyframes circleLeft {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(-60px, 30px); }
+  50%  { transform: translate(-30px, -20px); }
+  75%  { transform: translate(-80px, 10px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes circleRight {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(50px, -25px); }
+  50%  { transform: translate(20px, 30px); }
+  75%  { transform: translate(70px, -10px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes circleLeftSlow {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(-40px, -20px); }
+  50%  { transform: translate(-70px, 15px); }
+  75%  { transform: translate(-20px, -30px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes circleRightSlow {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(35px, 25px); }
+  50%  { transform: translate(65px, -15px); }
+  75%  { transform: translate(25px, 35px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* Calendar animations */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes calendarCellIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes todayPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+  50%      { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); }
+}
+@keyframes viewSlide {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Range slider styling */
+input[type="range"].zoom-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgb(229 231 235);
+  border-radius: 2px;
+  outline: none;
+}
+html.dark input[type="range"].zoom-slider {
+  background: rgb(75 85 99);
+}
+input[type="range"].zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgb(79 70 229);
+  cursor: pointer;
+}
+input[type="range"].zoom-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgb(79 70 229);
+  cursor: pointer;
+  border: none;
+}
+
+/* Tiptap editor styles */
+.tiptap {
+  outline: none;
+}
+
+.tiptap h1 { font-size: 1.75rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #1e293b; }
+.tiptap h2 { font-size: 1.35rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #334155; }
+.tiptap h3 { font-size: 1.1rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; color: #475569; }
+.tiptap p { margin-bottom: 0.5rem; color: #475569; line-height: 1.7; }
+.tiptap ul, .tiptap ol { padding-left: 1.5rem; margin-bottom: 0.5rem; color: #475569; }
+.tiptap li { margin-bottom: 0.25rem; }
+.tiptap blockquote { border-left: 3px solid #6366f1; padding-left: 1rem; margin: 0.75rem 0; color: #64748b; font-style: italic; }
+.tiptap pre { background: #f1f5f9; border-radius: 0.5rem; padding: 1rem; margin: 0.75rem 0; overflow-x: auto; }
+.tiptap code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; }
+.tiptap hr { border: none; border-top: 1px solid #e2e8f0; margin: 1.5rem 0; }
+.tiptap a { color: #6366f1; text-decoration: underline; }
+.tiptap a:hover { color: #4f46e5; }
+
+/* Tiptap dark mode */
+html.dark .tiptap h1 { color: #f1f5f9; }
+html.dark .tiptap h2 { color: #e2e8f0; }
+html.dark .tiptap h3 { color: #cbd5e1; }
+html.dark .tiptap p { color: #cbd5e1; }
+html.dark .tiptap ul, html.dark .tiptap ol { color: #cbd5e1; }
+html.dark .tiptap blockquote { color: #94a3b8; }
+html.dark .tiptap pre { background: #1e293b; }
+html.dark .tiptap hr { border-top-color: #334155; }
+html.dark .tiptap a { color: #818cf8; }
+html.dark .tiptap a:hover { color: #a5b4fc; }
+
+/* Task list (checkboxes) */
+.tiptap ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5rem; }
+.tiptap ul[data-type="taskList"] li label { margin-top: 0.15rem; }
+.tiptap ul[data-type="taskList"] li label input[type="checkbox"] {
+  appearance: none; width: 1rem; height: 1rem; border: 2px solid #6366f1; border-radius: 0.25rem;
+  cursor: pointer; background: transparent; position: relative;
+}
+.tiptap ul[data-type="taskList"] li label input[type="checkbox"]:checked {
+  background: #6366f1;
+}
+.tiptap ul[data-type="taskList"] li label input[type="checkbox"]:checked::after {
+  content: '✓'; position: absolute; top: -2px; left: 1px; color: white; font-size: 0.7rem;
+}
+.tiptap ul[data-type="taskList"] li[data-checked="true"] > div > p { text-decoration: line-through; color: #64748b; }
+
+/* Placeholder */
+.tiptap p.is-editor-empty:first-child::before {
+  color: #475569; content: attr(data-placeholder); float: left; height: 0; pointer-events: none;
+}
+
+/* Image resize */
+.image-resize-container {
+  position: relative; display: inline-block; max-width: 100%; margin: 0.5rem 0; cursor: default; outline: none;
+}
+.image-resize-container img { display: block; border-radius: 0.375rem; transition: box-shadow 0.15s; }
+.image-resize-container:hover img,
+.image-resize-container.selected img { box-shadow: 0 0 0 2px #6366f1; }
+.image-resize-handle {
+  position: absolute; right: -4px; bottom: -4px; width: 12px; height: 12px;
+  background: #6366f1; border-radius: 2px; cursor: nwse-resize; opacity: 0; transition: opacity 0.15s;
+}
+.image-resize-container:hover .image-resize-handle,
+.image-resize-container.selected .image-resize-handle { opacity: 1; }
+.image-delete-btn {
+  position: absolute; top: 4px; right: 4px; width: 24px; height: 24px;
+  background: rgba(239,68,68,0.85); color: #fff; border: none; border-radius: 50%;
+  font-size: 16px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity 0.15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.image-resize-container:hover .image-delete-btn,
+.image-resize-container.selected .image-delete-btn { opacity: 1; }
+
+/* Tables */
+.tiptap table {
+  border-collapse: collapse; width: 100%; margin: 0.5rem 0; table-layout: fixed;
+}
+.tiptap th, .tiptap td {
+  border: 1px solid #374151; padding: 6px 10px; text-align: left; vertical-align: top; min-width: 80px; position: relative;
+}
+.tiptap th {
+  background: rgba(99,102,241,0.1); font-weight: 600; color: #c7d2fe;
+}
+.tiptap td { background: transparent; }
+.tiptap .selectedCell { background: rgba(99,102,241,0.15) !important; }
+.tiptap .column-resize-handle {
+  position: absolute; right: -2px; top: 0; bottom: 0; width: 4px;
+  background: #6366f1; cursor: col-resize; z-index: 10;
+}
+.tiptap .tableWrapper { overflow-x: auto; margin: 0.5rem 0; }
+.tiptap table p { margin: 0; }
+
+/* Child document links */
+.tiptap a.child-doc-link {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px;
+  background: rgba(99,102,241,0.1); border-radius: 4px; text-decoration: none;
+  color: #818cf8; cursor: pointer; transition: background 0.15s;
+}
+.tiptap a.child-doc-link:hover { background: rgba(99,102,241,0.2); }
+
+/* Slash menu tippy */
+.tippy-box[data-theme='slash-menu'] { background: transparent; border: none; box-shadow: none; }
+.tippy-box[data-theme='slash-menu'] .tippy-content { padding: 0; }

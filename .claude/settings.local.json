@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(start \"\" \"C:/Program Files/Handy/handy.exe\")",
+      "Bash(tasklist)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\smolentsev\\\\.claude\\\\NewProject\\\\Kanban\\\\apps\\\\web\\\\public/img\")",
+      "Bash(cp \"c:\\\\Users\\\\smolentsev\\\\Downloads\\\\photo_2026-05-22_00-08-16.jpg\" \"C:\\\\Users\\\\smolentsev\\\\.claude\\\\NewProject\\\\Kanban\\\\apps\\\\web\\\\public\\\\img\\\\iphone-widget.jpg\")"
+    ]
+  }
+}
