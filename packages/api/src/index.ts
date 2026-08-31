@@ -12,6 +12,7 @@ import { telegramService } from './services/telegram.service';
 import { startNotificationScheduler } from './services/notification.service';
 import { authMiddleware } from './middleware/auth';
 import { startVaultWatcher } from './services/obsidian-sync.service';
+import { checkHealth } from './services/health.service';
 
 // Catch-all crash protection — log and keep running
 process.on('uncaughtException', (err) => {
@@ -62,8 +63,9 @@ app.use(authMiddleware);
 
 app.use('/v1', router);
 
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', ts: new Date().toISOString() });
+app.get('/health', async (_req, res) => {
+  const report = await checkHealth();
+  res.status(report.status === 'down' ? 503 : 200).json(report);
 });
 
 async function start(): Promise<void> {
