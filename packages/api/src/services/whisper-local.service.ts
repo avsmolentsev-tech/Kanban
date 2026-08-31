@@ -19,6 +19,17 @@ export function isLocalWhisperAvailable(): boolean {
 }
 
 /**
+ * Фильтр обрезки тишины для ffmpeg.
+ * Whisper на длинной тишине выдумывает текст («Музыка», «Продолжение следует»),
+ * поэтому паузы режутся ДО распознавания, а не чистятся после.
+ * stop_duration=1.5 — короткие паузы в речи сохраняются, схлопываются только длинные.
+ */
+export function buildSilenceFilter(): string {
+  return 'silenceremove=start_periods=1:start_duration=0.3:start_threshold=-45dB:' +
+    'stop_periods=-1:stop_duration=1.5:stop_threshold=-45dB';
+}
+
+/**
  * Обеззараживает имя загруженного файла перед подстановкой в путь.
  *
  * `req.file.originalname` приходит от клиента как есть, multer его не трогает.
@@ -397,8 +408,12 @@ export async function transcribeLocal(buffer: Buffer, filename: string): Promise
   };
 
   try {
-    // 1. Convert to WAV 16kHz mono (any format → wav via ffmpeg)
-    await runCommand('ffmpeg', ['-i', inputPath, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', wavPath, '-y'], 300000);
+    // 1. Convert to WAV 16kHz mono (any format → wav via ffmpeg), обрезая тишину
+    await runCommand('ffmpeg', [
+      '-i', inputPath, '-vn',
+      '-af', buildSilenceFilter(),
+      '-ar', '16000', '-ac', '1', '-f', 'wav', wavPath, '-y',
+    ], 300000);
 
     // 2. Run whisper.cpp (up to 45 min for large files)
     await runCommand(WHISPER_CLI, [
