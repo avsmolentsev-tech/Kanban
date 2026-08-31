@@ -8,11 +8,11 @@ import { query, queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
 import { ObsidianService } from '../services/obsidian.service';
-import { ClaudeService } from '../services/claude.service';
+import { ClaudeService, PII_TOKEN_NOTE } from '../services/claude.service';
 import { mdToPdf, mdToDocx } from '../services/converter.service';
 import { telegramService } from '../services/telegram.service';
 import { isLocalWhisperAvailable, isTranscribeServiceAvailable, transcribeLocal, compressForTranscription, looksLikeGarbage, safeTmpName } from '../services/whisper-local.service';
-import { redactPii, restorePii } from '../services/pii-redact';
+import { redactPii, restorePii, findResidualPiiTokens, type PiiMap } from '../services/pii-redact';
 import { config } from '../config';
 import { registerJob, completeJob, resumePendingJobs, type PendingJob } from '../services/pending-jobs';
 import OpenAI from 'openai';
@@ -23,6 +23,28 @@ const obsidian = new ObsidianService(config.vaultPath);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } }); // 500MB for video files
 const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
 const claude = new ClaudeService();
+
+// 152-ФЗ: единый системный промпт для всех путей резюмирования встречи (авто- и
+// ручное — «Сделать резюме», экспорт в Telegram/скачивание) с явной инструкцией
+// про плейсхолдеры redactPii — без неё модель, пишущая связное резюме, склонна
+// пересказывать «[УЧАСТНИК_1]» как «Участник 1», и restorePii ничего не находит.
+const SUMMARY_SYS_PROMPT = `Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды. ${PII_TOKEN_NOTE}`;
+const COMPACT_SUMMARY_SYS_PROMPT = `Ты редактор. Сделай компактное структурированное резюме встречи в markdown: цели, ключевые решения, договорённости, задачи, следующие шаги. 200-500 слов, без воды. ${PII_TOKEN_NOTE}`;
+
+/**
+ * Восстанавливает ПД в ответе модели после redactPii и предупреждает, если что-то
+ * не восстановилось (модель исказила токен сильнее, чем понимает терпимый restorePii
+ * — несуществующий номер участника, мусор внутри скобок и т.п.). В лог уходят ТОЛЬКО
+ * сами токены (`findResidualPiiTokens`), никогда значения из таблицы соответствия.
+ */
+function restorePiiAndWarn(text: string, map: PiiMap, context: string): string {
+  const restored = restorePii(text, map);
+  const residual = findResidualPiiTokens(restored);
+  if (residual.length) {
+    console.warn(`[pii] ${context}: модель не воспроизвела токен(ы) дословно, restorePii не смог их сопоставить:`, residual);
+  }
+  return restored;
+}
 
 export const meetingsRouter = Router();
 
@@ -343,13 +365,12 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
     if (autoSummarize && transcript.trim() && !isGarbage) {
       await setStatus('summarizing');
       try {
-        const sys = 'Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды.';
         // 152-ФЗ: в модель уходит только обезличенный текст. `piiMap` живёт исключительно
         // в этой переменной — она не пишется в БД, лог или поисковый индекс, и подстановка
         // реальных значений обратно в резюме делается нашим кодом ниже, без участия модели.
         const { text: redactedTranscript, map: piiMap } = redactPii(transcript);
-        const rawSummary = (await claude.chat([{ role: 'user', content: redactedTranscript }], sys, 'gpt-4.1-mini', false, false)).trim();
-        const summary = restorePii(rawSummary, piiMap);
+        const rawSummary = (await claude.chat([{ role: 'user', content: redactedTranscript }], SUMMARY_SYS_PROMPT, 'gpt-4.1-mini', false, false)).trim();
+        const summary = restorePiiAndWarn(rawSummary, piiMap, `meeting #${meetingId} auto-summary`);
         if (summary && !mergedBody.startsWith('## Ключевые решения')) {
           mergedBody = `${summary}\n\n---\n\n${mergedBody}`;
           await execute('UPDATE meetings SET summary_raw = $1, updated_at = NOW() WHERE id = $2', [mergedBody, meetingId]);
@@ -469,11 +490,14 @@ async function buildMeetingFile(meetingId: number, type: MeetingFileType, format
     const transcript = structured.transcript || '';
     body = (m.summary_raw ?? '') + (transcript ? `\n\n---\n\n## Полная транскрипция\n\n${transcript}` : '');
   } else {
-    // summary or fallback
+    // summary or fallback — используется и скачиванием файла, и отправкой в Telegram
+    // (sendMeetingToTelegram → buildMeetingFile). 152-ФЗ: транскрипт обезличивается
+    // перед отправкой в модель так же, как на пути авто-резюме при загрузке.
     const raw = (m.summary_raw ?? '').trim();
     if (!raw) throw new Error('No content');
-    const sys = 'Ты редактор. Сделай компактное структурированное резюме встречи в markdown: цели, ключевые решения, договорённости, задачи, следующие шаги. 200-500 слов, без воды.';
-    body = await claude.chat([{ role: 'user', content: raw }], sys, 'gpt-4.1-mini', false, false);
+    const { text: redactedRaw, map: piiMap } = redactPii(raw);
+    const rawBody = await claude.chat([{ role: 'user', content: redactedRaw }], COMPACT_SUMMARY_SYS_PROMPT, 'gpt-4.1-mini', false, false);
+    body = restorePiiAndWarn(rawBody, piiMap, `meeting #${meetingId} file export (${type})`);
   }
 
   const header = [
@@ -523,8 +547,13 @@ meetingsRouter.post('/:id/summarize', async (req: AuthRequest, res: Response) =>
   if (!raw) { res.status(400).json(fail('No content to summarize')); return; }
 
   try {
-    const sys = 'Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды.';
-    const summary = (await claude.chat([{ role: 'user', content: raw }], sys, 'gpt-4.1-mini', false, false)).trim();
+    // 152-ФЗ: тот же путь резюмирования, что и авто-резюме при загрузке — просто
+    // запущен пользователем вручную кнопкой «Сделать резюме». Транскрипт
+    // обезличивается перед отправкой в модель, реальные значения подставляются
+    // обратно нашим кодом до сохранения в БД и поисковый индекс.
+    const { text: redactedRaw, map: piiMap } = redactPii(raw);
+    const rawSummary = (await claude.chat([{ role: 'user', content: redactedRaw }], SUMMARY_SYS_PROMPT, 'gpt-4.1-mini', false, false)).trim();
+    const summary = restorePiiAndWarn(rawSummary, piiMap, `meeting #${id} manual summarize`);
     const separator = '\n\n---\n\n';
     const marker = '## Ключевые решения';
     const existingStart = raw.indexOf(marker);
@@ -566,12 +595,32 @@ meetingsRouter.post('/:id/regenerate-summaries', async (req: AuthRequest, res: R
   const peopleRows = await queryAll<{ name: string }>('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [id]);
   const people = peopleRows.map(p => p.name);
 
+  // 152-ФЗ: этот путь шлёт в модель не только транскрипт, но и `people` — реальные
+  // имена контактов из таблицы `people`, а не то, что модель сама распознала в речи.
+  // Обезличиваем обоих через один вызов redactPii, объединив служебным разделителем
+  // (маловероятная последовательность символов, не встречающаяся в живой речи или
+  // имени), чтобы одно и то же имя в транскрипте и в списке участников получило
+  // один и тот же токен; восстанавливаем во всех трёх документах, которые вернёт
+  // generateProSummaries (notes/qa/actions).
+  const PII_PEOPLE_BOUNDARY = '\n --pii-people-boundary-- \n';
+  const { text: redactedCombined, map: piiMap } = redactPii(`${transcript}${PII_PEOPLE_BOUNDARY}${people.join('\n')}`);
+  // indexOf/slice, а не split(): если разделитель гипотетически встретился бы в самом транскрипте больше одного раза, split() разрезал бы текст неверно — берём только первое вхождение как границу.
+  const boundaryAt = redactedCombined.indexOf(PII_PEOPLE_BOUNDARY);
+  const redactedTranscript = boundaryAt === -1 ? redactedCombined : redactedCombined.slice(0, boundaryAt);
+  const redactedPeopleBlock = boundaryAt === -1 ? '' : redactedCombined.slice(boundaryAt + PII_PEOPLE_BOUNDARY.length);
+  const redactedPeople = redactedPeopleBlock ? redactedPeopleBlock.split('\n') : [];
+
   res.json(ok({ status: 'generating', meeting_type: meetingType }));
 
   // Async generation
   const { ClaudeService } = require('../services/claude.service');
   const claudeSvc = new ClaudeService();
-  claudeSvc.generateProSummaries(transcript, meeting['title'] as string, people, meetingType).then(async (summaries: { notes: string; qa: string; actions?: string }) => {
+  claudeSvc.generateProSummaries(redactedTranscript, meeting['title'] as string, redactedPeople, meetingType).then(async (rawSummaries: { notes: string; qa: string; actions?: string }) => {
+    const summaries = {
+      notes: restorePiiAndWarn(rawSummaries.notes, piiMap, `meeting #${id} pro-summary notes`),
+      qa: restorePiiAndWarn(rawSummaries.qa, piiMap, `meeting #${id} pro-summary qa`),
+      ...(rawSummaries.actions ? { actions: restorePiiAndWarn(rawSummaries.actions, piiMap, `meeting #${id} pro-summary actions`) } : {}),
+    };
     const existingRow = await queryOne<{ summary_structured: string | null }>('SELECT summary_structured FROM meetings WHERE id = $1', [id]);
     let merged: Record<string, unknown> = {};
     try { merged = JSON.parse(existingRow?.summary_structured || '{}'); } catch {}

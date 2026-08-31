@@ -3,6 +3,16 @@ import { config } from '../config';
 import type { MeetingStructured, InboxAnalysis, ExtractionResult, DraftCard } from '@pis/shared';
 import { toolDefinitions, executeTool } from './tools.service';
 
+// 152-ФЗ: transcript/people, приходящие в generateProSummaries, могут быть уже
+// обезличены вызывающим кодом (см. packages/api/src/services/pii-redact.ts) —
+// плейсхолдеры вида [УЧАСТНИК_1] должны дойти до ответа модели дословно, иначе
+// restorePii на стороне вызывающего кода не сможет подставить обратно реальные
+// значения. Безвредно, если redactPii не применялся — просто лишняя строка в промпте.
+export const PII_TOKEN_NOTE =
+  'Если в тексте встречаются служебные метки вида [СЛОВО_N] (например [УЧАСТНИК_1], [ТЕЛЕФОН_2], [EMAIL_3]) — ' +
+  'это не реальные имена и данные, а технические плейсхолдеры. Воспроизводи их в ответе ТОЧНО так же посимвольно ' +
+  '(те же квадратные скобки, регистр и подчёркивание), не переводи их и не заменяй словами вроде «Участник 1».';
+
 export interface TaskSuggestion {
   title: string;
   description: string;
@@ -182,7 +192,7 @@ ${text}`;
   async generateProSummaries(transcript: string, title: string, people: string[], meetingType: string = 'meeting'): Promise<{ notes: string; qa: string; actions?: string }> {
     // 30 000 символов — это ~30 минут речи: у часовой встречи половина не доезжала
     // до конспекта. У модели контекст на порядки больше, берём с запасом.
-    const context = `Название: ${title}\nУчастники: ${people.join(', ') || 'не указаны'}\n\nТранскрипция:\n${transcript.slice(0, 300000)}`;
+    const context = `${PII_TOKEN_NOTE}\n\nНазвание: ${title}\nУчастники: ${people.join(', ') || 'не указаны'}\n\nТранскрипция:\n${transcript.slice(0, 300000)}`;
 
     const notesPrompt = this.getNotesPrompt(meetingType, context);
     const qaPrompt = this.getQaPrompt(meetingType, context);
@@ -204,7 +214,9 @@ ${text}`;
       // задачи из последней части в этот запрос просто не попадали. 60 000 заведомо
       // больше, чем может выдать модель при SUMMARY_MAX_TOKENS.
       const actionsLabel = meetingType === 'lecture' ? 'учебные задачи' : meetingType === 'interview' ? 'задачи и инсайты к применению' : 'задачи и обязательства';
-      const actionsResp = await this.chat([{ role: 'user', content: `Из двух документов ниже извлеки ВСЕ уникальные ${actionsLabel}. Убери дубли. Каждая задача — одна строка с чекбоксом.
+      const actionsResp = await this.chat([{ role: 'user', content: `${PII_TOKEN_NOTE}
+
+Из двух документов ниже извлеки ВСЕ уникальные ${actionsLabel}. Убери дубли. Каждая задача — одна строка с чекбоксом.
 
 ФОРМАТ:
 - [ ] Задача — [Ответственный] [срок если есть]
