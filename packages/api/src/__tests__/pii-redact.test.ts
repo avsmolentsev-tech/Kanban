@@ -1,4 +1,7 @@
-import { redactPii, restorePii, findResidualPiiTokens } from '../services/pii-redact';
+import {
+  redactPii, restorePii, findResidualPiiTokens,
+  joinForRedaction, splitRedacted, restorePiiDeep, restorePiiDeepAndWarn, restorePiiAndWarn,
+} from '../services/pii-redact';
 
 describe('обезличивание перед отправкой в модель', () => {
   test('телефон в любом формате заменяется на токен', () => {
@@ -241,5 +244,118 @@ describe('restorePii: терпимость к регистру/разделит�
   test('findResidualPiiTokens пуст, когда всё успешно восстановлено', () => {
     const restored = restorePii('[участник_1] подтвердил.', map);
     expect(findResidualPiiTokens(restored)).toEqual([]);
+  });
+
+  /**
+   * Регресс: без-скобочный вариант ловил только ASCII-`\b`, которая не видит
+   * границу пробел/кириллица — «Участник 1» никогда не находился, хотя это
+   * ровно тот случай, ради которого без-скобочная ветка была добавлена.
+   */
+  test('findResidualPiiTokens находит токен, пересказанный словами без скобок («Участник 1»)', () => {
+    expect(findResidualPiiTokens('Участник 1 подтвердил встречу')).toEqual(['Участник 1']);
+  });
+
+  test('findResidualPiiTokens без скобок нечувствителен к регистру и разделителю', () => {
+    expect(findResidualPiiTokens('см. участник_2 и ТЕЛЕФОН 3')).toEqual(
+      expect.arrayContaining(['участник_2', 'ТЕЛЕФОН 3'])
+    );
+  });
+
+  test('findResidualPiiTokens без скобок не путает обычное слово, слитое с числом', () => {
+    // "Участник1" без разделителя и "НЕучастник 5" (слово приклеено) — не токены.
+    expect(findResidualPiiTokens('НЕучастник 5 пришёл, Участник1 тоже')).toEqual([]);
+  });
+
+  test('findResidualPiiTokens: обычный текст без искажённых токенов остаётся пустым', () => {
+    expect(findResidualPiiTokens('Обсудили бюджет и сроки, всё как обычно.')).toEqual([]);
+  });
+});
+
+/**
+ * joinForRedaction/splitRedacted/restorePiiDeep(AndWarn)/restorePiiAndWarn — вспомогательные
+ * функции, которыми пользуются все места, где транскрипт отправляется в модель вместе с
+ * отдельными полями (заголовок, список участников): routes/meetings.ts (резюме и
+ * regenerate-summaries), services/telegram.service.ts (захват встречи из Telegram),
+ * services/search.service.ts (синхронизация из vault). До этой задачи они не были покрыты
+ * тестами вовсе, хотя уже использовались в routes/meetings.ts.
+ */
+describe('joinForRedaction/splitRedacted: склейка нескольких полей в один вызов redactPii', () => {
+  test('одно и то же имя (буквально та же строка) в двух разных полях получает один и тот же токен', () => {
+    // redactPii не лемматизирует — совпадение строгое по подстроке. Реалистичный
+    // случай единого токена — когда оба поля используют одну и ту же форму имени,
+    // например транскрипт и `people`, взятый как есть из таблицы `people`.
+    const combined = joinForRedaction(['Утром звонил Иван Петров, обсуждали дела', 'Иван Петров']);
+    const { text, map } = redactPii(combined);
+    const parts = splitRedacted(text, 2);
+    const tokenInTranscript = parts[0]!.match(/\[УЧАСТНИК_\d+\]/)![0];
+    const tokenInTitle = parts[1]!.trim();
+    expect(tokenInTranscript).toBe(tokenInTitle);
+    expect(map[tokenInTranscript]).toBe('Иван Петров');
+  });
+
+  test('splitRedacted восстанавливает ровно count частей даже для пустых полей', () => {
+    const combined = joinForRedaction(['транскрипт', '', 'Иван, Мария']);
+    const { text } = redactPii(combined);
+    const parts = splitRedacted(text, 3);
+    expect(parts).toHaveLength(3);
+    expect(parts[1]).toBe('');
+  });
+
+  test('round-trip: join → redact → split → restore на каждой части даёт исходные поля', () => {
+    const fields = ['Позвони Ивану Петрову', 'Иван Петров', 'нет темы'];
+    const { text, map } = redactPii(joinForRedaction(fields));
+    const parts = splitRedacted(text, 3);
+    const restored = parts.map((p) => restorePii(p, map));
+    expect(restored).toEqual(fields);
+  });
+});
+
+describe('restorePiiDeep(AndWarn): восстановление ПД в структурированном JSON-ответе модели', () => {
+  const original = 'Иван Петров, его телефон +7 916 123-45-67';
+  const { text: redacted, map } = redactPii(original);
+
+  test('восстанавливает ПД во вложенных строковых полях объекта и массивов', () => {
+    const modelResponse = {
+      title: redacted,
+      people: [redacted.match(/\[УЧАСТНИК_\d+\]/)![0]],
+      nested: { note: redacted },
+    };
+    const restored = restorePiiDeep(modelResponse, map);
+    expect(restored.title).toBe(original);
+    expect(restored.people[0]).toBe('Иван Петров');
+    expect(restored.nested.note).toBe(original);
+  });
+
+  test('не трогает числа/булевы/null внутри объекта', () => {
+    const restored = restorePiiDeep({ ok: true, count: 3, note: null as string | null }, map);
+    expect(restored).toEqual({ ok: true, count: 3, note: null });
+  });
+
+  test('restorePiiDeepAndWarn логирует остаточный токен, пересказанный словами, и не бросает исключение', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const mangled = { summary: 'Обсудили с Участник 1 планы' };
+    const restored = restorePiiDeepAndWarn(mangled, map, 'test-context');
+    expect(restored.summary).toBe('Обсудили с Участник 1 планы'); // не восстановлено — не найдено в карте
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('test-context'), expect.arrayContaining(['Участник 1']));
+    warnSpy.mockRestore();
+  });
+});
+
+describe('restorePiiAndWarn: восстановление плоского текста + предупреждение об остатках', () => {
+  test('восстанавливает без предупреждения, когда всё сошлось', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { text, map } = redactPii('Звонил Иван Петров');
+    const restored = restorePiiAndWarn(text, map, 'ctx');
+    expect(restored).toBe('Звонил Иван Петров');
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  test('предупреждает и не роняет вызывающий код при искажённом токене', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { map } = redactPii('Звонил Иван Петров');
+    expect(() => restorePiiAndWarn('Звонил [УЧАСТНИК_99]', map, 'ctx')).not.toThrow();
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
