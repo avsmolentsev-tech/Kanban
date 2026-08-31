@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import { query } from '../db/db';
 import { config } from '../config';
 import { isLocalWhisperAvailable, isTranscribeServiceAvailable } from './whisper-local.service';
+import { isLlmConfigured, llmProviderName } from './claude.service';
 
 export type HealthCheck = { name: string; ok: boolean; detail?: string };
 export type HealthReport = { status: 'ok' | 'degraded' | 'down'; ts: string; checks: HealthCheck[] };
@@ -51,9 +52,17 @@ async function checkWhisper(): Promise<HealthCheck> {
   return { name: 'whisper', ok: false, detail: 'расшифровка недоступна: ни локальный whisper, ни сервис транскрипции' };
 }
 
+/**
+ * detail при ok:true — только короткая метка провайдера (например "yandex" или
+ * "default"), НЕ полный URL и не хост целиком: /health не защищён авторизацией,
+ * и заказчику должно быть видно, что провайдер сменился одной переменной окружения,
+ * без раскрытия внутренней топологии.
+ */
 function checkLlm(): HealthCheck {
-  const ok = Boolean(config.anthropicApiKey || config.openaiApiKey);
-  return ok ? { name: 'llm', ok: true } : { name: 'llm', ok: false, detail: 'ключ LLM не задан, AI-функции отключены' };
+  if (!isLlmConfigured()) {
+    return { name: 'llm', ok: false, detail: 'ключ LLM не задан, AI-функции отключены' };
+  }
+  return { name: 'llm', ok: true, detail: `провайдер: ${llmProviderName()}` };
 }
 
 /**

@@ -158,3 +158,43 @@ describe('checkHealth: политика облачного фолбэка рас
     }
   });
 });
+
+/**
+ * Задача 5: провайдер LLM переключается переменной OPENAI_BASE_URL. /health не защищён
+ * авторизацией — detail проверки "llm" должен содержать только короткую метку
+ * провайдера, а не URL/хост/ключ (иначе анонимный запрос к /health раскрывает
+ * внутреннюю топологию).
+ */
+describe('checkHealth: метка провайдера LLM в detail (без раскрытия хоста/ключа)', () => {
+  const ORIGINAL_KEY = process.env['OPENAI_API_KEY'];
+  const ORIGINAL_URL = process.env['OPENAI_BASE_URL'];
+
+  function setupMocks(): void {
+    const db = require('../db/db');
+    (db.query as jest.Mock).mockResolvedValue({ rows: [{ ok: 1 }] });
+    const fsMock = require('fs');
+    (fsMock.accessSync as jest.Mock).mockImplementation(() => {});
+    const whisper = require('../services/whisper-local.service');
+    (whisper.isLocalWhisperAvailable as jest.Mock).mockReturnValue(true);
+    (whisper.isTranscribeServiceAvailable as jest.Mock).mockResolvedValue(true);
+  }
+
+  afterEach(() => {
+    if (ORIGINAL_KEY === undefined) delete process.env['OPENAI_API_KEY']; else process.env['OPENAI_API_KEY'] = ORIGINAL_KEY;
+    if (ORIGINAL_URL === undefined) delete process.env['OPENAI_BASE_URL']; else process.env['OPENAI_BASE_URL'] = ORIGINAL_URL;
+  });
+
+  test('провайдер сменён на Яндекс через OPENAI_BASE_URL → detail показывает метку "yandex", а не URL', async () => {
+    jest.resetModules();
+    process.env['OPENAI_API_KEY'] = 'sk-secret-test-key-123';
+    process.env['OPENAI_BASE_URL'] = 'https://llm.api.cloud.yandex.net/v1';
+    setupMocks();
+    const { checkHealth: freshCheckHealth } = require('../services/health.service');
+    const r = await freshCheckHealth();
+    const c = r.checks.find((x: { name: string }) => x.name === 'llm');
+    expect(c?.ok).toBe(true);
+    expect(c?.detail).toContain('yandex');
+    // Ни полного URL, ни голого хоста, ни ключа быть не должно — только короткая метка.
+    expect(c?.detail).not.toMatch(/https?:\/\/|llm\.api\.cloud\.yandex\.net|sk-secret-test-key-123/);
+  });
+});
