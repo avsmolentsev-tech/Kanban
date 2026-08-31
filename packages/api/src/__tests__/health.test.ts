@@ -130,6 +130,8 @@ describe('checkHealth: политика облачного фолбэка рас
     const c = r.checks.find((x: { name: string }) => x.name === 'transcription-policy');
     expect(c?.ok).toBe(true);
     expect(c?.detail).toMatch(/разрешён/);
+    // Ветка "разрешено" — не только запрещающая — не должна раскрывать пути/адреса/ключи.
+    expect(c?.detail).not.toMatch(/\/|https?:|sk-|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/);
   });
 
   test('TRANSCRIPTION_ALLOW_CLOUD_FALLBACK=false → /health показывает облачный фолбэк запрещённым', async () => {
@@ -143,13 +145,16 @@ describe('checkHealth: политика облачного фолбэка рас
     expect(c?.detail).toMatch(/запрещён/);
   });
 
-  test('detail не содержит путей, адресов или ключей', async () => {
-    jest.resetModules();
-    process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'] = 'false';
-    setupMocks();
-    const { checkHealth: freshCheckHealth } = require('../services/health.service');
-    const r = await freshCheckHealth();
-    const c = r.checks.find((x: { name: string }) => x.name === 'transcription-policy');
-    expect(c?.detail).not.toMatch(/\/|https?:|sk-|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/);
+  test('detail не содержит путей, адресов или ключей (обе ветки флага)', async () => {
+    for (const value of ['false', undefined] as const) {
+      jest.resetModules();
+      if (value === undefined) delete process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'];
+      else process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'] = value;
+      setupMocks();
+      const { checkHealth: freshCheckHealth } = require('../services/health.service');
+      const r = await freshCheckHealth();
+      const c = r.checks.find((x: { name: string }) => x.name === 'transcription-policy');
+      expect(c?.detail).not.toMatch(/\/|https?:|sk-|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/);
+    }
   });
 });

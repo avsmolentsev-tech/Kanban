@@ -6,6 +6,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { assertCloudFallbackAllowed } from '../routes/meetings';
 
 describe('config.transcriptionAllowCloudFallback: обе ветки флага', () => {
   const ORIGINAL = process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'];
@@ -35,7 +36,34 @@ describe('config.transcriptionAllowCloudFallback: обе ветки флага',
   });
 });
 
-describe('meetings.ts: облачный фолбэк расшифровки подчиняется флагу', () => {
+/**
+ * Поведенческая проверка самого узкого места: раньше здесь стоял только тест по
+ * тексту исходника (совпадение порядка подстрок), который прошёл бы, даже если
+ * бы guard физически не мог остановить выполнение (например, был бы веткой без
+ * throw). `assertCloudFallbackAllowed` — реальная функция, вызываемая на обеих
+ * точках processAudioInBackground перед `viaOpenAI()`; здесь она вызывается
+ * напрямую и проверяется её фактическое поведение — бросает ли она исключение.
+ */
+describe('assertCloudFallbackAllowed: реальное поведение guard-функции', () => {
+  test('cloudFallbackAllowed=false → бросает исключение (провал локального бэкенда)', () => {
+    expect(() => assertCloudFallbackAllowed(false, 'local-failed')).toThrow(
+      /облачный фолбэк отключён политикой обработки персональных данных \(152-ФЗ\)/
+    );
+  });
+
+  test('cloudFallbackAllowed=false → бросает исключение (локального бэкенда нет вовсе)', () => {
+    expect(() => assertCloudFallbackAllowed(false, 'no-local-backend')).toThrow(
+      /облачный фолбэк отключён политикой обработки персональных данных \(152-ФЗ\)/
+    );
+  });
+
+  test('cloudFallbackAllowed=true → ничего не бросает, выполнение может продолжиться до viaOpenAI()', () => {
+    expect(() => assertCloudFallbackAllowed(true, 'local-failed')).not.toThrow();
+    expect(() => assertCloudFallbackAllowed(true, 'no-local-backend')).not.toThrow();
+  });
+});
+
+describe('meetings.ts: обе точки фолбэка реально вызывают guard перед viaOpenAI()', () => {
   const SRC = fs.readFileSync(path.join(__dirname, '..', 'routes', 'meetings.ts'), 'utf-8');
   const body = SRC.slice(
     SRC.indexOf('async function processAudioInBackground'),
@@ -46,22 +74,15 @@ describe('meetings.ts: облачный фолбэк расшифровки по
     expect(body).toMatch(/const cloudFallbackAllowed = config\.transcriptionAllowCloudFallback/);
   });
 
-  test('после провала локального бэкенда viaOpenAI() вызывается только если фолбэк разрешён политикой', () => {
+  test('после провала локального бэкенда guard вызывается раньше viaOpenAI()', () => {
     const catchBlock = body.slice(body.indexOf('} catch (err) {'), body.indexOf('} else if (canUseOpenAI && cloudFallbackAllowed)'));
-    const guardAt = catchBlock.indexOf('if (!cloudFallbackAllowed)');
+    const guardAt = catchBlock.indexOf("assertCloudFallbackAllowed(cloudFallbackAllowed, 'local-failed')");
     const callAt = catchBlock.indexOf('viaOpenAI()');
     expect(guardAt).toBeGreaterThan(-1);
     expect(callAt).toBeGreaterThan(guardAt);
   });
 
-  test('при отсутствии локального бэкенда viaOpenAI() тоже вызывается только с разрешённым флагом', () => {
-    expect(body).toMatch(/else if \(canUseOpenAI && cloudFallbackAllowed\)/);
-  });
-
-  test('выключенный флаг даёт честную русскую ошибку вместо тихой отправки в облако', () => {
-    const messages = body.match(/облачный фолбэк отключён политикой обработки персональных данных \(152-ФЗ\)/g) ?? [];
-    // Оба пути ветвления (провал локального бэкенда и его полное отсутствие) должны
-    // предупреждать честно — а не молча уходить в viaOpenAI() или ронять неясную ошибку.
-    expect(messages.length).toBe(2);
+  test('при отсутствии локального бэкенда guard вызывается в ветке без cloudFallbackAllowed', () => {
+    expect(body).toMatch(/else if \(canUseOpenAI && !cloudFallbackAllowed\) \{\s*assertCloudFallbackAllowed\(cloudFallbackAllowed, 'no-local-backend'\);/);
   });
 });

@@ -1,10 +1,10 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import * as fs from 'fs';
 import * as path from 'path';
-import { query, queryAll, queryOne, execute } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { searchService } from '../services/search.service';
 import { ObsidianService } from '../services/obsidian.service';
@@ -252,6 +252,23 @@ meetingsRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
 });
 
 // Heavy background pipeline: compress → transcribe → summarize → save → sync vault
+/**
+ * 152-ФЗ: единственная точка, где принимается решение «можно ли уйти в облачный
+ * whisper-1». Вызывается в обеих ветках `processAudioInBackground`, где технически
+ * возможен облачный фолбэк (провал локального бэкенда и его полное отсутствие).
+ * Брошенное здесь исключение останавливает выполнение раньше вызова `viaOpenAI()` —
+ * поведение проверяется юнит-тестом напрямую (`assertCloudFallbackAllowed`),
+ * а не сверкой текста исходника, поэтому подмена условия на противоположное или
+ * тихое проглатывание исключения на вызывающей стороне тест ловит.
+ */
+export function assertCloudFallbackAllowed(cloudFallbackAllowed: boolean, reason: 'local-failed' | 'no-local-backend'): void {
+  if (cloudFallbackAllowed) return;
+  const msg = reason === 'local-failed'
+    ? 'Локальная расшифровка не удалась, а облачный фолбэк отключён политикой обработки персональных данных (152-ФЗ). Попробуйте ещё раз позже или обратитесь к администратору.'
+    : 'Локальный бэкенд расшифровки недоступен, а облачный фолбэк отключён политикой обработки персональных данных (152-ФЗ). Попробуйте ещё раз позже или обратитесь к администратору.';
+  throw new Error(msg);
+}
+
 async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, originalName: string, userId: number | null, autoSummarize: boolean, jobId: number | null = null): Promise<void> {
   const setStatus = async (status: string | null, errMsg?: string | null): Promise<void> => {
     await execute('UPDATE meetings SET processing_status = $1, processing_error = $2 WHERE id = $3', [status, errMsg ?? null, meetingId]);
@@ -325,9 +342,7 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
       } catch (err) {
         console.error(`[bg-job ${meetingId}] local transcription failed:`, err instanceof Error ? err.message : err);
         if (!canUseOpenAI) throw err;
-        if (!cloudFallbackAllowed) {
-          throw new Error('Локальная расшифровка не удалась, а облачный фолбэк отключён политикой обработки персональных данных (152-ФЗ). Попробуйте ещё раз позже или обратитесь к администратору.');
-        }
+        assertCloudFallbackAllowed(cloudFallbackAllowed, 'local-failed');
         console.log(`[bg-job ${meetingId}] falling back to OpenAI whisper-1`);
         transcript = await viaOpenAI();
       }
@@ -335,7 +350,7 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
       console.warn(`[bg-job ${meetingId}] no local backend available, using paid OpenAI whisper-1`);
       transcript = await viaOpenAI();
     } else if (canUseOpenAI && !cloudFallbackAllowed) {
-      throw new Error('Локальный бэкенд расшифровки недоступен, а облачный фолбэк отключён политикой обработки персональных данных (152-ФЗ). Попробуйте ещё раз позже или обратитесь к администратору.');
+      assertCloudFallbackAllowed(cloudFallbackAllowed, 'no-local-backend');
     } else {
       throw new Error('No transcription backend available');
     }
