@@ -84,18 +84,54 @@ describe('предикаты готовности LLM-клиентов', () => {
   });
 
   describe('llmProviderName', () => {
-    test('с базовым URL Яндекса имя провайдера отражает это', () => {
+    function nameFor(baseUrl: string | undefined): string {
+      clearAllKeys();
       process.env['OPENAI_API_KEY'] = 'k';
-      process.env['OPENAI_BASE_URL'] = 'https://llm.api.cloud.yandex.net/v1';
+      if (baseUrl === undefined) delete process.env['OPENAI_BASE_URL'];
+      else process.env['OPENAI_BASE_URL'] = baseUrl;
       const { llmProviderName } = require('../services/claude.service');
-      expect(llmProviderName()).toContain('yandex');
+      return llmProviderName();
+    }
+
+    test('без базового URL — провайдер по умолчанию', () => {
+      expect(nameFor(undefined)).toBe('default');
     });
 
-    test('без базового URL провайдер по умолчанию', () => {
-      process.env['OPENAI_API_KEY'] = 'k';
-      delete process.env['OPENAI_BASE_URL'];
-      const { llmProviderName } = require('../services/claude.service');
-      expect(llmProviderName()).toBe('default');
+    // Реальные провайдеры — зафиксированы, чтобы не сломать в будущем.
+    test('llm.api.cloud.yandex.net → "yandex"', () => {
+      expect(nameFor('https://llm.api.cloud.yandex.net/v1')).toBe('yandex');
+    });
+
+    test('api.openai.com → "openai"', () => {
+      expect(nameFor('https://api.openai.com/v1')).toBe('openai');
+    });
+
+    test('gigachat.devices.sberbank.ru → "sberbank" (двухбуквенный TLD "ru", но второй уровень — реальное имя)', () => {
+      expect(nameFor('https://gigachat.devices.sberbank.ru/v1')).toBe('sberbank');
+    });
+
+    // IPv4-хост: старая реализация (hostname.split('.').slice(-2,-1)[0]) отдавала
+    // один октет ("1" для 192.168.1.5) — обрывок внутреннего IP на незащищённом /health.
+    test('IPv4-хост (192.168.1.5) → нейтральная метка "custom", а не обрывок октета', () => {
+      expect(nameFor('http://192.168.1.5:8080/v1')).toBe('custom');
+    });
+
+    test('localhost (один сегмент, нет домена второго уровня) → "custom"', () => {
+      expect(nameFor('http://localhost:11434/v1')).toBe('custom');
+    });
+
+    test('IPv6-хост ([::1]) → "custom"', () => {
+      expect(nameFor('http://[::1]:8080/v1')).toBe('custom');
+    });
+
+    // Составной TLD: старая реализация брала "второй с конца" сегмент домена и
+    // получала бы "co" из example.co.uk — бессмысленную и не идентифицирующую метку.
+    test('составной TLD (example.co.uk) → "custom", а не "co"', () => {
+      expect(nameFor('https://example.co.uk/v1')).toBe('custom');
+    });
+
+    test('невалидный URL → "custom"', () => {
+      expect(nameFor('not a url')).toBe('custom');
     });
   });
 });

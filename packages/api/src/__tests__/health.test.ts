@@ -197,4 +197,21 @@ describe('checkHealth: метка провайдера LLM в detail (без р�
     // Ни полного URL, ни голого хоста, ни ключа быть не должно — только короткая метка.
     expect(c?.detail).not.toMatch(/https?:\/\/|llm\.api\.cloud\.yandex\.net|sk-secret-test-key-123/);
   });
+
+  // Провайдер поднят на IP (самосев модели "для локализации данных в РФ") — старая
+  // реализация llmProviderName() брала "второй с конца" сегмент домена и отдавала
+  // один октет IP ("1" из 192.168.1.5). Незащищённый /health не должен светить даже
+  // обрывком внутреннего адреса.
+  test('провайдер на IP-хосте → detail показывает нейтральную метку, а не обрывок адреса', async () => {
+    jest.resetModules();
+    process.env['OPENAI_API_KEY'] = 'sk-secret-test-key-123';
+    process.env['OPENAI_BASE_URL'] = 'http://192.168.1.5:8080/v1';
+    setupMocks();
+    const { checkHealth: freshCheckHealth } = require('../services/health.service');
+    const r = await freshCheckHealth();
+    const c = r.checks.find((x: { name: string }) => x.name === 'llm');
+    expect(c?.ok).toBe(true);
+    expect(c?.detail).toBe('провайдер: custom');
+    expect(c?.detail).not.toMatch(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|sk-secret-test-key-123/);
+  });
 });

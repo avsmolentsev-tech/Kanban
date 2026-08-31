@@ -40,6 +40,14 @@ export function isAdvisorClientConfigured(): boolean {
   return Boolean(config.advisorApiKey || config.openaiApiKey);
 }
 
+// IPv4/IPv6-хосты не имеют содержательного "домена второго уровня" — для них
+// llmProviderName() должен отдавать нейтральную метку, а не обрезок адреса.
+const IP_HOST_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
+// Генерические вторые уровни, за которыми стоит двухбуквенный код страны
+// (co.uk, com.cn, ac.uk, gov.uk...) — здесь "второй с конца" сегмент домена не
+// идентифицирует провайдера, это часть составного TLD.
+const GENERIC_SLD_RE = /^(co|com|net|org|gov|edu|ac|mil|ne)$/;
+
 /**
  * Короткая метка провайдера для /health и админ-кабинета: показывает, куда реально
  * уходят запросы, без раскрытия полного URL/хоста (эндпоинт /health не защищён
@@ -50,10 +58,25 @@ export function llmProviderName(): string {
   const url = config.openaiBaseUrl;
   if (!url) return 'default';
   try {
-    const hostname = new URL(url).hostname;
-    // Второй уровень домена (например, "yandex" из llm.api.cloud.yandex.net) —
-    // достаточно для узнаваемой метки провайдера, не хост целиком.
-    return hostname.split('.').slice(-2, -1)[0] ?? hostname;
+    const rawHost = new URL(url).hostname.toLowerCase();
+    // IPv6 хосты приходят в квадратных скобках ("[::1]") — двоеточие внутри
+    // однозначно отличает их от доменных имён (в которых двоеточий не бывает).
+    if (IP_HOST_RE.test(rawHost) || rawHost.includes(':')) return 'custom';
+
+    const labels = rawHost.split('.').filter(Boolean);
+    // Один сегмент (например "localhost") — нет домена второго уровня, который
+    // можно было бы показать как метку провайдера.
+    if (labels.length < 2) return 'custom';
+
+    const tld = labels[labels.length - 1]!;
+    const secondLevel = labels[labels.length - 2]!;
+    // Составной TLD вида *.co.uk / *.com.cn: "второй с конца" сегмент — это "co"/
+    // "com", а не имя провайдера. Отдаём нейтральную метку вместо мусора.
+    if (tld.length === 2 && GENERIC_SLD_RE.test(secondLevel)) return 'custom';
+
+    // Обычный случай: второй уровень домена (например, "yandex" из
+    // llm.api.cloud.yandex.net) — достаточно для узнаваемой метки провайдера.
+    return secondLevel;
   } catch {
     return 'custom';
   }
