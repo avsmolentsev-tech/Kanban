@@ -3,6 +3,9 @@ import {
   joinForRedaction, splitRedacted, restorePiiDeep, restorePiiDeepAndWarn, restorePiiAndWarn,
 } from '../services/pii-redact';
 
+/** Достаём все console.warn'ы, поданные как один текстовый аргумент — формат formatResidualWarning. */
+const warnLines = (spy: jest.SpyInstance): string[] => spy.mock.calls.map((args) => String(args[0]));
+
 describe('обезличивание перед отправкой в модель', () => {
   test('телефон в любом формате заменяется на токен', () => {
     const r = redactPii('Позвони на +7 916 123-45-67 после шести');
@@ -273,11 +276,15 @@ describe('restorePii: терпимость к регистру/разделит�
     expect(restorePii(text, map)).toBe(text);
   });
 
-  test('findResidualPiiTokens находит нераспознанный токен и не содержит значений из карты', () => {
+  // Найдено четвёртым ревью: раньше findResidualPiiTokens возвращала сам совпавший
+  // текст, теперь — только класс и позицию (см. ResidualPiiToken в pii-redact.ts).
+  // Тест переписан под новый контракт: старая форма (`residual` — массив строк)
+  // структурно больше не существует.
+  test('findResidualPiiTokens находит нераспознанный токен как {kind, index}, без текста совпадения', () => {
     const restored = restorePii('Резюме: [УЧАСТНИК_99] встретился.', map);
     const residual = findResidualPiiTokens(restored);
-    expect(residual).toEqual(['[УЧАСТНИК_99]']);
-    expect(residual.join(' ')).not.toContain('Иван Петров');
+    expect(residual).toEqual([{ kind: 'УЧАСТНИК', index: 8 }]);
+    expect(JSON.stringify(residual)).not.toContain('Иван Петров');
   });
 
   test('findResidualPiiTokens пуст, когда всё успешно восстановлено', () => {
@@ -289,14 +296,20 @@ describe('restorePii: терпимость к регистру/разделит�
    * Регресс: без-скобочный вариант ловил только ASCII-`\b`, которая не видит
    * границу пробел/кириллица — «Участник 1» никогда не находился, хотя это
    * ровно тот случай, ради которого без-скобочная ветка была добавлена.
+   *
+   * Переписано под контракт четвёртого ревью (см. ResidualPiiToken в
+   * pii-redact.ts): проверяем класс и позицию, а не совпавший текст.
    */
   test('findResidualPiiTokens находит токен, пересказанный словами без скобок («Участник 1»)', () => {
-    expect(findResidualPiiTokens('Участник 1 подтвердил встречу')).toEqual(['Участник 1']);
+    expect(findResidualPiiTokens('Участник 1 подтвердил встречу')).toEqual([{ kind: 'УЧАСТНИК', index: 0 }]);
   });
 
   test('findResidualPiiTokens без скобок нечувствителен к регистру и разделителю', () => {
     expect(findResidualPiiTokens('см. участник_2 и ТЕЛЕФОН 3')).toEqual(
-      expect.arrayContaining(['участник_2', 'ТЕЛЕФОН 3'])
+      expect.arrayContaining([
+        { kind: 'УЧАСТНИК', index: 4 },
+        { kind: 'ТЕЛЕФОН', index: 17 },
+      ])
     );
   });
 
@@ -328,11 +341,19 @@ describe('findResidualPiiTokens: не путает обычную фразу с 
     expect(findResidualPiiTokens('Телефон 8 916 123 45 67')).toEqual([]);
   });
 
-  test('«участник» строчными + пробел + число — не токен', () => {
-    expect(findResidualPiiTokens('участник 2 предложил перенести')).toEqual([]);
+  // Четвёртым ревью это ограничение снято намеренно (см. комментарий у
+  // findResidualPiiTokens в pii-redact.ts): раньше строчная форма с пробелом
+  // была ЕДИНСТВЕННОЙ защитой от утечки настоящего восстановленного значения —
+  // теперь эту роль играет сам возврат {kind, index} без текста совпадения,
+  // а строчная форма с пробелом («участник 2 предложил», «телефон 3 не
+  // отвечает», «email 2 отправлен») снова считается искажённым токеном, как и
+  // до третьего ревью. Тест перевёрнут: раньше проверял отсутствие совпадения,
+  // теперь — что оно снова находится.
+  test('«участник» строчными + пробел + число — снова находится как искажённый токен', () => {
+    expect(findResidualPiiTokens('участник 2 предложил перенести')).toEqual([{ kind: 'УЧАСТНИК', index: 0 }]);
   });
 
-  test('restorePiiAndWarn не логирует значение из карты на обычной фразе «телефон + номер»', () => {
+  test('restorePiiAndWarn не логирует значение из карты на обычной фразе «телефон + слитный номер»', () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const { text, map } = redactPii('Мария Соколова оставила телефон 89161234567');
     const restored = restorePiiAndWarn(text, map, 'ctx-test');
@@ -341,11 +362,123 @@ describe('findResidualPiiTokens: не путает обычную фразу с 
     warnSpy.mockRestore();
   });
 
-  // Убедиться, что настоящие искажённые формы по-прежнему ловятся этой же правкой.
+  // Убедиться, что настоящие искажённые формы по-прежнему ловятся этой же правкой —
+  // переписано под {kind, index} вместо совпавшего текста (четвёртое ревью).
   test('genuine-формы искажения по-прежнему ловятся: «Участник 1», «участник_2», «ТЕЛЕФОН 3»', () => {
-    expect(findResidualPiiTokens('Участник 1 подтвердил встречу')).toEqual(['Участник 1']);
-    expect(findResidualPiiTokens('участник_2 подтвердил')).toEqual(['участник_2']);
-    expect(findResidualPiiTokens('см. ТЕЛЕФОН 3')).toEqual(['ТЕЛЕФОН 3']);
+    expect(findResidualPiiTokens('Участник 1 подтвердил встречу')).toEqual([{ kind: 'УЧАСТНИК', index: 0 }]);
+    expect(findResidualPiiTokens('участник_2 подтвердил')).toEqual([{ kind: 'УЧАСТНИК', index: 0 }]);
+    expect(findResidualPiiTokens('см. ТЕЛЕФОН 3')).toEqual([{ kind: 'ТЕЛЕФОН', index: 4 }]);
+  });
+});
+
+/**
+ * Четвёртое ревью (задача 4): findResidualPiiTokens возвращала совпавший текст, и
+ * restorePiiAndWarn/restorePiiDeepAndWarn логировали его как есть. На проде это
+ * означало, что обычная фраза «Телефон 89161234567» (бытовое слово + РЕАЛЬНЫЙ
+ * восстановленный номер) распознавалась как искажённый токен, и настоящий номер
+ * телефона клиента уходил в PM2-лог. Ниже — точные репродуксы из отчёта ревью и
+ * проверка, что новый структурный результат в принципе не может содержать текст
+ * входа, независимо от того, что именно совпало под капотом регулярки.
+ */
+describe('findResidualPiiTokens/restorePiiAndWarn: структурный результат не может утечь текстом (четвёртое ревью)', () => {
+  const phoneRepros = [
+    'Мария Соколова: контакт клиента — Телефон 89161234567',
+    'Мария Соколова: контакт клиента — ТЕЛЕФОН 89161234567',
+    'Контакты. Телефон 79161234567',
+    'Телефон 8 916 123 45 67', // диктованная форма
+  ];
+
+  test.each(phoneRepros)('репродукс из отчёта: "%s" — результат не содержит обрывка настоящего номера', (input) => {
+    const residual = findResidualPiiTokens(input);
+    const serialized = JSON.stringify(residual);
+    // index — это позиция в тексте (небольшое число), а не значение из номера,
+    // поэтому в сериализованном результате в принципе не может быть цифрового
+    // прогона длиннее 3 знаков — сам телефон 10-11-значный.
+    expect(serialized).not.toMatch(/\d{4,}/);
+  });
+
+  test('репродукс из отчёта сквозь весь путь restorePiiAndWarn: реальный номер не появляется в тексте предупреждения', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { text, map } = redactPii('Мария Соколова: контакт клиента — Телефон 89161234567');
+    restorePiiAndWarn(text, map, 'meeting #42 auto-summary');
+    for (const line of warnLines(warnSpy)) {
+      expect(line).not.toContain('89161234567');
+      expect(line).not.toMatch(/\d{4,}/);
+    }
+    warnSpy.mockRestore();
+  });
+
+  test('репродукс сквозь restorePiiDeepAndWarn: реальный номер не появляется в тексте предупреждения', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { text, map } = redactPii('Мария Соколова: контакт клиента — Телефон 89161234567');
+    restorePiiDeepAndWarn({ summary: text }, map, 'meeting #42 deep');
+    for (const line of warnLines(warnSpy)) {
+      expect(line).not.toContain('89161234567');
+      expect(line).not.toMatch(/\d{4,}/);
+    }
+    warnSpy.mockRestore();
+  });
+
+  test('структурная гарантия: результат не содержит ни одной цифры реального телефона и ни одного символа локальной части email', () => {
+    const { text, map } = redactPii('Мария Соколова, +7 916 123-45-67, ivan.petrov@example.com рассказала про телефон 89161234567 и email 2 не пришёл');
+    const restored = restorePii(text, map);
+    const residual = findResidualPiiTokens(restored);
+    const serialized = JSON.stringify(residual);
+    expect(serialized).not.toContain('916');
+    expect(serialized).not.toContain('89161234567');
+    expect(serialized).not.toContain('ivan.petrov');
+    // Единственные допустимые поля — kind (константа из TOKEN_KINDS) и index (число).
+    for (const item of residual) {
+      expect(['ТЕЛЕФОН', 'EMAIL', 'УЧАСТНИК']).toContain(item.kind);
+      expect(typeof item.index).toBe('number');
+      expect(Object.keys(item).sort()).toEqual(['index', 'kind']);
+    }
+  });
+
+  // Восстановленная чувствительность (список из отчёта ревью): строчная форма с
+  // пробелом для всех трёх классов — раньше требовала подчёркивания или вовсе не
+  // ловилась, теперь ловится, потому что найденное больше не может утечь текстом.
+  describe('восстановленная чувствительность: строчная форма с пробелом', () => {
+    test('«участник 1 подтвердил встречу»', () => {
+      expect(findResidualPiiTokens('участник 1 подтвердил встречу')).toEqual([{ kind: 'УЧАСТНИК', index: 0 }]);
+    });
+
+    test('«телефон 3 не отвечает»', () => {
+      expect(findResidualPiiTokens('телефон 3 не отвечает')).toEqual([{ kind: 'ТЕЛЕФОН', index: 0 }]);
+    });
+
+    test('«email 2 отправлен»', () => {
+      expect(findResidualPiiTokens('email 2 отправлен')).toEqual([{ kind: 'EMAIL', index: 0 }]);
+    });
+  });
+
+  // Восстановленная чувствительность: цифро-продолжение (номер пункта списка или
+  // второе число подряд) больше не подавляет совпадение.
+  describe('восстановленная чувствительность: токены внутри нумерованных списков', () => {
+    test('оба пункта нумерованного списка находятся, а не только второй', () => {
+      const residual = findResidualPiiTokens('1. Участник 1\n2. Участник 2 согласился');
+      expect(residual).toHaveLength(2);
+      expect(residual.map((r) => r.kind)).toEqual(['УЧАСТНИК', 'УЧАСТНИК']);
+    });
+
+    test('«Участник 1 2 вопроса» — находится, а не подавляется соседней цифрой', () => {
+      expect(findResidualPiiTokens('Участник 1 2 вопроса')).toEqual([{ kind: 'УЧАСТНИК', index: 0 }]);
+    });
+  });
+
+  // Genuine-искажения из брифа — все должны находиться (dup-check по классам).
+  describe('genuine мангл-формы по-прежнему находятся', () => {
+    test.each([
+      ['Участник 1', 'УЧАСТНИК'],
+      ['Участник_1', 'УЧАСТНИК'],
+      ['УЧАСТНИК 1', 'УЧАСТНИК'],
+      ['участник_3', 'УЧАСТНИК'],
+      ['[УЧАСТНИК_1]', 'УЧАСТНИК'],
+    ])('"%s" находится как %s', (input, kind) => {
+      const residual = findResidualPiiTokens(input);
+      expect(residual).toHaveLength(1);
+      expect(residual[0]!.kind).toBe(kind);
+    });
   });
 });
 
@@ -409,12 +542,20 @@ describe('restorePiiDeep(AndWarn): восстановление ПД в стру
     expect(restored).toEqual({ ok: true, count: 3, note: null });
   });
 
+  // Переписано под контракт четвёртого ревью: console.warn теперь получает ОДНУ
+  // строку с классом и позицией остатка (formatResidualWarning), а не (сообщение,
+  // массив-с-текстом-совпадения) — именно двухаргументный вызов с текстом и был
+  // источником утечки, который чинит эта задача.
   test('restorePiiDeepAndWarn логирует остаточный токен, пересказанный словами, и не бросает исключение', () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const mangled = { summary: 'Обсудили с Участник 1 планы' };
     const restored = restorePiiDeepAndWarn(mangled, map, 'test-context');
     expect(restored.summary).toBe('Обсудили с Участник 1 планы'); // не восстановлено — не найдено в карте
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('test-context'), expect.arrayContaining(['Участник 1']));
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const [line] = warnLines(warnSpy);
+    expect(line).toContain('test-context');
+    expect(line).toContain('УЧАСТНИК@');
+    expect(line).not.toContain('Участник 1'); // сам совпавший текст в лог не попадает
     warnSpy.mockRestore();
   });
 });
