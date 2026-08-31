@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { queryAll, queryOne, execute } from '../db/db';
 import { config } from '../config';
+import { redactPii, restorePiiDeepAndWarn, joinForRedaction, splitRedacted } from './pii-redact';
 
 export interface SearchHit {
   type: string;
@@ -306,7 +307,23 @@ export class SearchService {
       );
       const peopleNames = peopleRows.map(p => p.name);
 
-      const items = await claude.extractActionItems(body, title, peopleNames);
+      // 152-ФЗ: путь синхронизации из vault (сработавший, например, при ручном
+      // редактировании .md-файла встречи мимо API) раньше слал модели полный
+      // необезличенный текст встречи и реальные имена участников из таблицы
+      // `people`. Обезличиваем тело, заголовок и список участников ОДНИМ вызовом
+      // redactPii, чтобы одно и то же имя получило один и тот же токен, и
+      // восстанавливаем во всех строковых полях результата (включая owner и
+      // quote — они дальше используются для поиска person по имени и для текста
+      // задачи, поэтому должны содержать реальные значения, а не токены).
+      const { text: redactedCombined, map: piiMap } = redactPii(joinForRedaction([body, title, peopleNames.join('\n')]));
+      const redactedParts = splitRedacted(redactedCombined, 3);
+      const redactedBody = redactedParts[0] ?? '';
+      const redactedTitle = redactedParts[1] ?? '';
+      const redactedPeopleBlock = redactedParts[2] ?? '';
+      const redactedPeopleNames = redactedPeopleBlock ? redactedPeopleBlock.split('\n') : [];
+
+      const rawItems = await claude.extractActionItems(redactedBody, redactedTitle, redactedPeopleNames);
+      const items = restorePiiDeepAndWarn(rawItems, piiMap, `vault-sync meeting #${meetingId} extractTasksFromMeeting`);
       if (!Array.isArray(items) || items.length === 0) return;
 
       // Existing tasks from THIS meeting (dedup across re-syncs)

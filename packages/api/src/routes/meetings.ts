@@ -12,7 +12,8 @@ import { ClaudeService, PII_TOKEN_NOTE } from '../services/claude.service';
 import { mdToPdf, mdToDocx } from '../services/converter.service';
 import { telegramService } from '../services/telegram.service';
 import { isLocalWhisperAvailable, isTranscribeServiceAvailable, transcribeLocal, compressForTranscription, looksLikeGarbage, safeTmpName } from '../services/whisper-local.service';
-import { redactPii, restorePii, findResidualPiiTokens, type PiiMap } from '../services/pii-redact';
+import { redactPii, restorePiiAndWarn, joinForRedaction, splitRedacted } from '../services/pii-redact';
+import { assertCloudFallbackAllowed } from '../services/transcription-policy';
 import { config } from '../config';
 import { registerJob, completeJob, resumePendingJobs, type PendingJob } from '../services/pending-jobs';
 import OpenAI from 'openai';
@@ -30,21 +31,6 @@ const claude = new ClaudeService();
 // пересказывать «[УЧАСТНИК_1]» как «Участник 1», и restorePii ничего не находит.
 const SUMMARY_SYS_PROMPT = `Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды. ${PII_TOKEN_NOTE}`;
 const COMPACT_SUMMARY_SYS_PROMPT = `Ты редактор. Сделай компактное структурированное резюме встречи в markdown: цели, ключевые решения, договорённости, задачи, следующие шаги. 200-500 слов, без воды. ${PII_TOKEN_NOTE}`;
-
-/**
- * Восстанавливает ПД в ответе модели после redactPii и предупреждает, если что-то
- * не восстановилось (модель исказила токен сильнее, чем понимает терпимый restorePii
- * — несуществующий номер участника, мусор внутри скобок и т.п.). В лог уходят ТОЛЬКО
- * сами токены (`findResidualPiiTokens`), никогда значения из таблицы соответствия.
- */
-function restorePiiAndWarn(text: string, map: PiiMap, context: string): string {
-  const restored = restorePii(text, map);
-  const residual = findResidualPiiTokens(restored);
-  if (residual.length) {
-    console.warn(`[pii] ${context}: модель не воспроизвела токен(ы) дословно, restorePii не смог их сопоставить:`, residual);
-  }
-  return restored;
-}
 
 export const meetingsRouter = Router();
 
@@ -252,23 +238,6 @@ meetingsRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
 });
 
 // Heavy background pipeline: compress → transcribe → summarize → save → sync vault
-/**
- * 152-ФЗ: единственная точка, где принимается решение «можно ли уйти в облачный
- * whisper-1». Вызывается в обеих ветках `processAudioInBackground`, где технически
- * возможен облачный фолбэк (провал локального бэкенда и его полное отсутствие).
- * Брошенное здесь исключение останавливает выполнение раньше вызова `viaOpenAI()` —
- * поведение проверяется юнит-тестом напрямую (`assertCloudFallbackAllowed`),
- * а не сверкой текста исходника, поэтому подмена условия на противоположное или
- * тихое проглатывание исключения на вызывающей стороне тест ловит.
- */
-export function assertCloudFallbackAllowed(cloudFallbackAllowed: boolean, reason: 'local-failed' | 'no-local-backend'): void {
-  if (cloudFallbackAllowed) return;
-  const msg = reason === 'local-failed'
-    ? 'Локальная расшифровка не удалась, а облачный фолбэк отключён политикой обработки персональных данных (152-ФЗ). Попробуйте ещё раз позже или обратитесь к администратору.'
-    : 'Локальный бэкенд расшифровки недоступен, а облачный фолбэк отключён политикой обработки персональных данных (152-ФЗ). Попробуйте ещё раз позже или обратитесь к администратору.';
-  throw new Error(msg);
-}
-
 async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, originalName: string, userId: number | null, autoSummarize: boolean, jobId: number | null = null): Promise<void> {
   const setStatus = async (status: string | null, errMsg?: string | null): Promise<void> => {
     await execute('UPDATE meetings SET processing_status = $1, processing_error = $2 WHERE id = $3', [status, errMsg ?? null, meetingId]);
@@ -342,7 +311,7 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
       } catch (err) {
         console.error(`[bg-job ${meetingId}] local transcription failed:`, err instanceof Error ? err.message : err);
         if (!canUseOpenAI) throw err;
-        assertCloudFallbackAllowed(cloudFallbackAllowed, 'local-failed');
+        assertCloudFallbackAllowed(cloudFallbackAllowed, 'Локальная расшифровка не удалась');
         console.log(`[bg-job ${meetingId}] falling back to OpenAI whisper-1`);
         transcript = await viaOpenAI();
       }
@@ -350,7 +319,7 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
       console.warn(`[bg-job ${meetingId}] no local backend available, using paid OpenAI whisper-1`);
       transcript = await viaOpenAI();
     } else if (canUseOpenAI && !cloudFallbackAllowed) {
-      assertCloudFallbackAllowed(cloudFallbackAllowed, 'no-local-backend');
+      assertCloudFallbackAllowed(cloudFallbackAllowed, 'Локальный бэкенд расшифровки недоступен');
     } else {
       throw new Error('No transcription backend available');
     }
@@ -610,19 +579,22 @@ meetingsRouter.post('/:id/regenerate-summaries', async (req: AuthRequest, res: R
   const peopleRows = await queryAll<{ name: string }>('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [id]);
   const people = peopleRows.map(p => p.name);
 
-  // 152-ФЗ: этот путь шлёт в модель не только транскрипт, но и `people` — реальные
-  // имена контактов из таблицы `people`, а не то, что модель сама распознала в речи.
-  // Обезличиваем обоих через один вызов redactPii, объединив служебным разделителем
-  // (маловероятная последовательность символов, не встречающаяся в живой речи или
-  // имени), чтобы одно и то же имя в транскрипте и в списке участников получило
-  // один и тот же токен; восстанавливаем во всех трёх документах, которые вернёт
-  // generateProSummaries (notes/qa/actions).
-  const PII_PEOPLE_BOUNDARY = '\n --pii-people-boundary-- \n';
-  const { text: redactedCombined, map: piiMap } = redactPii(`${transcript}${PII_PEOPLE_BOUNDARY}${people.join('\n')}`);
-  // indexOf/slice, а не split(): если разделитель гипотетически встретился бы в самом транскрипте больше одного раза, split() разрезал бы текст неверно — берём только первое вхождение как границу.
-  const boundaryAt = redactedCombined.indexOf(PII_PEOPLE_BOUNDARY);
-  const redactedTranscript = boundaryAt === -1 ? redactedCombined : redactedCombined.slice(0, boundaryAt);
-  const redactedPeopleBlock = boundaryAt === -1 ? '' : redactedCombined.slice(boundaryAt + PII_PEOPLE_BOUNDARY.length);
+  // 152-ФЗ: этот путь шлёт в модель не только транскрипт, но и заголовок встречи, и
+  // `people` — реальные имена контактов из таблицы `people`, а не то, что модель сама
+  // распознала в речи (найдено ревью: заголовок вида «Созвон с Иваном Петровым» раньше
+  // уходил в модель как есть, рядом с уже обезличенным транскриптом — реальное имя в
+  // заголовке ещё и подсказывало модели, как расшифровать токены в теле). Обезличиваем
+  // все три поля ОДНИМ вызовом redactPii через joinForRedaction/splitRedacted, чтобы
+  // одно и то же имя в транскрипте, заголовке и списке участников получило один и тот
+  // же токен; восстанавливаем во всех трёх документах, которые вернёт generateProSummaries
+  // (notes/qa/actions) — сам заголовок в БД не переписывается, он используется только
+  // как контекст для модели.
+  const title = (meeting['title'] as string) ?? '';
+  const { text: redactedCombined, map: piiMap } = redactPii(joinForRedaction([transcript, title, people.join('\n')]));
+  const redactedParts = splitRedacted(redactedCombined, 3);
+  const redactedTranscript = redactedParts[0] ?? '';
+  const redactedTitle = redactedParts[1] ?? '';
+  const redactedPeopleBlock = redactedParts[2] ?? '';
   const redactedPeople = redactedPeopleBlock ? redactedPeopleBlock.split('\n') : [];
 
   res.json(ok({ status: 'generating', meeting_type: meetingType }));
@@ -630,7 +602,7 @@ meetingsRouter.post('/:id/regenerate-summaries', async (req: AuthRequest, res: R
   // Async generation
   const { ClaudeService } = require('../services/claude.service');
   const claudeSvc = new ClaudeService();
-  claudeSvc.generateProSummaries(redactedTranscript, meeting['title'] as string, redactedPeople, meetingType).then(async (rawSummaries: { notes: string; qa: string; actions?: string }) => {
+  claudeSvc.generateProSummaries(redactedTranscript, redactedTitle, redactedPeople, meetingType).then(async (rawSummaries: { notes: string; qa: string; actions?: string }) => {
     const summaries = {
       notes: restorePiiAndWarn(rawSummaries.notes, piiMap, `meeting #${id} pro-summary notes`),
       qa: restorePiiAndWarn(rawSummaries.qa, piiMap, `meeting #${id} pro-summary qa`),

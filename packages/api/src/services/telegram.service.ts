@@ -15,6 +15,8 @@ import { DraftSession } from './draft-session';
 import type { ExtractionResult, DraftCard } from '@pis/shared';
 import { ObsidianService } from './obsidian.service';
 import { renderDraftCard, inlineKeyboard, parseCallbackData } from './card-renderer';
+import { assertCloudFallbackAllowed } from './transcription-policy';
+import { redactPii, restorePiiAndWarn, restorePiiDeepAndWarn, joinForRedaction, splitRedacted } from './pii-redact';
 
 export class TelegramService {
   private bot: Telegraf | null = null;
@@ -151,7 +153,22 @@ export class TelegramService {
       // Async: generate pro summaries (Notes, Q&A)
       if (draft.transcript && draft.transcript.length > 200) {
         const claude = new ClaudeService();
-        claude.generateProSummaries(draft.transcript, draft.title, draft.people, draft.meetingType || 'meeting').then(async (summaries) => {
+        // 152-ФЗ: главный канал захвата продукта — голосовая заметка из Telegram.
+        // Транскрипт, заголовок и список участников обезличиваются ОДНИМ вызовом
+        // redactPii (тот же приём, что и в routes/meetings.ts regenerate-summaries),
+        // чтобы одно и то же имя в трёх полях получило один и тот же токен.
+        const { text: redactedCombined, map: piiMap } = redactPii(joinForRedaction([draft.transcript, draft.title, draft.people.join('\n')]));
+        const redactedParts = splitRedacted(redactedCombined, 3);
+        const redactedTranscript = redactedParts[0] ?? '';
+        const redactedTitle = redactedParts[1] ?? '';
+        const redactedPeopleBlock = redactedParts[2] ?? '';
+        const redactedPeople = redactedPeopleBlock ? redactedPeopleBlock.split('\n') : [];
+        claude.generateProSummaries(redactedTranscript, redactedTitle, redactedPeople, draft.meetingType || 'meeting').then(async (rawSummaries) => {
+          const summaries = {
+            notes: restorePiiAndWarn(rawSummaries.notes, piiMap, `telegram draft meeting #${meetingId} pro-summary notes`),
+            qa: restorePiiAndWarn(rawSummaries.qa, piiMap, `telegram draft meeting #${meetingId} pro-summary qa`),
+            ...(rawSummaries.actions ? { actions: restorePiiAndWarn(rawSummaries.actions, piiMap, `telegram draft meeting #${meetingId} pro-summary actions`) } : {}),
+          };
           // Read-merge-write to avoid overwriting user edits
           const existingRow = await queryOne<{ summary_structured: string | null }>('SELECT summary_structured FROM meetings WHERE id = $1', [meetingId]);
           let merged: Record<string, unknown> = {};
@@ -313,7 +330,16 @@ export class TelegramService {
     const projectNames = existingProjects.map(p => p.name);
     const meetingType = (cType === 'lecture' || cType === 'interview') ? cType : 'meeting';
     const typeHint = cType === 'lecture' ? 'lecture' : (cType === 'interview' ? 'interview' : undefined);
-    const extraction: ExtractionResult = await claude.extractDraft(transcript, typeHint, projectNames);
+    // 152-ФЗ: это первый вызов модели на пути захвата встречи из Telegram — сюда
+    // приходит сырой транскрипт голосовой заметки. Обезличиваем перед отправкой,
+    // затем восстанавливаем ПД во ВСЕХ строковых полях структурированного ответа
+    // (title, summary, people[] и т.д.) — restorePiiDeepAndWarn создан ровно для
+    // такого случая: модель работает с токенами, а реальные значения (в т.ч. сами
+    // имена участников, которые дальше станут записями в таблице people) подставляет
+    // наш код, а не модель.
+    const { text: redactedTranscript, map: piiMap } = redactPii(transcript);
+    const rawExtraction = await claude.extractDraft(redactedTranscript, typeHint, projectNames);
+    const extraction: ExtractionResult = restorePiiDeepAndWarn(rawExtraction, piiMap, 'telegram draft extractDraft');
 
     // Safety net: save raw transcript to vault inbox immediately (survives PM2 restart)
     try {
@@ -1077,6 +1103,8 @@ BHAG (Большая Дерзкая Цель на год):
         if (isLocalWhisperAvailable()) {
           transcript = await transcribeLocal(buffer, 'download.mp3');
         } else {
+          // 152-ФЗ: этот путь раньше звал OpenAI мимо проверки config.transcriptionAllowCloudFallback.
+          assertCloudFallbackAllowed(config.transcriptionAllowCloudFallback, 'Локальный whisper недоступен для команды /transcribe');
           const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
           const file = new File([buffer], 'audio.mp3', { type: 'audio/mpeg' });
           const result = await openai.audio.transcriptions.create({ model: 'whisper-1', file, language: 'ru' });
