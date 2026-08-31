@@ -14,12 +14,30 @@ export const PII_TOKEN_NOTE =
   '(те же квадратные скобки, регистр и подчёркивание), не переводи их и не заменяй словами вроде «Участник 1».';
 
 /**
- * Ни один ключ модели не задан — ни основной, ни advisor-клиент (см. конструктор
- * ClaudeService: advisorApiKey || openaiApiKey). AI-функции в этом случае отключаются
- * мягко (см. routes/ai.ts), сервис продолжает работать.
+ * Настроен ли основной клиент (this.client в ClaudeService), которым пользуется
+ * aiRouter (routes/ai.ts) — /chat, /daily-brief, /voice-command и другие эндпоинты,
+ * идущие через ClaudeService.chat()/this.openai. Клиент собирается из
+ * config.openaiApiKey (см. конструктор ниже), так что только этот ключ и имеет
+ * значение здесь.
+ *
+ * config.anthropicApiKey СОЗНАТЕЛЬНО не учитывается: в этом сервисе нет ни одного
+ * Anthropic SDK клиента, несмотря на название класса — только OpenAI-совместимый
+ * (см. конструктор). Переменная зарезервирована в конфиге на будущее и не должна
+ * давать ложное "AI настроен" — иначе оператор, задавший только ANTHROPIC_API_KEY,
+ * получит /health: ok и 500 вместо честного 501 на каждом AI-запросе.
  */
-export function isLlmConfigured(): boolean {
-  return Boolean(config.anthropicApiKey || config.openaiApiKey || config.advisorApiKey);
+export function isAiClientConfigured(): boolean {
+  return Boolean(config.openaiApiKey);
+}
+
+/**
+ * Настроен ли клиент Advisory Board (this.advisorClient), которым пользуется
+ * advisorsRouter (routes/advisors.ts). Собирается из config.advisorApiKey с
+ * фолбэком на config.openaiApiKey (см. конструктор) — оба ключа реально его питают.
+ * config.anthropicApiKey не учитывается по той же причине, что и выше.
+ */
+export function isAdvisorClientConfigured(): boolean {
+  return Boolean(config.advisorApiKey || config.openaiApiKey);
 }
 
 /**

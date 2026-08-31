@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import { query } from '../db/db';
 import { config } from '../config';
 import { isLocalWhisperAvailable, isTranscribeServiceAvailable } from './whisper-local.service';
-import { isLlmConfigured, llmProviderName } from './claude.service';
+import { isAiClientConfigured, llmProviderName } from './claude.service';
 
 export type HealthCheck = { name: string; ok: boolean; detail?: string };
 export type HealthReport = { status: 'ok' | 'degraded' | 'down'; ts: string; checks: HealthCheck[] };
@@ -57,9 +57,15 @@ async function checkWhisper(): Promise<HealthCheck> {
  * "default"), НЕ полный URL и не хост целиком: /health не защищён авторизацией,
  * и заказчику должно быть видно, что провайдер сменился одной переменной окружения,
  * без раскрытия внутренней топологии.
+ *
+ * Проверяем isAiClientConfigured() (а не общий "хоть какой-то ключ задан") — эта
+ * проверка отражает состояние клиента, которым реально пользуется aiRouter
+ * (/chat, /daily-brief и т.д.). Иначе оператор, задавший только ANTHROPIC_API_KEY
+ * или только ADVISOR_OPENAI_API_KEY, увидел бы здесь ok:true при полностью
+ * нерабочем основном AI-пути.
  */
 function checkLlm(): HealthCheck {
-  if (!isLlmConfigured()) {
+  if (!isAiClientConfigured()) {
     return { name: 'llm', ok: false, detail: 'ключ LLM не задан, AI-функции отключены' };
   }
   return { name: 'llm', ok: true, detail: `провайдер: ${llmProviderName()}` };
