@@ -30,6 +30,19 @@ export function buildSilenceFilter(): string {
 }
 
 /**
+ * Подпись пропавшего сегмента при отправке в faster-whisper.
+ * Раньше здесь указывались минуты записи (индекс сегмента × CHUNK_SECONDS) —
+ * это было честно, пока сегментирование шло по исходному аудио. Теперь оно
+ * идёт по аудио ПОСЛЕ обрезки тишины: `silenceremove` с `stop_periods=-1`
+ * схлопывает все паузы длиннее 1.5с, а не только по краям, поэтому минута по
+ * номеру сегмента больше не совпадает с минутой в исходной записи — тем
+ * сильнее, чем больше в записи пауз. Номер фрагмента честен всегда.
+ */
+export function formatSegmentFailure(index: number, total: number): string {
+  return `[фрагмент ${index + 1} из ${total} не распознан]`;
+}
+
+/**
  * Обеззараживает имя загруженного файла перед подстановкой в путь.
  *
  * `req.file.originalname` приходит от клиента как есть, multer его не трогает.
@@ -178,7 +191,10 @@ export async function transcribeViaService(buffer: Buffer, filename: string): Pr
     ], 300000);
     if (fs.existsSync(trimmedPath)) {
       workPath = trimmedPath;
-      workFilename = filename.replace(/\.[^.]+$/, '.mp3');
+      // .replace(/\.[^.]+$/, ...) не трогает имя без расширения вообще (нет
+      // литерального совпадения) — .mp3 нужно ДОБАВИТЬ всегда, а не только
+      // заменить существующее расширение.
+      workFilename = filename.replace(/\.[^./]+$/, '') + '.mp3';
     }
   } catch (err) {
     console.warn('[transcribe] обрезка тишины не удалась, используем исходное аудио:', err instanceof Error ? err.message : err);
@@ -228,11 +244,9 @@ export async function transcribeViaService(buffer: Buffer, filename: string): Pr
               }
               failed++;
               console.warn(`[transcribe] segment ${i}/${segmentPaths.length} failed:`, err instanceof Error ? err.message : err);
-              // Потерянные минуты помечаем прямо в тексте. Молчаливый пропуск читается
+              // Потерянный фрагмент помечаем прямо в тексте. Молчаливый пропуск читается
               // как «здесь ничего не говорили» — а на деле кусок записи просто выпал.
-              const from = Math.round((i * CHUNK_SECONDS) / 60);
-              const to = Math.round(((i + 1) * CHUNK_SECONDS) / 60);
-              parts[i] = `[фрагмент ${from}–${to} мин не распознан]`;
+              parts[i] = formatSegmentFailure(i, segmentPaths.length);
             }
           }
         }
