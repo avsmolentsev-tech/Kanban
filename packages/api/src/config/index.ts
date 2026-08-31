@@ -28,6 +28,12 @@ export const config = {
   jwtSecret: process.env['JWT_SECRET'] ?? 'pis-default-secret-change-me',
   resendApiKey: process.env['RESEND_API_KEY'] ?? '',
   emailFrom: process.env['EMAIL_FROM'] ?? 'Clarity Space <noreply@clarity-space.ru>',
+  // 152-ФЗ: разрешён ли откат расшифровки аудио на облачный OpenAI whisper-1, когда
+  // локальные бэкенды (faster-whisper / whisper.cpp) недоступны. Сырая запись голоса —
+  // самые чувствительные персданные, а отправка в OpenAI — трансграничная передача в США.
+  // По умолчанию (переменная не задана) — true, чтобы не менять поведение прода молча;
+  // явно поставить `TRANSCRIPTION_ALLOW_CLOUD_FALLBACK=false`, чтобы запретить.
+  transcriptionAllowCloudFallback: process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'] !== 'false',
 } as const;
 
 if (config.jwtSecret === 'pis-default-secret-change-me') {

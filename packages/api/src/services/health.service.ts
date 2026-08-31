@@ -56,8 +56,21 @@ function checkLlm(): HealthCheck {
   return ok ? { name: 'llm', ok: true } : { name: 'llm', ok: false, detail: 'ключ LLM не задан, AI-функции отключены' };
 }
 
+/**
+ * Отражает состояние флага 152-ФЗ (TRANSCRIPTION_ALLOW_CLOUD_FALLBACK) наружу.
+ * Это не критичная зависимость и не ошибка — просто факт текущей политики,
+ * поэтому всегда `ok: true`. В detail — только сам факт разрешён/запрещён,
+ * без путей, адресов и ключей: эндпоинт не защищён авторизацией.
+ */
+function checkTranscriptionPolicy(): HealthCheck {
+  const detail = config.transcriptionAllowCloudFallback
+    ? 'облачный фолбэк расшифровки разрешён'
+    : 'облачный фолбэк расшифровки запрещён';
+  return { name: 'transcription-policy', ok: true, detail };
+}
+
 export async function checkHealth(): Promise<HealthReport> {
-  const checks: HealthCheck[] = [await checkPostgres(), checkVault(), await checkWhisper(), checkLlm()];
+  const checks: HealthCheck[] = [await checkPostgres(), checkVault(), await checkWhisper(), checkLlm(), checkTranscriptionPolicy()];
   const failedCritical = checks.some((c) => !c.ok && CRITICAL.has(c.name));
   const failedAny = checks.some((c) => !c.ok);
   return {

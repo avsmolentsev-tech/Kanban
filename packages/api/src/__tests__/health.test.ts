@@ -96,3 +96,60 @@ describe('checkHealth', () => {
     expect(whisper?.ok).toBe(false);
   });
 });
+
+/**
+ * 152-ФЗ: /health отражает состояние флага TRANSCRIPTION_ALLOW_CLOUD_FALLBACK.
+ * Эндпоинт не требует авторизации, поэтому в detail — только факт «разрешён/запрещён»,
+ * без путей, адресов и ключей. Модуль config кэширует значение при импорте, поэтому
+ * каждый тест сбрасывает реестр модулей и переимпортирует health.service заново.
+ */
+describe('checkHealth: политика облачного фолбэка расшифровки (152-ФЗ)', () => {
+  const ORIGINAL = process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'];
+
+  function setupMocks(): void {
+    const db = require('../db/db');
+    (db.query as jest.Mock).mockResolvedValue({ rows: [{ ok: 1 }] });
+    const fsMock = require('fs');
+    (fsMock.accessSync as jest.Mock).mockImplementation(() => {});
+    const whisper = require('../services/whisper-local.service');
+    (whisper.isLocalWhisperAvailable as jest.Mock).mockReturnValue(true);
+    (whisper.isTranscribeServiceAvailable as jest.Mock).mockResolvedValue(true);
+  }
+
+  afterEach(() => {
+    if (ORIGINAL === undefined) delete process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'];
+    else process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'] = ORIGINAL;
+  });
+
+  test('флаг не задан → /health показывает облачный фолбэк разрешённым', async () => {
+    jest.resetModules();
+    delete process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'];
+    setupMocks();
+    const { checkHealth: freshCheckHealth } = require('../services/health.service');
+    const r = await freshCheckHealth();
+    const c = r.checks.find((x: { name: string }) => x.name === 'transcription-policy');
+    expect(c?.ok).toBe(true);
+    expect(c?.detail).toMatch(/разрешён/);
+  });
+
+  test('TRANSCRIPTION_ALLOW_CLOUD_FALLBACK=false → /health показывает облачный фолбэк запрещённым', async () => {
+    jest.resetModules();
+    process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'] = 'false';
+    setupMocks();
+    const { checkHealth: freshCheckHealth } = require('../services/health.service');
+    const r = await freshCheckHealth();
+    const c = r.checks.find((x: { name: string }) => x.name === 'transcription-policy');
+    expect(c?.ok).toBe(true);
+    expect(c?.detail).toMatch(/запрещён/);
+  });
+
+  test('detail не содержит путей, адресов или ключей', async () => {
+    jest.resetModules();
+    process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'] = 'false';
+    setupMocks();
+    const { checkHealth: freshCheckHealth } = require('../services/health.service');
+    const r = await freshCheckHealth();
+    const c = r.checks.find((x: { name: string }) => x.name === 'transcription-policy');
+    expect(c?.detail).not.toMatch(/\/|https?:|sk-|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/);
+  });
+});

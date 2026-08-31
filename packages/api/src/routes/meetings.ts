@@ -12,6 +12,7 @@ import { ClaudeService } from '../services/claude.service';
 import { mdToPdf, mdToDocx } from '../services/converter.service';
 import { telegramService } from '../services/telegram.service';
 import { isLocalWhisperAvailable, isTranscribeServiceAvailable, transcribeLocal, compressForTranscription, looksLikeGarbage, safeTmpName } from '../services/whisper-local.service';
+import { redactPii, restorePii } from '../services/pii-redact';
 import { config } from '../config';
 import { registerJob, completeJob, resumePendingJobs, type PendingJob } from '../services/pending-jobs';
 import OpenAI from 'openai';
@@ -259,6 +260,11 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
     let transcript = '';
     const finalMb = audioBuffer.length / 1024 / 1024;
     const canUseOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
+    // 152-ФЗ: сырая запись голоса — самые чувствительные персданные, а отправка в
+    // OpenAI — трансграничная передача в США. `canUseOpenAI` — это техническая
+    // возможность (есть ключ, файл влезает в лимит), `cloudFallbackAllowed` — это
+    // разрешение политики. Оба условия нужны, чтобы реально уйти в облако.
+    const cloudFallbackAllowed = config.transcriptionAllowCloudFallback;
 
     /** Платный облачный бэкенд. Держим только как страховку. */
     const viaOpenAI = async (): Promise<string> => {
@@ -297,12 +303,17 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
       } catch (err) {
         console.error(`[bg-job ${meetingId}] local transcription failed:`, err instanceof Error ? err.message : err);
         if (!canUseOpenAI) throw err;
+        if (!cloudFallbackAllowed) {
+          throw new Error('Локальная расшифровка не удалась, а облачный фолбэк отключён политикой обработки персональных данных (152-ФЗ). Попробуйте ещё раз позже или обратитесь к администратору.');
+        }
         console.log(`[bg-job ${meetingId}] falling back to OpenAI whisper-1`);
         transcript = await viaOpenAI();
       }
-    } else if (canUseOpenAI) {
+    } else if (canUseOpenAI && cloudFallbackAllowed) {
       console.warn(`[bg-job ${meetingId}] no local backend available, using paid OpenAI whisper-1`);
       transcript = await viaOpenAI();
+    } else if (canUseOpenAI && !cloudFallbackAllowed) {
+      throw new Error('Локальный бэкенд расшифровки недоступен, а облачный фолбэк отключён политикой обработки персональных данных (152-ФЗ). Попробуйте ещё раз позже или обратитесь к администратору.');
     } else {
       throw new Error('No transcription backend available');
     }
@@ -333,7 +344,12 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
       await setStatus('summarizing');
       try {
         const sys = 'Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды.';
-        const summary = (await claude.chat([{ role: 'user', content: transcript }], sys, 'gpt-4.1-mini', false, false)).trim();
+        // 152-ФЗ: в модель уходит только обезличенный текст. `piiMap` живёт исключительно
+        // в этой переменной — она не пишется в БД, лог или поисковый индекс, и подстановка
+        // реальных значений обратно в резюме делается нашим кодом ниже, без участия модели.
+        const { text: redactedTranscript, map: piiMap } = redactPii(transcript);
+        const rawSummary = (await claude.chat([{ role: 'user', content: redactedTranscript }], sys, 'gpt-4.1-mini', false, false)).trim();
+        const summary = restorePii(rawSummary, piiMap);
         if (summary && !mergedBody.startsWith('## Ключевые решения')) {
           mergedBody = `${summary}\n\n---\n\n${mergedBody}`;
           await execute('UPDATE meetings SET summary_raw = $1, updated_at = NOW() WHERE id = $2', [mergedBody, meetingId]);
