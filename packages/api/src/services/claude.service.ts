@@ -13,6 +13,34 @@ export const PII_TOKEN_NOTE =
   'это не реальные имена и данные, а технические плейсхолдеры. Воспроизводи их в ответе ТОЧНО так же посимвольно ' +
   '(те же квадратные скобки, регистр и подчёркивание), не переводи их и не заменяй словами вроде «Участник 1».';
 
+/**
+ * Ни один ключ модели не задан — ни основной, ни advisor-клиент (см. конструктор
+ * ClaudeService: advisorApiKey || openaiApiKey). AI-функции в этом случае отключаются
+ * мягко (см. routes/ai.ts), сервис продолжает работать.
+ */
+export function isLlmConfigured(): boolean {
+  return Boolean(config.anthropicApiKey || config.openaiApiKey || config.advisorApiKey);
+}
+
+/**
+ * Короткая метка провайдера для /health и админ-кабинета: показывает, куда реально
+ * уходят запросы, без раскрытия полного URL/хоста (эндпоинт /health не защищён
+ * авторизацией). Переключение на другого провайдера — смена одной переменной
+ * окружения OPENAI_BASE_URL, без изменений кода.
+ */
+export function llmProviderName(): string {
+  const url = config.openaiBaseUrl;
+  if (!url) return 'default';
+  try {
+    const hostname = new URL(url).hostname;
+    // Второй уровень домена (например, "yandex" из llm.api.cloud.yandex.net) —
+    // достаточно для узнаваемой метки провайдера, не хост целиком.
+    return hostname.split('.').slice(-2, -1)[0] ?? hostname;
+  } catch {
+    return 'custom';
+  }
+}
+
 export interface TaskSuggestion {
   title: string;
   description: string;
