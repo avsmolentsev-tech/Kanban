@@ -160,14 +160,39 @@ export async function transcribeViaService(buffer: Buffer, filename: string): Pr
   fs.writeFileSync(inputPath, buffer);
   const segmentPaths: string[] = [];
 
+  // Обрезаем тишину ОДНИМ проходом ffmpeg на весь файл, до сегментирования —
+  // если резать внутри каждого сегмента, границы кусков поедут и склейка по
+  // порядку сломается. Один процесс на файл, не на сегмент: сервер общий,
+  // рядом крутится ещё десяток чужих продуктов на 4 ядрах.
+  // Тишина — оптимизация качества, а не обязательное условие: если ffmpeg на
+  // этом файле упал, едем дальше на исходном аудио, а не роняем расшифровку.
+  const trimmedPath = path.join(tmpDir, `svc-${id}-trimmed.mp3`);
+  let workPath = inputPath;
+  let workFilename = filename;
   try {
-    const duration = await probeDurationSeconds(inputPath);
+    await runCommand('ffmpeg', [
+      '-i', inputPath, '-vn',
+      '-af', buildSilenceFilter(),
+      '-ar', '16000', '-ac', '1', '-q:a', '6',
+      trimmedPath, '-y',
+    ], 300000);
+    if (fs.existsSync(trimmedPath)) {
+      workPath = trimmedPath;
+      workFilename = filename.replace(/\.[^.]+$/, '.mp3');
+    }
+  } catch (err) {
+    console.warn('[transcribe] обрезка тишины не удалась, используем исходное аудио:', err instanceof Error ? err.message : err);
+    try { fs.unlinkSync(trimmedPath); } catch {}
+  }
+
+  try {
+    const duration = await probeDurationSeconds(workPath);
     let transcript: string;
 
     if (duration > CHUNK_THRESHOLD_SECONDS) {
       // Split into CHUNK_SECONDS segments (stream copy → fast, frame-accurate enough).
       const pattern = path.join(tmpDir, `svc-${id}-seg-%03d.mp3`);
-      await runCommand('ffmpeg', ['-i', inputPath, '-vn', '-f', 'segment', '-segment_time', String(CHUNK_SECONDS), '-c', 'copy', pattern, '-y'], 300000);
+      await runCommand('ffmpeg', ['-i', workPath, '-vn', '-f', 'segment', '-segment_time', String(CHUNK_SECONDS), '-c', 'copy', pattern, '-y'], 300000);
       let n = 0;
       for (;;) {
         const p = path.join(tmpDir, `svc-${id}-seg-${String(n).padStart(3, '0')}.mp3`);
@@ -219,7 +244,11 @@ export async function transcribeViaService(buffer: Buffer, filename: string): Pr
       if (failed > 0) console.warn(`[transcribe] ${failed}/${segmentPaths.length} segments dropped, returning partial transcript`);
       transcript = parts.join(' ').replace(/\s+/g, ' ').trim();
     } else {
-      transcript = await serviceRequest(buffer, filename);
+      // Короткий файл шлём одним запросом. Если тишина обрезалась — читаем
+      // результат прохода ffmpeg, иначе экономим лишний диск-I/O и берём
+      // буфер, который уже есть в памяти.
+      const shortAudio = workPath === trimmedPath ? fs.readFileSync(trimmedPath) : buffer;
+      transcript = await serviceRequest(shortAudio, workFilename);
     }
 
     try {
@@ -230,6 +259,7 @@ export async function transcribeViaService(buffer: Buffer, filename: string): Pr
     return transcript;
   } finally {
     try { fs.unlinkSync(inputPath); } catch {}
+    if (workPath === trimmedPath) { try { fs.unlinkSync(trimmedPath); } catch {} }
     for (const p of segmentPaths) { try { fs.unlinkSync(p); } catch {} }
   }
 }
