@@ -99,10 +99,10 @@ git add -A && git commit -m "chore: синхронизация рабочей к
 **Files:**
 - Create: `packages/api/src/services/health.service.ts`
 - Create: `packages/api/src/__tests__/health.test.ts`
-- Modify: `packages/api/src/index.ts:54-56`
+- Modify: `packages/api/src/index.ts:65-67`
 
 **Interfaces:**
-- Consumes: `query` из `../db/db`, `config` из `../config`
+- Consumes: `query` из `../db/db`, `config` из `../config`, `isLocalWhisperAvailable` из `./whisper-local.service` (экспортируется на строке 17 — **не** из `whisper-queue`)
 - Produces: `checkHealth(): Promise<HealthReport>`, где
   `type HealthCheck = { name: string; ok: boolean; detail?: string }` и
   `type HealthReport = { status: 'ok' | 'degraded' | 'down'; ts: string; checks: HealthCheck[] }`
@@ -156,7 +156,7 @@ Expected: FAIL — `Cannot find module '../services/health.service'`
 import * as fs from 'fs';
 import { query } from '../db/db';
 import { config } from '../config';
-import { isLocalWhisperAvailable } from './whisper-queue';
+import { isLocalWhisperAvailable } from './whisper-local.service';
 
 export type HealthCheck = { name: string; ok: boolean; detail?: string };
 export type HealthReport = { status: 'ok' | 'degraded' | 'down'; ts: string; checks: HealthCheck[] };
@@ -243,7 +243,7 @@ git commit -m "feat(health): /health проверяет postgres, vault, whisper
 Лечим причину галлюцинаций «Музыка, Музыка» вместо симптома.
 
 **Files:**
-- Modify: `packages/api/src/services/whisper-local.service.ts` (конвертация в WAV, строка ~229)
+- Modify: `packages/api/src/services/whisper-local.service.ts` — конвертация входного аудио в WAV 16 kHz mono через ffmpeg. Найти вызов `runCommand('ffmpeg', ...)` с аргументами `'-ar', '16000', '-ac', '1'` и добавить фильтр туда. Язык распознавания задан на строке 407 (`'-l', 'ru'`) — **не трогать**.
 - Create: `packages/api/src/__tests__/whisper-silence.test.ts`
 
 **Interfaces:**
@@ -314,7 +314,7 @@ Expected: PASS
 
 - [ ] **Step 5: Убрать усиление тихого аудио**
 
-В `packages/api/src/services/whisper-queue.ts` `boostAudio` (строка ~87) поднимает громкость всей дорожки, включая шум в паузах — это работает против обрезки тишины. Удалить вызов `boostAudio` из пути обработки, саму функцию оставить неиспользуемой не нужно — удалить целиком.
+В `packages/api/src/services/whisper-queue.ts` `boostAudio` поднимает громкость всей дорожки, включая шум в паузах — это работает против обрезки тишины. Функция объявлена на строке ~93 и вызывается в двух местах: строки ~46 и ~130. Удалить оба вызова (переменная `audioBuffer` получает исходный буфер напрямую) и саму функцию целиком. Проверить, что после удаления не осталось неиспользуемых импортов.
 
 - [ ] **Step 6: Проверить на живом файле**
 
@@ -339,7 +339,13 @@ git commit -m "fix(whisper): резать тишину перед распозн
 
 ---
 
-### Task 3: Очередь расшифровки переживает перезапуск
+### Task 3: СНЯТА — уже реализована на проде
+
+> **Не исполнять.** Сверка с прод-кодом 31.08.2026 показала: `packages/api/src/services/pending-jobs.ts` (184 строки) уже делает ровно это — аудио кладётся на диск, задача пишется строкой в БД, при старте `resumeInterruptedTranscriptions` из `routes/meetings.ts` подхватывает оборванное. Вызывается из `index.ts` после `app.listen`. Покрыто `__tests__/pending-jobs.test.ts` — зелёный. Прод-реализация полнее плановой: поддерживает и `meeting`, и `telegram-audio`.
+>
+> Всё, что ниже, оставлено как след рассуждения. Создавать таблицу `transcription_jobs` **нельзя** — это вторая очередь рядом с работающей.
+
+<details><summary>Исходный текст задачи (не исполнять)</summary>
 
 Сейчас задачи и аудио живут в памяти процесса и умирают при `pm2 delete`.
 
@@ -544,6 +550,8 @@ git add packages/api/src/services/transcription-jobs.ts packages/api/src/__tests
 git commit -m "fix(whisper): очередь расшифровки в Postgres — задачи переживают перезапуск процесса"
 ```
 
+</details>
+
 ---
 
 ### Task 4: Обезличивание персональных данных перед отправкой в LLM
@@ -697,6 +705,8 @@ git commit -m "feat(pii): обезличивание транскрипта пе
 - Create: `packages/api/src/__tests__/llm-provider.test.ts`
 - Modify: `packages/api/src/routes/ai.ts`
 - Modify: `.env.example`
+
+**Важно:** в `services/claude.service.ts` **два** клиента с `baseURL: config.openaiBaseUrl` — основной (строка ~27) и `advisorClient` (строка ~29, использует `config.advisorApiKey || config.openaiApiKey`). `isLlmConfigured()` должна учитывать оба пути, а не только основной.
 
 **Interfaces:**
 - Consumes: `config`
@@ -1277,4 +1287,6 @@ BASE=https://clarity-space.ru ./scripts/smoke.sh
 
 ## Порядок и приоритет
 
-Если времени до презентации меньше, чем задач: 0 → 1 → 4 → 5 → 7 → 8 → 9. Задачи 2, 3, 6, 10 — важные, но их отсутствие заказчик на демо не увидит.
+Порядок исполнения: **0 → 1 → 2 → 4 → 5 → 6 → 7 → 8 → 9 → 10**. Задача 3 снята.
+
+Задача 8 (MCP) обязана идти после Задачи 6 — она использует `verifyToken` для авторизации. Задача 9 (smoke) идёт после 1, 7 и 8 — она их проверяет. Если время кончится раньше, первой отваливается Задача 10 (документация), затем 2.
