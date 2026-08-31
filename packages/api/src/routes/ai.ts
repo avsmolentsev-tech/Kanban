@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { ClaudeService } from '../services/claude.service';
+import { ClaudeService, isLlmConfigured } from '../services/claude.service';
 import { query, queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { ObsidianService } from '../services/obsidian.service';
@@ -14,6 +14,17 @@ import { checkAiLimit } from '../middleware/plan';
 export const aiRouter = Router();
 const claude = new ClaudeService();
 const obsidian = new ObsidianService(config.vaultPath);
+
+// Мягкая деградация: ни один ключ модели не задан (ни ANTHROPIC_API_KEY, ни
+// OPENAI_API_KEY/ADVISOR_OPENAI_API_KEY) — все AI-эндпоинты отвечают 501 вместо
+// падения процесса при первом же обращении к провайдеру. Сервис продолжает работать.
+aiRouter.use((_req: Request, res: Response, next) => {
+  if (!isLlmConfigured()) {
+    res.status(501).json({ success: false, error: 'AI-функции не настроены: не задан ключ модели' });
+    return;
+  }
+  next();
+});
 
 /** Enforce the per-user daily AI limit. Responds 429 and returns false if exceeded. */
 async function enforceAiLimit(req: AuthRequest, res: Response): Promise<boolean> {
