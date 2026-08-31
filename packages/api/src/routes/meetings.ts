@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
+import jwt from 'jsonwebtoken';
 import * as fs from 'fs';
 import * as path from 'path';
 import { query, queryAll, queryOne, execute } from '../db/db';
@@ -10,9 +11,9 @@ import { ObsidianService } from '../services/obsidian.service';
 import { ClaudeService } from '../services/claude.service';
 import { mdToPdf, mdToDocx } from '../services/converter.service';
 import { telegramService } from '../services/telegram.service';
-import { isLocalWhisperAvailable, transcribeLocal, compressForTranscription, safeTmpName } from '../services/whisper-local.service';
-import { sanitizeTranscript } from '../services/transcript-sanitize';
+import { isLocalWhisperAvailable, isTranscribeServiceAvailable, transcribeLocal, compressForTranscription, looksLikeGarbage, safeTmpName } from '../services/whisper-local.service';
 import { config } from '../config';
+import { registerJob, completeJob, resumePendingJobs, type PendingJob } from '../services/pending-jobs';
 import OpenAI from 'openai';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
@@ -228,7 +229,7 @@ meetingsRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
 });
 
 // Heavy background pipeline: compress → transcribe → summarize → save → sync vault
-async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, originalName: string, userId: number | null, autoSummarize: boolean): Promise<void> {
+async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, originalName: string, userId: number | null, autoSummarize: boolean, jobId: number | null = null): Promise<void> {
   const setStatus = async (status: string | null, errMsg?: string | null): Promise<void> => {
     await execute('UPDATE meetings SET processing_status = $1, processing_error = $2 WHERE id = $3', [status, errMsg ?? null, meetingId]);
   };
@@ -257,15 +258,16 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
     await setStatus('transcribing');
     let transcript = '';
     const finalMb = audioBuffer.length / 1024 / 1024;
-    const useOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
+    const canUseOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
 
-    if (useOpenAI) {
-      // Имя здесь нужно только чтобы whisper-1 угадал формат по расширению.
-      // Само `audioName` тянется из req.file.originalname и слэши в нём сохраняются,
-      // поэтому в путь идёт только обеззараженное расширение — иначе загрузка
-      // с именем вида `../../../etc/cron.d/x` пишет буфер за пределы /tmp.
-      const ext = path.extname(safeTmpName(audioName)) || '.mp3';
-      const tmp = path.join(require('os').tmpdir(), `oa-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    /** Платный облачный бэкенд. Держим только как страховку. */
+    const viaOpenAI = async (): Promise<string> => {
+      // Имя нужно только чтобы whisper-1 угадал формат по расширению. `audioName`
+      // тянется из req.file.originalname и слэши в нём сохраняются, поэтому в путь
+      // идёт лишь обеззараженное расширение — иначе загрузка с именем вида
+      // `../../../etc/cron.d/x` пишет буфер за пределы /tmp.
+      const oaExt = path.extname(safeTmpName(audioName)) || '.mp3';
+      const tmp = path.join(require('os').tmpdir(), `oa-${Date.now()}-${Math.random().toString(36).slice(2)}${oaExt}`);
       fs.writeFileSync(tmp, audioBuffer);
       try {
         console.log(`[bg-job ${meetingId}] OpenAI whisper-1 for ${finalMb.toFixed(1)}MB`);
@@ -274,42 +276,60 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
           file: fs.createReadStream(tmp),
           language: 'ru',
         });
-        const cleaned = sanitizeTranscript(result.text);
-        if (cleaned.loopDetected) {
-          console.warn(`[bg-job ${meetingId}] OpenAI: петля-галлюцинация, вычищено ${cleaned.removedUnits} фрагментов`);
-        }
-        transcript = cleaned.text;
-        console.log(`[bg-job ${meetingId}] OpenAI returned ${result.text.length} chars → ${transcript.length} после чистки`);
-      } catch (err) {
-        console.error(`[bg-job ${meetingId}] OpenAI failed:`, err instanceof Error ? err.message : err);
-        if (isLocalWhisperAvailable()) {
-          console.log(`[bg-job ${meetingId}] falling back to local whisper`);
-          transcript = await transcribeLocal(audioBuffer, audioName);
-        } else {
-          throw err;
-        }
+        console.log(`[bg-job ${meetingId}] OpenAI returned ${result.text.length} chars`);
+        return result.text;
       } finally {
         try { fs.unlinkSync(tmp); } catch {}
       }
-    } else if (isLocalWhisperAvailable()) {
-      console.log(`[bg-job ${meetingId}] local whisper.cpp for ${finalMb.toFixed(1)}MB`);
-      transcript = await transcribeLocal(audioBuffer, audioName);
+    };
+
+    // Локальная расшифровка идёт первой: она бесплатна и не выпускает запись за
+    // пределы сервера. transcribeLocal сам предпочитает микросервис faster-whisper
+    // и откатывается на whisper.cpp. Облако — только если локально совсем никак.
+    // Раньше порядок был обратный, и веб-загрузка молча уезжала в платный whisper-1,
+    // хотя рядом стоял бесплатный локальный бэкенд.
+    const localReady = (await isTranscribeServiceAvailable()) || isLocalWhisperAvailable();
+
+    if (localReady) {
+      try {
+        console.log(`[bg-job ${meetingId}] local transcription for ${finalMb.toFixed(1)}MB`);
+        transcript = await transcribeLocal(audioBuffer, audioName);
+      } catch (err) {
+        console.error(`[bg-job ${meetingId}] local transcription failed:`, err instanceof Error ? err.message : err);
+        if (!canUseOpenAI) throw err;
+        console.log(`[bg-job ${meetingId}] falling back to OpenAI whisper-1`);
+        transcript = await viaOpenAI();
+      }
+    } else if (canUseOpenAI) {
+      console.warn(`[bg-job ${meetingId}] no local backend available, using paid OpenAI whisper-1`);
+      transcript = await viaOpenAI();
     } else {
       throw new Error('No transcription backend available');
+    }
+
+    // Guard: whisper hallucinates looping garbage on unintelligible audio. Save the
+    // raw text so nothing is lost, but flag it and skip the AI summary — otherwise
+    // Claude confidently "summarizes" pure noise into a plausible-looking meeting.
+    const isGarbage = looksLikeGarbage(transcript);
+    if (isGarbage) {
+      console.warn(`[bg-job ${meetingId}] transcript looks like garbage (${transcript.length} chars) — flagging, skipping summary`);
     }
 
     // Step 3: save transcript
     const meeting = await queryOne<Record<string, unknown>>('SELECT * FROM meetings WHERE id = $1', [meetingId]);
     if (!meeting) throw new Error('Meeting deleted while processing');
     const existingSummary = (meeting['summary_raw'] as string) || '';
-    let mergedBody = existingSummary
-      ? `${existingSummary}\n\n---\nТранскрипция (${new Date().toLocaleString('ru')}):\n${transcript}`
+    const transcriptBody = isGarbage
+      ? `⚠️ Запись неразборчива — не удалось распознать речь (возможно, тихий звук, шум или искажение). Автоматическое резюме не составлялось.\n\n---\nСырой результат распознавания:\n${transcript}`
       : transcript;
+    let mergedBody = existingSummary
+      ? `${existingSummary}\n\n---\nТранскрипция (${new Date().toLocaleString('ru')}):\n${transcriptBody}`
+      : transcriptBody;
     await execute('UPDATE meetings SET summary_raw = $1, updated_at = NOW() WHERE id = $2', [mergedBody, meetingId]);
     searchService.indexRecord('meeting', meetingId, meeting['title'] as string, mergedBody);
 
     // Step 4: AI summary
-    if (autoSummarize && transcript.trim()) {
+    if (autoSummarize && transcript.trim() && !isGarbage) {
       await setStatus('summarizing');
       try {
         const sys = 'Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды.';
@@ -352,11 +372,13 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
       console.warn(`[bg-job ${meetingId}] vault sync failed:`, err instanceof Error ? err.message : err);
     }
 
+    await completeJob(jobId);
     await setStatus('done', null);
     console.log(`[bg-job ${meetingId}] DONE`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[bg-job ${meetingId}] FAILED:`, msg);
+    await completeJob(jobId);
     await setStatus('failed', msg);
   }
 }
@@ -374,7 +396,12 @@ meetingsRouter.post('/:id/transcribe', upload.single('audio'), async (req: AuthR
     const autoSummarize = req.body?.summarize !== 'false';
     // Mark as queued + kick off background job (don't await)
     await execute('UPDATE meetings SET processing_status = $1, processing_error = NULL WHERE id = $2', ['queued', id]);
-    void processAudioInBackground(id, buffer, originalName, userId, autoSummarize);
+    // Аудио на диск ДО старта: перезапуск в первые же секунды иначе снова всё потеряет.
+    const jobId = await registerJob({
+      kind: 'meeting', buffer, filename: originalName, userId, meetingId: id,
+      payload: { autoSummarize },
+    });
+    void processAudioInBackground(id, buffer, originalName, userId, autoSummarize, jobId);
     res.status(202).json(ok({ id, status: 'queued', message: 'Транскрипция запущена в фоне. Можно закрыть окно.' }));
     return;
   }
@@ -544,9 +571,35 @@ meetingsRouter.post('/:id/regenerate-summaries', async (req: AuthRequest, res: R
 });
 
 // Download meeting file (summary or full) as md/pdf/docx
-meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
+// POST /meetings/:id/download-token — short-lived (10 min) token scoped to THIS
+// meeting's download. Keeps the full 30-day session JWT out of shareable URLs.
+meetingsRouter.post('/:id/download-token', async (req: AuthRequest, res: Response) => {
   const id = Number(req.params['id']);
   const userId = getUserId(req);
+  if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
+  const owns = await queryOne('SELECT id FROM meetings WHERE id = $1 AND user_id = $2', [id, userId]);
+  if (!owns) { res.status(404).json(fail('Meeting not found')); return; }
+  const token = jwt.sign({ id: userId, purpose: 'download', meeting_id: id }, config.jwtSecret, { expiresIn: '10m' });
+  res.json(ok({ token }));
+});
+
+// Exported + mounted PUBLICLY (before requireAuth) in routes/index.ts, because a
+// browser navigation can't send an Authorization header — the scoped ?token= is
+// the auth. The handler verifies a session OR a download-scoped token itself.
+export async function downloadMeetingHandler(req: AuthRequest, res: Response): Promise<void> {
+  const id = Number(req.params['id']);
+  // Auth: a real session ONLY via the Authorization header. Via the URL (no
+  // header — a browser navigation) accept ONLY a scoped download token, never a
+  // full session JWT in ?token=. This keeps session tokens out of shareable URLs.
+  let userId: number | null = null;
+  if (req.headers['authorization']) {
+    userId = getUserId(req);
+  } else {
+    try {
+      const p = jwt.verify(String(req.query['token'] || ''), config.jwtSecret) as { id?: number; purpose?: string; meeting_id?: number };
+      if (p.purpose === 'download' && p.meeting_id === id && typeof p.id === 'number') userId = p.id;
+    } catch { /* invalid/expired/non-download token */ }
+  }
   if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
   const exists = await queryOne('SELECT id FROM meetings WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!exists) { res.status(404).json(fail('Meeting not found')); return; }
@@ -565,7 +618,7 @@ meetingsRouter.get('/:id/download', async (req: AuthRequest, res: Response) => {
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'Download failed'));
   }
-});
+}
 
 meetingsRouter.post('/:id/send-to-telegram', async (req: AuthRequest, res: Response) => {
   const parsed = SendToTelegramSchema.safeParse(req.body);
@@ -582,3 +635,33 @@ meetingsRouter.post('/:id/send-to-telegram', async (req: AuthRequest, res: Respo
     res.status(500).json(fail(err instanceof Error ? err.message : 'Send failed'));
   }
 });
+
+/**
+ * Возобновление расшифровок, прерванных перезапуском API.
+ * Вызывается один раз при старте (см. index.ts).
+ */
+export async function resumeInterruptedTranscriptions(): Promise<void> {
+  await resumePendingJobs({
+    meeting: async (job: PendingJob, buffer: Buffer) => {
+      if (job.meeting_id == null) throw new Error('в задаче нет meeting_id');
+      let autoSummarize = true;
+      try { autoSummarize = JSON.parse(job.payload || '{}').autoSummarize !== false; } catch {}
+      await execute('UPDATE meetings SET processing_status = $1, processing_error = NULL WHERE id = $2', ['queued', job.meeting_id]);
+      await processAudioInBackground(job.meeting_id, buffer, job.filename, job.user_id, autoSummarize, job.id);
+    },
+
+    telegramAudio: async (job: PendingJob, buffer: Buffer) => {
+      await telegramService.resumeInterruptedAudio(job.tg_id, buffer, job.filename, job.id);
+    },
+
+    giveUp: async (job: PendingJob, reason: string) => {
+      const text = `Расшифровка не была доведена до конца: сервер перезапустился, ${reason}. Пришлите запись ещё раз.`;
+      if (job.meeting_id != null) {
+        await execute('UPDATE meetings SET processing_status = $1, processing_error = $2 WHERE id = $3', ['failed', text, job.meeting_id]);
+      }
+      if (job.tg_id) {
+        try { await telegramService.notifyUser(job.tg_id, `⚠️ ${text}`); } catch {}
+      }
+    },
+  });
+}

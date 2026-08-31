@@ -20,9 +20,13 @@ export class ClaudeService {
   // Public alias so newer code (and tests) can reference `this.openai` / monkey-patch `svc.openai`.
   public openai: OpenAI;
 
+  // Dedicated client for Advisory Board calls (separate key/billing; falls back to main).
+  private readonly advisorClient: OpenAI;
+
   constructor() {
     this.client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
     this.openai = this.client;
+    this.advisorClient = new OpenAI({ apiKey: config.advisorApiKey || config.openaiApiKey, baseURL: config.openaiBaseUrl });
   }
 
   private buildSystemPrompt(extra = ''): string {
@@ -35,7 +39,7 @@ export class ClaudeService {
     ].filter(Boolean).join('\n');
   }
 
-  async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = '', model?: string, useTools = false, jsonMode = false, userId?: number | null): Promise<string> {
+  async chat(messages: Array<{ role: 'user' | 'assistant'; content: string }>, systemPrompt = '', model?: string, useTools = false, jsonMode = false, userId?: number | null, maxTokens = 8192): Promise<string> {
     const chatMessages: Array<Record<string, unknown>> = [
       { role: 'system', content: this.buildSystemPrompt(systemPrompt) },
       ...messages,
@@ -49,9 +53,9 @@ export class ClaudeService {
     };
     // o3/o4 models use max_completion_tokens, others use max_tokens
     if (isO3) {
-      requestOpts['max_completion_tokens'] = 8192;
+      requestOpts['max_completion_tokens'] = maxTokens;
     } else {
-      requestOpts['max_tokens'] = 8192;
+      requestOpts['max_tokens'] = maxTokens;
     }
 
     if (useTools) {
@@ -72,7 +76,7 @@ export class ClaudeService {
       for (const toolCall of message.tool_calls) {
         if (toolCall.type === 'function') {
           const args = JSON.parse(toolCall.function.arguments || '{}');
-          const result = await executeTool(toolCall.function.name, args);
+          const result = await executeTool(toolCall.function.name, args, userId);
           chatMessages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
@@ -85,6 +89,12 @@ export class ClaudeService {
         messages: chatMessages,
       } as Parameters<typeof this.client.chat.completions.create>[0]);
       message = response.choices[0]?.message;
+    }
+
+    // Упёрлись в потолок вывода — ответ оборван на полуслове. Раньше это уходило
+    // молча, и конспект часовой встречи просто заканчивался на середине.
+    if (response.choices[0]?.finish_reason === 'length') {
+      console.warn(`[ai] ответ обрезан лимитом вывода (${maxTokens} токенов, модель ${selectedModel}) — часть содержимого потеряна`);
     }
 
     // Log usage
@@ -101,27 +111,6 @@ export class ClaudeService {
     } catch {}
 
     return message?.content ?? '';
-  }
-
-  async *chatTokenStream(
-    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-    systemPrompt = '',
-    model = 'gpt-4.1-mini',
-  ): AsyncGenerator<string> {
-    const chatMessages: Array<Record<string, unknown>> = [
-      { role: 'system', content: this.buildSystemPrompt(systemPrompt) },
-      ...messages,
-    ];
-    const stream = await this.client.chat.completions.create({
-      model,
-      messages: chatMessages as Parameters<typeof this.client.chat.completions.create>[0]['messages'],
-      max_tokens: 2048,
-      stream: true,
-    });
-    for await (const chunk of stream) {
-      const token = chunk.choices[0]?.delta?.content ?? '';
-      if (token) yield token;
-    }
   }
 
   async parseMeeting(rawText: string): Promise<MeetingStructured> {
@@ -191,21 +180,29 @@ ${text}`;
    * meetingType: 'meeting' | 'lecture' | 'interview' — selects prompt style.
    */
   async generateProSummaries(transcript: string, title: string, people: string[], meetingType: string = 'meeting'): Promise<{ notes: string; qa: string; actions?: string }> {
-    // 30 000 символов — это ~30 минут речи: у часовой встречи половина не доезжала до конспекта.
-    // У gpt-4.1-mini контекст в 1M токенов, поэтому запас берём с большим полем.
+    // 30 000 символов — это ~30 минут речи: у часовой встречи половина не доезжала
+    // до конспекта. У модели контекст на порядки больше, берём с запасом.
     const context = `Название: ${title}\nУчастники: ${people.join(', ') || 'не указаны'}\n\nТранскрипция:\n${transcript.slice(0, 300000)}`;
 
     const notesPrompt = this.getNotesPrompt(meetingType, context);
     const qaPrompt = this.getQaPrompt(meetingType, context);
 
+    // Подробный конспект часовой встречи не влезал в дефолтные 8192 токена вывода
+    // и обрывался на полуслове — вместе с задачами из последней части разговора.
+    // У gpt-4.1-mini потолок вывода 32768, берём половину с запасом.
+    const SUMMARY_MAX_TOKENS = 16384;
+
     const [notes, qa] = await Promise.all([
-      this.chat([{ role: 'user', content: notesPrompt }], '', 'gpt-4.1-mini'),
-      this.chat([{ role: 'user', content: qaPrompt }], '', 'gpt-4.1-mini'),
+      this.chat([{ role: 'user', content: notesPrompt }], '', 'gpt-4.1-mini', false, false, null, SUMMARY_MAX_TOKENS),
+      this.chat([{ role: 'user', content: qaPrompt }], '', 'gpt-4.1-mini', false, false, null, SUMMARY_MAX_TOKENS),
     ]);
 
     // Extract unique tasks/actions — deduplicate
     let actions: string | undefined;
     try {
+      // 10 000 символов покрывали примерно две трети конспекта часовой встречи —
+      // задачи из последней части в этот запрос просто не попадали. 60 000 заведомо
+      // больше, чем может выдать модель при SUMMARY_MAX_TOKENS.
       const actionsLabel = meetingType === 'lecture' ? 'учебные задачи' : meetingType === 'interview' ? 'задачи и инсайты к применению' : 'задачи и обязательства';
       const actionsResp = await this.chat([{ role: 'user', content: `Из двух документов ниже извлеки ВСЕ уникальные ${actionsLabel}. Убери дубли. Каждая задача — одна строка с чекбоксом.
 
@@ -215,14 +212,182 @@ ${text}`;
 Если одна и та же задача встречается в обоих документах — оставь ОДНУ, более подробную версию.
 
 ДОКУМЕНТ 1 (Notes):
-${notes.slice(0, 10000)}
+${notes.slice(0, 60000)}
 
 ДОКУМЕНТ 2 (Q&A):
-${qa.slice(0, 10000)}` }], '', 'gpt-4.1-mini');
+${qa.slice(0, 60000)}` }], '', 'gpt-4.1-mini', false, false, null, SUMMARY_MAX_TOKENS);
       if (actionsResp.trim()) actions = actionsResp;
     } catch {}
 
     return { notes, qa, ...(actions ? { actions } : {}) };
+  }
+
+  /**
+   * Extract REAL action items from a meeting transcript — structured, attributed,
+   * and quote-backed so nothing is invented. Processes the full transcript in
+   * chunks (no 8k truncation) and returns deduplicated items.
+   */
+  async extractActionItems(
+    transcript: string,
+    title: string,
+    people: string[] = [],
+  ): Promise<Array<{ title: string; owner: string | null; type: 'my_task' | 'their_commitment' | 'mutual_agreement' | 'idea'; due: string | null; quote: string }>> {
+    const CHUNK = 12000;
+    const MAX_CHUNKS = 8; // bound cost on very long recordings
+    const chunks: string[] = [];
+    for (let i = 0; i < transcript.length && chunks.length < MAX_CHUNKS; i += CHUNK) {
+      chunks.push(transcript.slice(i, i + CHUNK));
+    }
+
+    type Item = { title: string; owner: string | null; type: 'my_task' | 'their_commitment' | 'mutual_agreement' | 'idea'; due: string | null; quote: string };
+    const collected: Item[] = [];
+
+    for (const chunk of chunks) {
+      const prompt = `Ты извлекаешь ТОЛЬКО реальные действия из встречи. Никаких выдумок.
+
+Встреча: "${title}"
+Участники: ${people.join(', ') || 'не указаны'}
+
+ЖЁСТКИЕ ПРАВИЛА:
+1. Бери ТОЛЬКО явно проговоренные действия: обязательства, договорённости, задачи «нужно сделать».
+2. Если действие не сказано явно — НЕ включай. Лучше меньше, но точно.
+3. Для КАЖДОГО пункта обязательна ЦИТАТА из транскрипции (дословно, коротко), подтверждающая его. Нет цитаты — не включай пункт.
+4. Определи type:
+   - "my_task" — делает владелец заметок / наша сторона («я», «мы», «нам нужно»)
+   - "their_commitment" — обещал сделать кто-то другой (укажи кто в owner)
+   - "mutual_agreement" — совместная договорённость обеих сторон
+   - "idea" — идея/предложение БЕЗ явного обязательства
+5. owner: имя ответственного из участников, "я" для себя, или null если не ясно.
+6. due: дата в формате YYYY-MM-DD, только если срок назван явно, иначе null.
+
+Верни ТОЛЬКО JSON: {"items":[{"title":"краткое действие","owner":"имя|я|null","type":"my_task|their_commitment|mutual_agreement|idea","due":"YYYY-MM-DD|null","quote":"дословная цитата"}]}
+Если действий нет — {"items":[]}
+
+Транскрипция:
+${chunk}`;
+
+      try {
+        const resp = await this.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini', false, true);
+        const parsed = JSON.parse(resp) as { items?: Item[] };
+        if (Array.isArray(parsed.items)) {
+          for (const it of parsed.items) {
+            if (!it || typeof it.title !== 'string' || it.title.trim().length < 3) continue;
+            if (!it.quote || typeof it.quote !== 'string' || it.quote.trim().length < 3) continue; // no quote → drop (anti-fabrication)
+            collected.push({
+              title: it.title.trim(),
+              owner: it.owner && it.owner !== 'null' ? String(it.owner).trim() : null,
+              type: (['my_task', 'their_commitment', 'mutual_agreement', 'idea'].includes(it.type) ? it.type : 'my_task'),
+              due: it.due && /^\d{4}-\d{2}-\d{2}$/.test(String(it.due)) ? String(it.due) : null,
+              quote: it.quote.trim().slice(0, 300),
+            });
+          }
+        }
+      } catch { /* skip unparseable chunk */ }
+    }
+
+    // Dedup by normalized title
+    const seen = new Set<string>();
+    const deduped: Item[] = [];
+    for (const it of collected) {
+      const key = it.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(it);
+    }
+    return deduped;
+  }
+
+  // ── Advisory Board (persona engine) ───────────────────────────────────────
+  // Personas call the model with their pure system prompt (NOT buildSystemPrompt,
+  // which injects a generic assistant identity that would dilute the character).
+
+  /** One-tap разбор: a persona analyses a situation and returns structured output. */
+  async advisorAnalyze(personaPrompt: string, context: string): Promise<{ opinion: string; risks: string[]; would_do: string; questions: string[] }> {
+    const model = config.advisorModel;
+    const system = `${personaPrompt}
+
+Верни ТОЛЬКО валидный JSON:
+{"opinion":"твоя оценка ситуации от первого лица","risks":["риск/красный флаг", "..."],"would_do":"что бы ты сделал — конкретные шаги","questions":["уточняющий вопрос к пользователю", "..."]}`;
+    const resp = await this.advisorClient.chat.completions.create({
+      model,
+      temperature: 0.7,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: `Разбери эту встречу/ситуацию:\n\n${context}` },
+      ],
+    });
+    const text = resp.choices[0]?.message?.content ?? '{}';
+    try {
+      const p = JSON.parse(text) as Record<string, unknown>;
+      return {
+        opinion: typeof p['opinion'] === 'string' ? p['opinion'] as string : text,
+        risks: Array.isArray(p['risks']) ? (p['risks'] as string[]) : [],
+        would_do: typeof p['would_do'] === 'string' ? p['would_do'] as string : '',
+        questions: Array.isArray(p['questions']) ? (p['questions'] as string[]) : [],
+      };
+    } catch {
+      return { opinion: text, risks: [], would_do: '', questions: [] };
+    }
+  }
+
+  /** Live dialogue: a persona replies in character, holding the situation context + history. */
+  async advisorReply(personaPrompt: string, context: string, history: Array<{ role: 'user' | 'assistant'; content: string }>): Promise<string> {
+    const model = config.advisorModel;
+    const system = `${personaPrompt}${context ? `\n\nКонтекст встречи/ситуации, которую вы обсуждаете:\n${context}` : ''}`;
+    const resp = await this.advisorClient.chat.completions.create({
+      model,
+      temperature: 0.8,
+      messages: [
+        { role: 'system', content: system },
+        ...history,
+      ],
+    });
+    return resp.choices[0]?.message?.content ?? '';
+  }
+
+  /** Chairman synthesis: combine several advisors' разборы into consensus/disagreement/recommendation. */
+  async advisorSynthesize(items: Array<{ name: string; opinion?: string; risks?: string[]; would_do?: string }>): Promise<{ agreement: string[]; disagreement: string[]; recommendation: string }> {
+    const model = config.advisorModel;
+    const board = items.map(it => `### ${it.name}\nМнение: ${it.opinion ?? ''}\nРиски: ${(it.risks ?? []).join('; ')}\nЧто бы сделал: ${it.would_do ?? ''}`).join('\n\n');
+    const system = `Ты — беспристрастный председатель совета директоров. Тебе дали разборы ОДНОЙ ситуации от нескольких советников. Сведи их: где СОГЛАСИЕ между ними, где РАСХОЖДЕНИЯ (кто с кем и в чём), и дай итоговую взвешенную РЕКОМЕНДАЦИЮ. Не выдумывай — опирайся только на эти разборы.
+Верни ТОЛЬКО JSON: {"agreement":["пункт согласия"],"disagreement":["расхождение: кто vs кто и в чём"],"recommendation":"итоговая рекомендация"}`;
+    const resp = await this.advisorClient.chat.completions.create({
+      model,
+      temperature: 0.5,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: `Разборы советников:\n\n${board}` },
+      ],
+    });
+    const text = resp.choices[0]?.message?.content ?? '{}';
+    try {
+      const p = JSON.parse(text) as Record<string, unknown>;
+      return {
+        agreement: Array.isArray(p['agreement']) ? (p['agreement'] as string[]) : [],
+        disagreement: Array.isArray(p['disagreement']) ? (p['disagreement'] as string[]) : [],
+        recommendation: typeof p['recommendation'] === 'string' ? p['recommendation'] as string : '',
+      };
+    } catch {
+      return { agreement: [], disagreement: [], recommendation: text };
+    }
+  }
+
+  /** Council chat: chairman merges several personas' replies to a question into one collective answer. */
+  async advisorCouncilReply(question: string, replies: Array<{ name: string; reply: string }>): Promise<string> {
+    const model = config.advisorModel;
+    const board = replies.map(r => `### ${r.name}\n${r.reply}`).join('\n\n');
+    const system = `Ты — председатель совета директоров. Советники ответили на вопрос пользователя. Дай ОДИН коллективный ответ от лица совета: по делу, без воды. Где советники расходятся — отметь это прямо («X считает …, но Y возражает …»). Не выдумывай, опирайся только на их ответы. Пиши на русском.`;
+    const resp = await this.advisorClient.chat.completions.create({
+      model,
+      temperature: 0.6,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: `Вопрос пользователя: ${question}\n\nОтветы советников:\n\n${board}` },
+      ],
+    });
+    return resp.choices[0]?.message?.content ?? '';
   }
 
   // ── Prompt builders per meeting type ──────────────────────────────────────
@@ -357,11 +522,19 @@ ${context}`;
 ФОРМАТ (markdown):
 # [Название встречи]
 
+## TL;DR
+[2-3 предложения: о чём была встреча и что главное решили. Чтобы понять суть за 10 секунд.]
+
 ## Предпосылки и основная информация
 [2-3 абзаца: кто участвовал, какие компании представляют, чем занимаются, контекст встречи. Справочная информация о бизнесе участников.]
 
 ## [Тема 1]: [название]
-[Подробное описание обсуждения этой темы. Конкретные цифры, факты, стратегии. Упоминай участников по имени.]
+[Глубокий разбор темы, а не пересказ. Раскрой:
+ - что конкретно обсуждали (цифры, факты, стратегии);
+ - ПОЗИЦИИ сторон: кто что предлагал/отстаивал и ПОЧЕМУ (аргументы);
+ - где был спор или расхождение, как его разрешили (или не разрешили);
+ - что решили по теме и что осталось открытым.
+ Упоминай участников по имени.]
 
 ## [Тема 2]: [название]
 [...]
@@ -391,9 +564,14 @@ ${context}`;
 ВАЖНО:
 - Пиши на русском
 - Будь конкретен: цифры, названия компаний, суммы, сроки
-- Упоминай кто именно что сказал/предложил
+- Упоминай кто именно что сказал/предложил — по именам участников
 - Не пропускай важные детали
 - Раздел "План действий" должен содержать ВСЕ задачи из встречи
+
+🗣️ АТРИБУЦИЯ СПИКЕРОВ (важно, но осторожно):
+- Приписывай реплику/обязательство человеку ТОЛЬКО когда из транскрипции явно ясно, кто говорит (обращения по имени, представления, контекст диалога).
+- Если неясно, кто произнёс фразу — пиши «(кто именно — неясно)», НЕ угадывай имя.
+- Для договорённостей всегда указывай, КТО кому что пообещал (если ясно).
 
 🚨 КРИТИЧЕСКИ ВАЖНО — ЗАПРЕТ НА ВЫДУМКИ:
 - Пиши ТОЛЬКО то, что ЯВНО сказано в транскрипции!

@@ -22,8 +22,10 @@ export class SearchService {
     // no-op
   }
 
-  async search(query: string, limit = 50): Promise<SearchHit[]> {
+  async search(query: string, limit = 50, userId?: number | null): Promise<SearchHit[]> {
     if (!query.trim()) return [];
+    // Fail closed: without a user context we must not search across everyone's data.
+    if (userId === null || userId === undefined) return [];
     const q = query.trim();
     const likeQ = `%${q}%`;
     const results: SearchHit[] = [];
@@ -33,10 +35,10 @@ export class SearchService {
       const tasks = await queryAll<{ id: number; title: string; rank: number }>(
         `SELECT id, title, ts_rank(search_vector, plainto_tsquery('russian', $1)) as rank
          FROM tasks
-         WHERE search_vector @@ plainto_tsquery('russian', $1) AND archived = 0
+         WHERE search_vector @@ plainto_tsquery('russian', $1) AND archived = 0 AND user_id = $3
          ORDER BY rank DESC
          LIMIT $2`,
-        [q, limit]
+        [q, limit, userId]
       );
       for (const t of tasks) {
         results.push({ type: 'task', ref_id: t.id, title: t.title, snippet: '', rank: t.rank });
@@ -44,8 +46,8 @@ export class SearchService {
 
       // Meetings: ILIKE
       const meetings = await queryAll<{ id: number; title: string; summary_raw: string }>(
-        'SELECT id, title, summary_raw FROM meetings WHERE title ILIKE $1 OR summary_raw ILIKE $1 LIMIT $2',
-        [likeQ, limit]
+        'SELECT id, title, summary_raw FROM meetings WHERE (title ILIKE $1 OR summary_raw ILIKE $1) AND user_id = $3 LIMIT $2',
+        [likeQ, limit, userId]
       );
       for (const m of meetings) {
         const snippet = (m.summary_raw ?? '').slice(0, 200);
@@ -54,8 +56,8 @@ export class SearchService {
 
       // Ideas: ILIKE
       const ideas = await queryAll<{ id: number; title: string; body: string }>(
-        'SELECT id, title, body FROM ideas WHERE title ILIKE $1 OR body ILIKE $1 LIMIT $2',
-        [likeQ, limit]
+        'SELECT id, title, body FROM ideas WHERE (title ILIKE $1 OR body ILIKE $1) AND user_id = $3 LIMIT $2',
+        [likeQ, limit, userId]
       );
       for (const i of ideas) {
         results.push({ type: 'idea', ref_id: i.id, title: i.title, snippet: (i.body ?? '').slice(0, 200), rank: 0 });
@@ -64,8 +66,8 @@ export class SearchService {
       // Documents: ILIKE
       try {
         const docs = await queryAll<{ id: number; title: string; body: string }>(
-          'SELECT id, title, body FROM documents WHERE title ILIKE $1 OR body ILIKE $1 LIMIT $2',
-          [likeQ, limit]
+          'SELECT id, title, body FROM documents WHERE (title ILIKE $1 OR body ILIKE $1) AND user_id = $3 LIMIT $2',
+          [likeQ, limit, userId]
         );
         for (const d of docs) {
           results.push({ type: 'document', ref_id: d.id, title: d.title, snippet: (d.body ?? '').slice(0, 200), rank: 0 });
@@ -74,8 +76,8 @@ export class SearchService {
 
       // People: ILIKE
       const people = await queryAll<{ id: number; name: string; notes: string }>(
-        'SELECT id, name, notes FROM people WHERE name ILIKE $1 OR notes ILIKE $1 LIMIT $2',
-        [likeQ, limit]
+        'SELECT id, name, notes FROM people WHERE (name ILIKE $1 OR notes ILIKE $1) AND user_id = $3 LIMIT $2',
+        [likeQ, limit, userId]
       );
       for (const p of people) {
         results.push({ type: 'person', ref_id: p.id, title: p.name, snippet: (p.notes ?? '').slice(0, 200), rank: 0 });
@@ -291,50 +293,77 @@ export class SearchService {
     }
   }
 
-  /** Extract tasks from meeting content using AI */
+  /** Extract real, attributed, quote-backed action items from a meeting and create tasks. */
   private async extractTasksFromMeeting(meetingId: number, title: string, body: string, projectId: number | null, userId?: number | null): Promise<void> {
     try {
       const { ClaudeService } = require('./claude.service');
       const claude = new ClaudeService();
 
-      const prompt = `Из текста встречи извлеки список конкретных задач (action items, договорённости, что-то нужно сделать). Верни ТОЛЬКО JSON массив строк (без markdown), например:
-["Подготовить презентацию", "Связаться с клиентом", "Написать отчёт"]
+      // Participants for owner attribution (scoped to this meeting)
+      const peopleRows = await queryAll<{ name: string }>(
+        'SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1',
+        [meetingId]
+      );
+      const peopleNames = peopleRows.map(p => p.name);
 
-Если задач нет — верни пустой массив [].
+      const items = await claude.extractActionItems(body, title, peopleNames);
+      if (!Array.isArray(items) || items.length === 0) return;
 
-Текст встречи:
-${body.slice(0, 8000)}`;
-
-      const result = await claude.chat([{ role: 'user', content: prompt }], '', 'gpt-4.1-mini');
-      const jsonMatch = result.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) return;
-      const tasks = JSON.parse(jsonMatch[0]) as string[];
-      if (!Array.isArray(tasks) || tasks.length === 0) return;
+      // Existing tasks from THIS meeting (dedup across re-syncs)
+      const existing = await queryAll<{ title: string }>(
+        "SELECT title FROM tasks WHERE description LIKE $1 AND user_id IS NOT DISTINCT FROM $2",
+        [`%[meeting #${meetingId}]%`, userId ?? null]
+      );
+      const norm = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+      const existingKeys = new Set(existing.map(e => norm(e.title)));
 
       const selfRow = await queryOne<{ id: number }>(
-        "SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1"
+        "SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') AND user_id IS NOT DISTINCT FROM $1 LIMIT 1",
+        [userId ?? null]
       );
 
+      const typeLabel: Record<string, string> = {
+        my_task: 'Моя задача', their_commitment: 'Обязательство другой стороны',
+        mutual_agreement: 'Взаимная договорённость', idea: 'Идея',
+      };
+
       let created = 0;
-      for (const taskTitle of tasks) {
-        if (!taskTitle || typeof taskTitle !== 'string' || taskTitle.length < 3) continue;
+      for (const it of items as Array<{ title: string; owner: string | null; type: string; due: string | null; quote: string }>) {
+        // Ideas are not actionable commitments — don't pollute the task board
+        if (it.type === 'idea') continue;
+        if (existingKeys.has(norm(it.title))) continue;
+
+        const ownerLabel = it.owner || (it.type === 'my_task' ? 'я' : 'не указан');
+        const description = `[meeting #${meetingId}] Из встречи: ${title}\nТип: ${typeLabel[it.type] ?? it.type}\nОтветственный: ${ownerLabel}\nЦитата: «${it.quote}»`;
         try {
           const newTask = await queryOne<{ id: number }>(
-            'INSERT INTO tasks (project_id, title, description, status, priority, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-            [projectId, taskTitle, `Из встречи: ${title}`, 'backlog', 3, userId ?? null]
+            'INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id, commitment_type, commitment_owner, source_meeting_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
+            [projectId, it.title, description, 'backlog', 3, it.due, userId ?? null, it.type, ownerLabel, meetingId]
           );
           const newTaskId = newTask!.id;
-          if (selfRow) {
+          existingKeys.add(norm(it.title));
+
+          // Link the responsible person: named owner if we can resolve them, else self
+          let ownerPersonId: number | null = null;
+          if (it.owner && !['я', 'me', 'self'].includes(it.owner.toLowerCase())) {
+            const person = await queryOne<{ id: number }>(
+              'SELECT id FROM people WHERE LOWER(name) = LOWER($1) AND user_id IS NOT DISTINCT FROM $2 LIMIT 1',
+              [it.owner, userId ?? null]
+            );
+            ownerPersonId = person?.id ?? null;
+          }
+          if (ownerPersonId === null && selfRow) ownerPersonId = selfRow.id;
+          if (ownerPersonId !== null) {
             await execute(
               'INSERT INTO task_people (task_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-              [newTaskId, selfRow.id]
+              [newTaskId, ownerPersonId]
             );
           }
           created++;
-        } catch {}
+        } catch { /* skip failed insert */ }
       }
       if (created > 0) {
-        console.log(`[vault-sync] extracted ${created} tasks from meeting #${meetingId}`);
+        console.log(`[vault-sync] extracted ${created} action items from meeting #${meetingId}`);
       }
     } catch (err) {
       console.warn('[vault-sync] extractTasksFromMeeting error:', err);

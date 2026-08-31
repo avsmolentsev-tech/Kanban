@@ -420,6 +420,63 @@ CREATE TRIGGER tasks_search_vector_trigger
   BEFORE INSERT OR UPDATE ON tasks
   FOR EACH ROW EXECUTE FUNCTION tasks_search_update();
 
+-- ─── Advisory Board ─────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS advisors (
+  id             SERIAL PRIMARY KEY,
+  slug           TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  domain         TEXT NOT NULL DEFAULT '',
+  avatar_url     TEXT,
+  persona_prompt TEXT NOT NULL,
+  voice_style    TEXT NOT NULL DEFAULT '',
+  depth          TEXT NOT NULL DEFAULT 'light' CHECK(depth IN ('deep','light')),
+  enabled        INTEGER NOT NULL DEFAULT 1,
+  is_seed        INTEGER NOT NULL DEFAULT 1,
+  user_id        INTEGER REFERENCES users(id),
+  created_at     TEXT NOT NULL DEFAULT NOW()
+);
+-- Seed advisors are global (user_id IS NULL); custom advisors belong to a user.
+CREATE UNIQUE INDEX IF NOT EXISTS advisors_seed_slug_idx ON advisors(slug) WHERE user_id IS NULL;
+
+CREATE TABLE IF NOT EXISTS advisor_sessions (
+  id          SERIAL PRIMARY KEY,
+  user_id     INTEGER REFERENCES users(id),
+  meeting_id  INTEGER REFERENCES meetings(id),
+  advisor_ids TEXT NOT NULL DEFAULT '[]',
+  created_at  TEXT NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS advisor_messages (
+  id          SERIAL PRIMARY KEY,
+  session_id  INTEGER NOT NULL REFERENCES advisor_sessions(id),
+  sender      TEXT NOT NULL CHECK(sender IN ('user','advisor')),
+  advisor_id  INTEGER REFERENCES advisors(id),
+  content     TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT NOW()
+);
+
 -- ─── Migrations (idempotent) ────────────────────────────────────────────────
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free';
+
+-- Person profile photo (auto-pulled from public Telegram t.me/<username>)
+ALTER TABLE people ADD COLUMN IF NOT EXISTS photo_url TEXT;
+
+-- Standalone transcriptions (not tied to a meeting)
+CREATE TABLE IF NOT EXISTS transcriptions (
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER REFERENCES users(id),
+  filename   TEXT,
+  status     TEXT NOT NULL DEFAULT 'processing',
+  text       TEXT,
+  summary    TEXT,
+  error      TEXT,
+  created_at TEXT NOT NULL DEFAULT NOW()
+);
+ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS summary TEXT;
+
+-- Commitments tracking on tasks (populated by meeting action-item extraction)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_type TEXT;      -- my_task | their_commitment | mutual_agreement
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_owner TEXT;     -- who is responsible (name / "я")
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_meeting_id INTEGER; -- meeting it was extracted from

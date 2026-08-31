@@ -64,7 +64,7 @@ async function todoistFetch(token: string, path: string, options?: RequestInit):
 
 todoistRouter.get('/auth', (req: AuthRequest, res: Response) => {
   if (!config.todoistClientId) { res.status(400).json(fail('TODOIST_CLIENT_ID not configured')); return; }
-  const userId = getUserId(req) || (req.query['uid'] ? Number(req.query['uid']) : null);
+  const userId = getUserId(req); // from JWT only — no ?uid query override (auth bypass)
   if (!userId) { res.status(401).json(fail('Not authenticated')); return; }
   const state = jwt.sign({ userId }, config.jwtSecret, { expiresIn: '10m' });
   const redirectUri = `${config.webappUrl}/v1/todoist/callback`;

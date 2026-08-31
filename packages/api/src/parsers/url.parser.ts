@@ -1,14 +1,29 @@
 import * as cheerio from 'cheerio';
 import OpenAI from 'openai';
 import { config } from '../config';
+import { assertSafePublicUrl } from '../utils/ssrf-guard';
 
 const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
 
-export async function parseUrl(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PIS/1.0)' },
+const UA = 'Mozilla/5.0 (compatible; PIS/1.0)';
+
+async function fetchSafe(rawUrl: string, depth = 0): Promise<string> {
+  if (depth > 3) throw new Error('Слишком много редиректов');
+  const safe = await assertSafePublicUrl(rawUrl);
+  const response = await fetch(safe.href, {
+    headers: { 'User-Agent': UA },
+    redirect: 'manual', // don't let a 3xx redirect bypass the host check
   });
-  const html = await response.text();
+  if (response.status >= 300 && response.status < 400) {
+    const loc = response.headers.get('location') || '';
+    if (!loc) throw new Error('Редирект без Location');
+    // Re-validate each redirect target against the SSRF guard before following
+    return fetchSafe(new URL(loc, safe.href).href, depth + 1);
+  }
+  return response.text();
+}
+
+async function extractFromHtml(html: string): Promise<string> {
   const $ = cheerio.load(html);
 
   // Remove scripts, styles, nav, footer
@@ -49,4 +64,9 @@ export async function parseUrl(url: string): Promise<string> {
   }
 
   return title ? `${title}\n\n${text}` : text;
+}
+
+export async function parseUrl(url: string): Promise<string> {
+  const html = await fetchSafe(url);
+  return extractFromHtml(html);
 }

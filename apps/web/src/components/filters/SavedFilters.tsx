@@ -100,7 +100,7 @@ export function SavedFilters({ active, onApply }: SavedFiltersProps) {
   };
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
+    <div className="flex items-center gap-2 flex-nowrap [&>*]:flex-shrink-0 [&>*]:whitespace-nowrap">
       <span className="text-xs text-gray-400 font-medium">{t('Фильтры:', 'Filters:')}</span>
       {filters.map((f) => (
         <button

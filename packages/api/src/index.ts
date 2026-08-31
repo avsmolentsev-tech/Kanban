@@ -1,10 +1,12 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { router } from './routes';
 import { initPg, runSchema } from './db/db';
 import { seedDb } from './db/seed';
+import { seedAdvisors } from './db/advisors.seed';
 import { searchService } from './services/search.service';
 import { telegramService } from './services/telegram.service';
 import { startNotificationScheduler } from './services/notification.service';
@@ -21,6 +23,15 @@ process.on('unhandledRejection', (reason) => {
 
 const app = express();
 app.set('trust proxy', 1);
+
+// Security headers (HSTS, nosniff, frameguard, etc.). CSP is disabled here — the
+// API serves JSON + file downloads, not HTML pages — and attachment routes force
+// download + nosniff to neutralize any uploaded HTML/SVG. cross-origin resource
+// policy stays open so the SPA can embed attachment images.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 
 app.use(cors({
   origin: ['https://clarity-space.ru', 'http://localhost:5173', 'http://localhost:3000'],
@@ -59,6 +70,7 @@ async function start(): Promise<void> {
   await initPg(config.databaseUrl);
   await runSchema();
   seedDb();
+  await seedAdvisors();
   searchService.reindexAll();
   searchService.startVaultWatcher();
   telegramService.start();
@@ -67,6 +79,16 @@ async function start(): Promise<void> {
   try { const { startTodoistBackgroundSync } = require('./routes/todoist'); startTodoistBackgroundSync(); } catch (e) { console.warn('[todoist] background sync not started:', (e as Error).message); }
   app.listen(config.port, () => {
     console.log(`[Clarity Space API] running on port ${config.port}`);
+    // Догоняем расшифровки, оборванные прошлым перезапуском. Асинхронно и после
+    // listen: восстановление не должно задерживать подъём API.
+    void (async () => {
+      try {
+        const { resumeInterruptedTranscriptions } = require('./routes/meetings');
+        await resumeInterruptedTranscriptions();
+      } catch (e) {
+        console.warn('[jobs] восстановление не запустилось:', (e as Error).message);
+      }
+    })();
     // Start Obsidian vault watcher for bidirectional sync
     startVaultWatcher(null);
   });

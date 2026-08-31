@@ -84,7 +84,12 @@ async function processJob(job: TranscribeJob): Promise<void> {
   }
 }
 
-/** Boost quiet audio with ffmpeg before transcription */
+/**
+ * Loudness-normalize audio before transcription (EBU R128). Replaces the old raw
+ * "+12 dB" boost, which had no limiter and clipped normal-volume speech into
+ * distortion — whisper then heard only noise and returned empty text or looping
+ * hallucinations. loudnorm levels quiet AND loud audio to a target, no clipping.
+ */
 async function boostAudio(buffer: Buffer, filename: string): Promise<Buffer> {
   const { execFile } = require('child_process');
   const fs = require('fs');
@@ -97,10 +102,10 @@ async function boostAudio(buffer: Buffer, filename: string): Promise<Buffer> {
     execFile('ffmpeg', [
       '-y', '-i', tmpIn,
       '-vn',
-      '-af', 'volume=12dB,highpass=f=100,lowpass=f=8000',
+      '-af', 'highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11',
       '-ar', '16000', '-ac', '1', '-q:a', '6',
       tmpOut,
-    ], { timeout: 300000 }, (err: Error | null, _stdout: string, stderr: string) => {
+    ], { timeout: 900000 }, (err: Error | null, _stdout: string, stderr: string) => {
       try { fs.unlinkSync(tmpIn); } catch {}
       if (err || !fs.existsSync(tmpOut)) {
         console.warn('[whisper-queue] audio boost failed, using original.', err?.message || '', stderr?.slice(0, 200) || '');
@@ -141,14 +146,7 @@ export async function transcribeWithOpenAI(buffer: Buffer, filename: string): Pr
     file,
     language: 'ru',
   });
-
-  // whisper-1 тоже скатывается в петлю «Музыка / Продолжение следует...» на тихих участках
-  const { sanitizeTranscript } = require('./transcript-sanitize');
-  const cleaned = sanitizeTranscript(result.text);
-  if (cleaned.loopDetected) {
-    console.warn(`[whisper-queue] OpenAI: петля-галлюцинация, вычищено ${cleaned.removedUnits} фрагментов`);
-  }
-  return cleaned.text;
+  return result.text;
 }
 
 // Plan-aware transcription: pro_max → OpenAI directly (fast), free → local queue

@@ -26,6 +26,10 @@ import { yandexCalendarRouter } from './yandex-calendar';
 import { authRouter } from './auth';
 import { requireAuth } from '../middleware/auth';
 import { adminRouter } from './admin';
+import { downloadMeetingHandler } from './meetings';
+import { advisorsRouter } from './advisors';
+import { commitmentsRouter } from './commitments';
+import { transcribeRouter } from './transcribe';
 
 export const router = Router();
 
@@ -38,6 +42,7 @@ router.use('/todoist', todoistRouter);
 router.use('/yandex-calendar', yandexCalendarRouter);
 
 // Public: serve attachment files (images in documents) without auth — filenames are random/unguessable
+const INLINE_IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico']);
 router.get('/documents/attachments/file/:filename', (req, res) => {
   const attachDir = path.resolve(config.vaultPath, 'Attachments');
   const filename = path.basename(req.params['filename']!); // strip any ../ sequences
@@ -46,8 +51,18 @@ router.get('/documents/attachments/file/:filename', (req, res) => {
     res.status(404).json({ success: false, error: 'File not found' });
     return;
   }
+  // Never let the browser sniff/execute content. Images render inline; anything
+  // else (e.g. a stray uploaded HTML/SVG) is forced to download, not rendered.
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (!INLINE_IMAGE_EXT.has(path.extname(filename).toLowerCase())) {
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  }
   res.sendFile(filePath);
 });
+
+// Public: meeting file download — authorized by a scoped ?token= (browser
+// navigations can't send an Authorization header). The handler auths itself.
+router.get('/meetings/:id/download', downloadMeetingHandler);
 
 // All routes below require authentication
 router.use(requireAuth);
@@ -68,4 +83,7 @@ router.use('/journal', journalRouter);
 router.use('/export', exportRouter);
 router.use('/tags', tagsRouter);
 router.use('/templates', templatesRouter);
+router.use('/advisors', advisorsRouter);
+router.use('/commitments', commitmentsRouter);
+router.use('/transcribe', transcribeRouter);
 router.use('/admin', adminRouter);

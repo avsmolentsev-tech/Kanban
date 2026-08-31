@@ -29,8 +29,11 @@ export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunct
   }
 
   try {
-    const payload = jwt.verify(token, config.jwtSecret) as AuthUser;
-    req.user = payload;
+    const payload = jwt.verify(token, config.jwtSecret) as AuthUser & { purpose?: string };
+    // Scoped download tokens are NOT sessions — they only work on the download route.
+    if (payload.purpose !== 'download') {
+      req.user = payload;
+    }
   } catch {
     // Invalid token — continue without user
   }

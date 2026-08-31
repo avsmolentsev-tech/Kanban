@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { useTasksStore, useProjectsStore } from '../store';
 import { tasksApi } from '../api/tasks.api';
 import { useLangStore } from '../store/lang.store';
-import { Zap } from 'lucide-react';
+import { Zap, Trash2 } from 'lucide-react';
 import type { Task } from '@pis/shared';
+import { cleanTaskTitle, priorityPill } from '../lib/format';
 
 export function TodaySwipePage() {
   const { t } = useLangStore();
@@ -63,6 +64,22 @@ export function TodaySwipePage() {
         } catch {}
       }
       // Move to next
+      setIndex((i) => i + 1);
+      setOffset({ x: 0, y: 0 });
+      setAnimating(false);
+    }, 250);
+  };
+
+  const handleDelete = async () => {
+    if (!currentTask || animating) return;
+    if (!confirm(t('Удалить задачу?', 'Delete this task?'))) return;
+    setAnimating(true);
+    setOffset({ x: 0, y: 600 }); // card flies down
+    setTimeout(async () => {
+      try {
+        await tasksApi.delete(currentTask.id);
+        await fetchTasks();
+      } catch {}
       setIndex((i) => i + 1);
       setOffset({ x: 0, y: 0 });
       setAnimating(false);
@@ -182,14 +199,16 @@ export function TodaySwipePage() {
           )}
 
           {/* Title */}
-          <div className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-3">{currentTask.title}</div>
+          <div className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-3 w-full break-words [overflow-wrap:anywhere]">{cleanTaskTitle(currentTask.title)}</div>
 
           {/* Priority */}
-          <div className="flex items-center gap-1 mb-4">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <span key={n} className={n <= currentTask.priority ? 'text-yellow-400' : 'text-gray-200 dark:text-gray-600'}>⭐</span>
-            ))}
-          </div>
+          {priorityPill(currentTask.priority) && (
+            <div className="mb-4">
+              <span className={`inline-block text-xs font-medium px-2.5 py-1 rounded-full ${priorityPill(currentTask.priority)!.cls}`}>
+                {priorityPill(currentTask.priority)!.label}
+              </span>
+            </div>
+          )}
 
           {/* Status */}
           <div className="mb-4">
@@ -223,14 +242,22 @@ export function TodaySwipePage() {
         </div>
 
         {/* Action buttons at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-6">
+        <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-5">
           <button
             onClick={() => handleSwipe('left')}
             disabled={animating}
-            className="w-14 h-14 rounded-full bg-white dark:bg-gray-700 shadow-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center text-2xl hover:scale-110 transition-transform disabled:opacity-50"
+            className="w-12 h-12 rounded-full bg-white dark:bg-gray-700 shadow-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center text-xl hover:scale-110 transition-transform disabled:opacity-50"
             title={t('Пропустить', 'Skip')}
           >
             ↻
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={animating}
+            className="w-14 h-14 rounded-full bg-white dark:bg-gray-700 shadow-lg border border-red-200 dark:border-red-800 flex items-center justify-center text-red-500 hover:scale-110 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all disabled:opacity-50"
+            title={t('Удалить', 'Delete')}
+          >
+            <Trash2 size={22} />
           </button>
           <button
             onClick={() => handleSwipe('right')}

@@ -53,6 +53,30 @@ widgetRouter.get('/key', async (req: Request, res: Response) => {
   }
 });
 
+// POST /widget/key/rotate — revoke old key and issue a fresh one (called from app)
+widgetRouter.post('/key/rotate', async (req: Request, res: Response) => {
+  const header = req.headers['authorization'];
+  if (!header) { res.status(401).json(fail('Auth required')); return; }
+  try {
+    const jwt = require('jsonwebtoken');
+    const { config } = require('../config');
+    const token = header.startsWith('Bearer ') ? header.slice(7) : header;
+    const payload = jwt.verify(token, config.jwtSecret) as { id: number };
+    const userId = payload.id;
+
+    const apiKey = `pis_${crypto.randomBytes(24).toString('hex')}`;
+    // Remove any existing key, then insert the fresh one (old key stops working immediately)
+    await execute("DELETE FROM settings WHERE key = 'widget_api_key' AND user_id = $1", [userId]);
+    await execute(
+      "INSERT INTO settings (key, value, user_id) VALUES ('widget_api_key', $1, $2)",
+      [apiKey, userId]
+    );
+    res.json(ok({ api_key: apiKey }));
+  } catch {
+    res.status(401).json(fail('Invalid token'));
+  }
+});
+
 // GET /widget/today — tasks for today (requires ?key=xxx)
 widgetRouter.get('/today', async (_req: Request, res: Response) => {
   const userId = await resolveUserByKey(_req);
@@ -69,8 +93,8 @@ widgetRouter.get('/today', async (_req: Request, res: Response) => {
     [userId]
   );
   const habitLogs = await queryAll<{ habit_id: number }>(
-    "SELECT habit_id FROM habit_logs WHERE date = $1",
-    [today]
+    "SELECT hl.habit_id FROM habit_logs hl JOIN habits h ON h.id = hl.habit_id WHERE hl.date = $1 AND h.user_id = $2",
+    [today, userId]
   );
   const doneHabitIds = new Set(habitLogs.map(l => l.habit_id));
 
@@ -128,8 +152,8 @@ widgetRouter.get('/render', async (_req: Request, res: Response) => {
     [userId]
   );
   const habitLogs = await queryAll<{ habit_id: number }>(
-    "SELECT habit_id FROM habit_logs WHERE date = $1",
-    [today]
+    "SELECT hl.habit_id FROM habit_logs hl JOIN habits h ON h.id = hl.habit_id WHERE hl.date = $1 AND h.user_id = $2",
+    [today, userId]
   );
   const doneHabitIds = new Set(habitLogs.map(l => l.habit_id));
   const habitsDone = habits.filter(h => doneHabitIds.has(h.id)).length;

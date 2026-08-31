@@ -8,6 +8,7 @@ import { IngestService } from './ingest.service';
 import { ClaudeService } from './claude.service';
 import OpenAI from 'openai';
 import { moscowDateString, moscowDateTimeString } from '../utils/time';
+import { fetchBufferWithRetry, retryAsync, describeFetchError } from '../utils/fetch-retry';
 import { generateBundle, findProjectByName } from './bundle.service';
 import { generateAllFormats } from './converter.service';
 import { DraftSession } from './draft-session';
@@ -23,6 +24,7 @@ export class TelegramService {
   private recentActions = new Map<number, Array<{ type: string; title: string; id: number; table: string; date: string; savedAt: number }>>();
   private proMode = new Set<number>(); // tg_id → next audio uses OpenAI Whisper API
   private contentType = new Map<number, string>(); // tg_id → 'lecture'|'interview' for next audio
+  private transcribeOnly = new Set<number>(); // tg_id → next audio: just transcript, NO meeting
   private lastCreatedPerson = new Map<number, { name: string; id: number; ts: number }>(); // tg_id → last created contact
   private pendingPhotoData = new Map<number, { data: Record<string, string>; ts: number }>(); // tg_id → buffered photo data waiting for name
   private drafts = new DraftSession({
@@ -53,9 +55,23 @@ export class TelegramService {
       }
       // Fallback: try URL-based download
     }
-    const fileLink = await ctx.telegram.getFileLink(fileId);
-    const response = await fetch(fileLink.href);
-    return Buffer.from(await response.arrayBuffer());
+    // Исходящая сеть этого сервера до api.telegram.org нестабильна: замер
+    // 20.08.2026 дал 2 провала из 30 запросов (ETIMEDOUT, ~7%). Раньше обе
+    // стадии делались одной попыткой, поэтому разовый сетевой чих превращался
+    // в «❌ Ошибка: fetch failed» — примерно каждая четырнадцатая отправка аудио.
+    // Повторяем обе: и получение ссылки (telegraf, node-fetch), и саму докачку.
+    const fileLink = await retryAsync<{ href: string }>(() => ctx.telegram.getFileLink(fileId), {
+      attempts: 3,
+      onRetry: (n, err) =>
+        console.warn(`[telegram] getFileLink попытка ${n} не удалась: ${describeFetchError(err)}`),
+    });
+
+    return fetchBufferWithRetry(fileLink.href, {
+      attempts: 3,
+      timeoutMs: 120_000,
+      onRetry: (n, err) =>
+        console.warn(`[telegram] докачка файла, попытка ${n} не удалась: ${describeFetchError(err)}`),
+    });
   }
 
   /** Resolve internal user id from Telegram user id. Returns null if not linked — user must /login first. */
@@ -1055,6 +1071,9 @@ BHAG (Большая Дерзкая Цель на год):
         const buffer = require('fs').readFileSync(tmpFile);
         let transcript: string;
 
+        // Без await здесь лежал Promise, и следующая же строка падала на .trim().
+        // Команда /transcribe <ссылка> — единственный путь для файлов тяжелее 20 МБ,
+        // пока не поднят локальный Bot API, и она не работала вовсе.
         if (isLocalWhisperAvailable()) {
           transcript = await transcribeLocal(buffer, 'download.mp3');
         } else {
@@ -1294,7 +1313,7 @@ BHAG (Большая Дерзкая Цель на год):
 
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { searchService } = require('./search.service');
-      const results = searchService.search(query, 10);
+      const results = await searchService.search(query, 10, userId);
       if (results.length === 0) { ctx.reply('Ничего не найдено'); return; }
 
       const lines = results.map((r: { type: string; title: string }) => `[${r.type}] ${r.title}`);
@@ -1584,6 +1603,13 @@ BHAG (Большая Дерзкая Цель на год):
       // Clear pro mode if user sends text instead of audio
       this.proMode.delete(tgId);
 
+      // Enter transcribe-only mode by keyword: next audio/file → just text, no meeting
+      if (!this.pendingLogins.has(tgId) && /^(транскриб|расшифр|транскрипц)/i.test(text.trim())) {
+        this.transcribeOnly.add(tgId);
+        ctx.reply('🎤 Ок! Пришли аудио, видео или голосовое — расшифрую в текст. Встречу создавать не буду.');
+        return;
+      }
+
       // Handle login flow (email → password)
       const loginState = this.pendingLogins.get(tgId);
       if (loginState === 'email') {
@@ -1774,9 +1800,16 @@ BHAG (Большая Дерзкая Цель на год):
 
         // Transcribe via Whisper (pro → OpenAI, normal → local)
         const transcript = isPro
-          ? await this.transcribeProAudio(buffer, 'voice.ogg')
-          : await this.transcribeAudio(buffer, 'voice.ogg');
+          ? await this.transcribeTracked(ctx.from!.id, buffer, 'voice.ogg', true)
+          : await this.transcribeTracked(ctx.from!.id, buffer, 'voice.ogg', false);
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
+
+        // Transcribe-only mode: return the text and stop (no meeting/draft)
+        if (this.transcribeOnly.has(tgId)) {
+          this.transcribeOnly.delete(tgId);
+          await sendLong(ctx, `📝 Транскрипция:\n\n${transcript}`);
+          return;
+        }
 
         // Show transcript
         ctx.reply(`📝 Распознано:\n${transcript}`);
@@ -1829,7 +1862,7 @@ BHAG (Большая Дерзкая Цель на год):
         const fileSizeMb = (doc.file_size ?? 0) / (1024 * 1024);
         // Local Bot API server removes 20MB limit; only block if no local API
         if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
-          await ctx.reply(`⚠️ Файл слишком большой (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
+          await ctx.reply(`⚠️ Файл ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 500 МБ.`);
           return;
         }
         if (fileSizeMb > 20) {
@@ -1857,9 +1890,16 @@ BHAG (Большая Дерзкая Цель на год):
             }
           }
           const transcript = isPro
-            ? await this.transcribeProAudio(buffer, filename)
-            : await this.transcribeAudio(buffer, filename);
+            ? await this.transcribeTracked(ctx.from!.id, buffer, filename, true)
+            : await this.transcribeTracked(ctx.from!.id, buffer, filename, false);
           if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
+
+          // Transcribe-only mode: return the full text and stop (no meeting/draft)
+          if (this.transcribeOnly.has(tgId)) {
+            this.transcribeOnly.delete(tgId);
+            await sendLong(ctx, `📝 Транскрипция:\n\n${transcript}`);
+            return;
+          }
 
           // Show transcript
           const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
@@ -1892,7 +1932,7 @@ BHAG (Большая Дерзкая Цель на год):
         const audio = ctx.message.audio;
         const fileSizeMb = (audio.file_size ?? 0) / (1024 * 1024);
         if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
-          await ctx.reply(`⚠️ Аудио слишком большое (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
+          await ctx.reply(`⚠️ Аудио ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 500 МБ.`);
           return;
         }
         const tgId = ctx.from?.id ?? 0;
@@ -1916,8 +1956,8 @@ BHAG (Большая Дерзкая Цель на год):
         const buffer = await this.downloadTelegramFile(ctx, audio.file_id);
 
         const transcript = isPro
-          ? await this.transcribeProAudio(buffer, audio.file_name ?? 'audio.mp3')
-          : await this.transcribeAudio(buffer, audio.file_name ?? 'audio.mp3');
+          ? await this.transcribeTracked(ctx.from!.id, buffer, audio.file_name ?? 'audio.mp3', true)
+          : await this.transcribeTracked(ctx.from!.id, buffer, audio.file_name ?? 'audio.mp3', false);
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
 
         const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
@@ -1943,7 +1983,7 @@ BHAG (Большая Дерзкая Цель на год):
         const video = ctx.message.video;
         const fileSizeMb = (video.file_size ?? 0) / (1024 * 1024);
         if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
-          await ctx.reply(`⚠️ Видео слишком большое (${Math.round(fileSizeMb)} МБ, лимит 20 МБ).\n\nЗалей на Google Drive → сделай публичную ссылку → пришли:\n/transcribe <ссылка>`);
+          await ctx.reply(`⚠️ Видео ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 500 МБ.`);
           return;
         }
         const tgId = ctx.from?.id ?? 0;
@@ -1966,8 +2006,8 @@ BHAG (Большая Дерзкая Цель на год):
         const filename = (video as unknown as Record<string, unknown>).file_name as string ?? 'video.mp4';
 
         const transcript = isPro
-          ? await this.transcribeProAudio(buffer, filename)
-          : await this.transcribeAudio(buffer, filename);
+          ? await this.transcribeTracked(ctx.from!.id, buffer, filename, true)
+          : await this.transcribeTracked(ctx.from!.id, buffer, filename, false);
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь в видео'); return; }
 
         const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
@@ -2001,8 +2041,8 @@ BHAG (Большая Дерзкая Цель на год):
         const buffer = await this.downloadTelegramFile(ctx, videoNote.file_id);
 
         const transcript = isPro
-          ? await this.transcribeProAudio(buffer, 'video_note.mp4')
-          : await this.transcribeAudio(buffer, 'video_note.mp4');
+          ? await this.transcribeTracked(ctx.from!.id, buffer, 'video_note.mp4', true)
+          : await this.transcribeTracked(ctx.from!.id, buffer, 'video_note.mp4', false);
         if (!transcript.trim()) { ctx.reply('⚠️ Не удалось распознать речь'); return; }
 
         const preview = transcript.length > 500 ? transcript.slice(0, 500) + '...' : transcript;
@@ -2216,6 +2256,53 @@ BHAG (Большая Дерзкая Цель на год):
   }
 
   /** Send notification to a specific Telegram user by tg_id */
+  /**
+   * Расшифровка с защитой от перезапуска: аудио заранее кладётся на диск, и если
+   * процесс умрёт посреди работы, задача возобновится при следующем старте.
+   * Ошибку транскрибации это не страхует — о ней пользователь и так узнаёт,
+   * страхует только внезапную смерть процесса.
+   */
+  private async transcribeTracked(tgId: number | string, buffer: Buffer, filename: string, isPro: boolean): Promise<string> {
+    const { registerJob, completeJob } = require('./pending-jobs');
+    const jobId = await registerJob({ kind: 'telegram-audio', buffer, filename, tgId: String(tgId) });
+    try {
+      return isPro ? await this.transcribeProAudio(buffer, filename) : await this.transcribeAudio(buffer, filename);
+    } finally {
+      await completeJob(jobId);
+    }
+  }
+
+  /**
+   * Доводит расшифровку, оборванную перезапуском, и выдаёт обычную карточку драфта.
+   * ctx у нас уже нет, но buildAndSendDraft пользуется от него только reply —
+   * подменяем его отправкой в тот же чат.
+   */
+  async resumeInterruptedAudio(tgId: string | null, buffer: Buffer, filename: string, jobId: number): Promise<void> {
+    if (!tgId || !this.bot) return;
+    const chatId = Number(tgId);
+    const { completeJob } = require('./pending-jobs');
+
+    await this.notifyUser(tgId, '🔄 Сервер перезапускался и расшифровка прервалась. Доделываю — перезаливать не нужно.');
+    try {
+      const transcript = await this.transcribeAudio(buffer, filename);
+      if (!transcript.trim()) {
+        await this.notifyUser(tgId, '⚠️ Речь распознать не удалось.');
+        await completeJob(jobId);
+        return;
+      }
+      const userId = await this.resolveUserId(chatId);
+      const fakeCtx = {
+        reply: (text: string, extra?: unknown) => this.bot!.telegram.sendMessage(chatId, text, extra as never),
+      };
+      await this.buildAndSendDraft(fakeCtx, userId!, chatId, 'audio', transcript, null);
+      await completeJob(jobId);
+    } catch (err) {
+      // строку не закрываем: следующий старт попробует ещё раз (до лимита попыток)
+      await this.notifyUser(tgId, `⚠️ Не удалось доделать расшифровку: ${err instanceof Error ? err.message : 'ошибка'}`);
+      throw err;
+    }
+  }
+
   async notifyUser(tgId: string, message: string): Promise<void> {
     if (!this.bot || !tgId) return;
     try {

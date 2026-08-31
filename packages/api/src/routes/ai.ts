@@ -15,191 +15,14 @@ export const aiRouter = Router();
 const claude = new ClaudeService();
 const obsidian = new ObsidianService(config.vaultPath);
 
-async function executeVoiceAction(
-  action: Record<string, unknown>,
-  userId: number | null,
-  req: AuthRequest,
-): Promise<{ type: string; success: boolean; detail: string }> {
-  const t = String(action['type']);
-  switch (t) {
-    case 'create_task': {
-      let safeProjId = action['project_id'] ?? null;
-      if (safeProjId) {
-        const projCheck = await queryOne('SELECT id FROM projects WHERE id = $1 AND user_id = $2', [safeProjId, userId]);
-        if (!projCheck) safeProjId = null;
-      }
-      const inserted = await queryOne<{ id: number }>(
-        'INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-        [safeProjId, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId],
-      );
-      const taskId = inserted!.id;
-      let peopleIds = Array.isArray(action['person_ids']) ? action['person_ids'] as number[] : [];
-      if (peopleIds.length === 0) {
-        const selfRow = await queryOne<{ id: number }>("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1", []);
-        if (selfRow) peopleIds = [selfRow.id];
-      }
-      for (const pid of peopleIds) {
-        await execute('INSERT INTO task_people (task_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [taskId, pid]);
-      }
-      return { type: t, success: true, detail: `Задача "${action['title']}" создана` };
-    }
-    case 'move_task':
-      await execute('UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [action['status'], action['task_id'], userId]);
-      return { type: t, success: true, detail: `Задача #${action['task_id']} → ${action['status']}` };
-    case 'delete_task':
-      await execute('UPDATE tasks SET archived = 1, updated_at = NOW() WHERE id = $1 AND user_id = $2', [action['task_id'], userId]);
-      return { type: t, success: true, detail: `Задача #${action['task_id']} удалена` };
-    case 'update_task': {
-      const fields: string[] = []; const vals: unknown[] = [];
-      for (const key of ['title', 'priority', 'urgency', 'due_date', 'start_date', 'project_id', 'description', 'status']) {
-        if (action[key] !== undefined) { fields.push(`${key} = $${fields.length + 1}`); vals.push(action[key]); }
-      }
-      if (fields.length > 0) await execute(`UPDATE tasks SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${vals.length + 1} AND user_id = $${vals.length + 2}`, [...vals, action['task_id'], userId]);
-      return { type: t, success: true, detail: `Задача #${action['task_id']} обновлена` };
-    }
-    case 'create_project':
-      await execute('INSERT INTO projects (name, color, user_id) VALUES ($1, $2, $3)', [action['name'], action['color'] ?? '#6366f1', userId]);
-      return { type: t, success: true, detail: `Проект "${action['name']}" создан` };
-    case 'update_project': {
-      const fields: string[] = []; const vals: unknown[] = [];
-      for (const key of ['name', 'color', 'status']) {
-        if (action[key] !== undefined) { fields.push(`${key} = $${fields.length + 1}`); vals.push(action[key]); }
-      }
-      if (fields.length > 0) await execute(`UPDATE projects SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${vals.length + 1} AND user_id = $${vals.length + 2}`, [...vals, action['project_id'], userId]);
-      return { type: t, success: true, detail: `Проект #${action['project_id']} обновлён` };
-    }
-    case 'delete_project':
-      await execute('UPDATE projects SET archived = 1, updated_at = NOW() WHERE id = $1 AND user_id = $2', [action['project_id'], userId]);
-      return { type: t, success: true, detail: `Проект #${action['project_id']} удалён` };
-    case 'create_idea': {
-      const ideaInserted = await queryOne<{ id: number }>(
-        'INSERT INTO ideas (title, body, category, project_id, status, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-        [action['title'], (action['body'] as string) ?? '', (action['category'] as string) ?? 'personal', action['project_id'] ?? null, 'backlog', userId],
-      );
-      void ideaInserted;
-      const projName = action['project_id'] ? (await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [action['project_id'] as number]))?.name : null;
-      return { type: t, success: true, detail: `Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog` };
-    }
-    case 'create_goal':
-      await execute(
-        'INSERT INTO goals (title, description, type, project_id, target_value, unit, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [action['title'], (action['description'] as string) ?? '', 'goal', action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%', userId],
-      );
-      return { type: t, success: true, detail: `🎯 Цель "${action['title']}"` };
-    case 'update_goal': {
-      const fields: string[] = []; const vals: unknown[] = [];
-      if (action['current_value'] !== undefined) { fields.push(`current_value = $${fields.length + 1}`); vals.push(action['current_value']); }
-      if (action['status'] !== undefined) { fields.push(`status = $${fields.length + 1}`); vals.push(action['status']); }
-      if (fields.length > 0) await execute(`UPDATE goals SET ${fields.join(', ')} WHERE id = $${vals.length + 1} AND user_id = $${vals.length + 2}`, [...vals, action['goal_id'], userId]);
-      return { type: t, success: true, detail: `🎯 Цель #${action['goal_id']} обновлена` };
-    }
-    case 'create_bundle': {
-      const pname = (action['project_name'] as string) ?? 'все';
-      const match = await findProjectByName(pname);
-      if (match === null) return { type: t, success: false, detail: `Проект "${pname}" не найден` };
-      const br = await generateBundle(match);
-      return { type: t, success: true, detail: `📦 Bundle: ${br.vaultPath} (${br.sizeKb} KB)` };
-    }
-    case 'create_meeting': {
-      const summaryRaw = (action['summary_raw'] as string) ?? '';
-      let safeProjId = action['project_id'] ?? null;
-      if (safeProjId) {
-        const projCheck = await queryOne('SELECT id FROM projects WHERE id = $1 AND user_id = $2', [safeProjId, userId]);
-        if (!projCheck) safeProjId = null;
-      }
-      const mInserted = await queryOne<{ id: number }>(
-        'INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-        [action['title'], action['date'], safeProjId, summaryRaw, userId],
-      );
-      const meetingId = mInserted!.id;
-      if (Array.isArray(action['person_ids'])) {
-        for (const pid of action['person_ids'] as number[]) {
-          await execute('INSERT INTO meeting_people (meeting_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [meetingId, pid]);
-        }
-      }
-      const meetingTasks = Array.isArray(action['tasks']) ? action['tasks'] as string[] : [];
-      for (const taskTitle of meetingTasks) {
-        if (!taskTitle || typeof taskTitle !== 'string') continue;
-        const tInserted = await queryOne<{ id: number }>(
-          'INSERT INTO tasks (project_id, title, description, status, priority, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-          [safeProjId, taskTitle, `Из встречи: ${action['title']} (${action['date']})`, 'backlog', 3, userId],
-        );
-        void tInserted;
-        try { await execute('INSERT INTO agreements (meeting_id, description, status, person_id) VALUES ($1, $2, $3, $4)', [meetingId, taskTitle, 'pending', null]); } catch {}
-      }
-      return { type: t, success: true, detail: `Встреча "${action['title']}" на ${action['date']}${meetingTasks.length > 0 ? ` + ${meetingTasks.length} задач в backlog` : ''}` };
-    }
-    case 'update_meeting': {
-      const fields: string[] = []; const vals: unknown[] = [];
-      for (const key of ['title', 'date', 'project_id', 'summary_raw']) {
-        if (action[key] !== undefined) { fields.push(`${key} = $${fields.length + 1}`); vals.push(action[key]); }
-      }
-      if (fields.length > 0) await execute(`UPDATE meetings SET ${fields.join(', ')} WHERE id = $${vals.length + 1} AND user_id = $${vals.length + 2}`, [...vals, action['meeting_id'], userId]);
-      return { type: t, success: true, detail: `Встреча #${action['meeting_id']} обновлена` };
-    }
-    case 'delete_meeting':
-      await execute('DELETE FROM meeting_people WHERE meeting_id IN (SELECT id FROM meetings WHERE id = $1 AND user_id = $2)', [action['meeting_id'], userId]);
-      await execute('DELETE FROM meetings WHERE id = $1 AND user_id = $2', [action['meeting_id'], userId]);
-      return { type: t, success: true, detail: `Встреча #${action['meeting_id']} удалена` };
-    case 'create_person': {
-      const pInserted = await queryOne<{ id: number }>(
-        'INSERT INTO people (name, company, role, phone, email, telegram, notes, project_id, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
-        [action['name'], action['company'] ?? '', action['role'] ?? '', action['phone'] ?? '', action['email'] ?? '', action['telegram'] ?? '', action['notes'] ?? '', action['project_id'] ?? null, userId],
-      );
-      const personId = pInserted!.id;
-      if (action['project_id']) {
-        try { await execute('INSERT INTO people_projects (person_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [personId, action['project_id']]); } catch {}
-      }
-      return { type: t, success: true, detail: `Контакт "${action['name']}" создан${action['company'] ? ` (${action['company']})` : ''}${action['project_id'] ? ' + привязан к проекту' : ''}` };
-    }
-    case 'update_person': {
-      const pid = action['person_id'] as number;
-      const fields: string[] = []; const vals: unknown[] = [];
-      for (const f of ['name', 'company', 'role', 'phone', 'email', 'telegram', 'project_id']) {
-        if (action[f] !== undefined) { fields.push(`${f} = $${fields.length + 1}`); vals.push(action[f]); }
-      }
-      if (fields.length > 0) {
-        await execute(`UPDATE people SET ${fields.join(', ')} WHERE id = $${vals.length + 1} AND user_id = $${vals.length + 2}`, [...vals, pid, userId]);
-        if (action['project_id']) {
-          try { await execute('INSERT INTO people_projects (person_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [pid, action['project_id']]); } catch {}
-        }
-      }
-      return { type: t, success: true, detail: `Контакт #${pid} обновлён` };
-    }
-    case 'delete_person': {
-      const personOwnerCheck = await queryOne('SELECT id FROM people WHERE id = $1 AND user_id = $2', [action['person_id'], userId]);
-      if (personOwnerCheck) {
-        await execute('DELETE FROM task_people WHERE person_id = $1', [action['person_id']]);
-        await execute('DELETE FROM meeting_people WHERE person_id = $1', [action['person_id']]);
-        await execute('DELETE FROM people_projects WHERE person_id = $1', [action['person_id']]);
-        await execute('DELETE FROM people WHERE id = $1 AND user_id = $2', [action['person_id'], userId]);
-      }
-      return { type: t, success: true, detail: `Контакт #${action['person_id']} удалён` };
-    }
-    case 'send_to_telegram': {
-      const content = (action['content'] as string) ?? '';
-      const filename = (action['filename'] as string) ?? 'file.md';
-      const message = (action['message'] as string) ?? '';
-      if (!content) return { type: t, success: false, detail: 'Нет содержимого для файла' };
-      const fs = require('fs') as typeof import('fs');
-      const tmpPath = `/tmp/pis-file-${Date.now()}-${filename}`;
-      fs.writeFileSync(tmpPath, content, 'utf-8');
-      const actionUserId = getUserId(req);
-      if (actionUserId) {
-        const userRow = await queryOne<{ tg_id: string | null }>('SELECT tg_id FROM users WHERE id = $1', [actionUserId]);
-        if (userRow?.tg_id) {
-          const { telegramService } = require('../services/telegram.service') as { telegramService: { sendFileToUser: (id: string, path: string, name: string, msg: string) => Promise<void> } };
-          await telegramService.sendFileToUser(userRow.tg_id, tmpPath, filename, message || `📄 ${filename}`);
-          try { fs.unlinkSync(tmpPath); } catch {}
-          return { type: t, success: true, detail: `📤 Файл "${filename}" отправлен в Telegram` };
-        }
-      }
-      try { fs.unlinkSync(tmpPath); } catch {}
-      return { type: t, success: false, detail: 'Telegram не привязан к аккаунту' };
-    }
-    default:
-      return { type: t, success: false, detail: 'Неизвестное действие' };
+/** Enforce the per-user daily AI limit. Responds 429 and returns false if exceeded. */
+async function enforceAiLimit(req: AuthRequest, res: Response): Promise<boolean> {
+  const limit = await checkAiLimit(req);
+  if (!limit.allowed) {
+    res.status(429).json(fail(`Лимит AI-сообщений: ${limit.used}/${limit.limit} в день. Перейдите на Pro Max для безлимита.`));
+    return false;
   }
+  return true;
 }
 
 const ChatSchema = z.object({
@@ -216,16 +39,19 @@ aiRouter.post('/chat', async (req: AuthRequest, res: Response) => {
       res.status(429).json(fail(`Лимит AI-сообщений: ${limit.used}/${limit.limit} в день. Перейдите на Pro Max для безлимита.`));
       return;
     }
-    // Build vault context for AI (scoped to user)
-    let vaultContext = '';
-    try { vaultContext = obsidian.forUser(getUserId(req)).readAllForContext(); } catch {}
-
+    // Instead of dumping the entire vault into the prompt on every message
+    // (slow + huge token cost), let the model search on demand via tools —
+    // all scoped to this user in tools.service.
+    const userId = getUserId(req);
+    const today = new Date().toISOString().slice(0, 10);
     const systemPrompt = [
       parsed.data.context ?? '',
-      vaultContext ? `\n\nДанные из Obsidian Vault (проекты, задачи, встречи, идеи, люди):\n\n${vaultContext}` : '',
-    ].filter(Boolean).join('\n');
+      `Ты — персональный ассистент в системе Clarity Space. Отвечай на русском, кратко и по делу. Сегодня ${today}.`,
+      `У тебя есть инструменты для поиска в данных этого пользователя: задачи, встречи (с полными транскрипциями), проекты, идеи, люди. ` +
+      `Прежде чем отвечать на вопросы о встречах, задачах, проектах или людях — ОБЯЗАТЕЛЬНО используй инструменты поиска (search_vault, search_meetings_full, get_entity_details), не выдумывай и не полагайся на память.`,
+    ].filter(Boolean).join('\n\n');
 
-    const reply = await claude.chat(parsed.data.messages, systemPrompt, 'gpt-4.1-mini', false, false, getUserId(req));
+    const reply = await claude.chat(parsed.data.messages, systemPrompt, 'gpt-4.1-mini', true, false, userId);
     res.json(ok({ reply }));
   } catch (err) {
     res.status(500).json(fail(err instanceof Error ? err.message : 'AI error'));
@@ -234,6 +60,7 @@ aiRouter.post('/chat', async (req: AuthRequest, res: Response) => {
 
 aiRouter.post('/daily-brief', async (req: AuthRequest, res: Response) => {
   try {
+    if (!(await enforceAiLimit(req, res))) return;
     const userId = getUserId(req);
     const today = moscowDateString();
     const userParams: unknown[] = userId != null ? [userId] : [];
@@ -248,6 +75,7 @@ aiRouter.post('/daily-brief', async (req: AuthRequest, res: Response) => {
 
 aiRouter.post('/weekly-brief', async (req: AuthRequest, res: Response) => {
   try {
+    if (!(await enforceAiLimit(req, res))) return;
     const userId = getUserId(req);
     const today = moscowDateString();
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -275,7 +103,7 @@ ${JSON.stringify(completedTasks)}
 ${JSON.stringify(activeTasks)}
 
 Встречи за неделю:
-${JSON.stringify(weekMeetings)}
+${JSON.stringify((weekMeetings as Array<Record<string, unknown>>).slice(0, 15).map(m => ({ title: m['title'], date: m['date'], summary: String(m['summary_raw'] ?? '').slice(0, 800) })))}
 
 Предстоящие встречи:
 ${JSON.stringify(upcomingMeetings)}
@@ -379,6 +207,15 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
             SELECT habit_id FROM habit_logs WHERE date = $1 AND completed = 1
           )
         `, [today]);
+    // Habits NOT done today (for proactive nudging)
+    const undoneHabits = userId != null
+      ? await queryAll<{ title: string; icon: string }>(`
+          SELECT h.title, h.icon FROM habits h
+          WHERE h.archived = 0 AND h.user_id = $1 AND h.id NOT IN (
+            SELECT habit_id FROM habit_logs WHERE date = $2 AND completed = 1
+          )
+        `, [userId, today])
+      : [];
     const streakCounts = userId != null
       ? await queryAll<{ id: number; title: string; icon: string; recent_count: number }>(`
           SELECT h.id, h.title, h.icon,
@@ -472,21 +309,22 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
           FROM meetings m
           JOIN meeting_people mp ON m.id = mp.meeting_id
           WHERE mp.person_id = $${paramIdx++} AND ${conditions.join(' AND ')}
-          ORDER BY m.date DESC LIMIT 10`;
+          ORDER BY m.date DESC LIMIT 50`;
         params.push(matchedPerson.id);
       } else {
         query = `SELECT id, title, date, project_id, summary_raw, summary_structured
           FROM meetings WHERE ${conditions.join(' AND ')}
-          ORDER BY date DESC LIMIT 10`;
+          ORDER BY date DESC LIMIT 50`;
       }
 
       const allMeetings = await queryAll<MeetingFull>(query, params);
 
-      // Budget: ~30K chars total (faster response, sufficient context)
-      const MAX_TOTAL_CHARS = 30000;
+      // Budget: ~120K chars total for meeting context (fits in gpt-4.1-mini 1M context)
+      const MAX_TOTAL_CHARS = 120000;
       let totalChars = 0;
       const meetingParts: string[] = [];
-      const perMeetingBudget = Math.max(1500, Math.floor(MAX_TOTAL_CHARS / Math.max(allMeetings.length, 1)));
+      // First pass: per-meeting budget depends on total count
+      const perMeetingBudget = Math.max(2000, Math.floor(MAX_TOTAL_CHARS / Math.max(allMeetings.length, 1)));
 
       for (const m of allMeetings) {
         const content = getMeetingContext(m, perMeetingBudget);
@@ -514,6 +352,7 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
 1. ВСЕГДА начинай ответ с чего-то позитивного! Даже если прямых "побед" нет — найди что похвалить: "Ты уже в деле — это главное!", "Круто что следишь за задачами!"
 2. Если завершил задачи за неделю — "За эту неделю ты закрыл ${doneThisWeek.c} задач — отличный темп! 💪"
 3. Если есть привычки — "Привычки работают! ${habitStreaks.length > 0 ? habitStreaks.map(h => `${h.icon || '✓'} ${h.title} сделана сегодня` ).join(', ') : 'Сегодня ещё есть время отметить'} 🔥"
+3b. ПРОАКТИВНО НАПОМИНАЙ о невыполненных привычках (список "ЕЩЁ НЕ СДЕЛАНЫ" ниже), по-дружески и с учётом времени: "Кстати, зарядку ещё не отметил, а уже 10 утра — точно не хочешь? 💪", "Медитация ждёт — самое время ✨". Не дави, но подначивай. Если пользователь просто зашёл поболтать/поздороваться — вверни лёгкое напоминание про 1-2 несделанные привычки. Если все привычки сделаны — похвали.
 4. Если провёл встречи — "Продуктивная неделя: ${weekMeetings.c} встреч!"
 5. Если задач в работе — "У тебя ${inProgress} задач в работе — двигаешься!"
 6. ПОСЛЕ позитива — мягко напомни что осталось, без давления и негатива
@@ -526,7 +365,8 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
 ✅ Завершено задач: сегодня ${doneRecently.c}, за неделю ${doneThisWeek.c}, всего ${totalDone}
 📋 В работе сейчас: ${inProgress} задач
 📅 Встречи: сегодня ${todayMeetings.c}, за неделю ${weekMeetings.c}
-${habitStreaks.length > 0 ? `🔥 Привычки сегодня: ${habitStreaks.map(h => `${h.icon || '✓'} ${h.title}`).join(', ')}` : '🌱 Привычки сегодня пока не отмечены — можно напомнить!'}
+${habitStreaks.length > 0 ? `🔥 Привычки сделаны сегодня: ${habitStreaks.map(h => `${h.icon || '✓'} ${h.title}`).join(', ')}` : ''}
+${undoneHabits.length > 0 ? `⏳ ЕЩЁ НЕ СДЕЛАНЫ сегодня: ${undoneHabits.map(h => `${h.icon || '•'} ${h.title}`).join(', ')} (сейчас ${moscowDateTimeString()})` : '✅ Все привычки на сегодня отмечены!'}
 ${streakCounts.filter(h => h.recent_count >= 3).map(h => `🏆 ${h.icon || '✓'} ${h.title}: ${h.recent_count} дней за месяц`).join('\n')}
 
 ДАННЫЕ СИСТЕМЫ:
@@ -547,7 +387,8 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
 2. ЧЕЛОВЕК ≠ ПРОЕКТ! Имена людей (Сергей, Ольга, Иван) → create_person. Проекты — это направления работы (Robots, V-Cards, Стройка).
 3. "Добавь Сергея к проекту Robots" = create_person с project_id, НЕ create_project!
 4. "Добавь к проекту X" (задачу) = update_task с project_id.
-5. Если пользователь просит обработать НЕСКОЛЬКО → отдельный action для КАЖДОГО.
+5. Если пользователь просит обработать НЕСКОЛЬКО КОНКРЕТНЫХ объектов → отдельный action для КАЖДОГО.
+5b. Если команда над МНОЖЕСТВОМ задач по ПРИЗНАКУ (по теме/слову, по проекту, по статусу) — например «убери ВСЕ задачи по роботам из приоритета и поставь someday», «перенеси всё по VPN на потом» — используй ОДИН bulk_update_tasks с filter (query="роботы"/project_id/status) и changes. НЕ перечисляй задачи по одной. «Убрать из приоритетных» / «на потом» / «когда-нибудь» = changes.status="someday".
 6. Для вопросов (что, как, когда) → actions пусты, ответ в response.
 7. Контекст предыдущих сообщений — "её", "эту", "ту", "его" = предыдущий объект.
 8. "Привяжи X к проекту Y" = найди person_id по имени → update_person с project_id. ОБЯЗАТЕЛЬНО action!
@@ -556,14 +397,14 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
 11. ЗАМЕТКИ ВСТРЕЧИ → ВСТРЕЧА + ЗАДАЧИ В КАРТОЧКЕ! Если пользователь скидывает длинный текст с заметками/конспектом встречи (ключевые слова: "встреча с", "литература", "что важно", имена людей, тезисы) → создай ОДНУ create_meeting с: summary_raw = весь текст заметок, tasks = массив конкретных задач/действий из заметок. Задачи попадут в backlog карточки встречи. В response напиши краткое резюме встречи и список задач, которые создал.
 12. Если пользователь указал проект ("проект Образование") → ОБЯЗАТЕЛЬНО найди его project_id и привяжи встречу/задачу к нему!
 
-Верни ТОЛЬКО JSON (без markdown, без \`\`\`). ВАЖНО: поле "response" должно быть ПЕРВЫМ:
+Верни ТОЛЬКО JSON (без markdown, без \`\`\`):
 {
-  "response": "Ответ пользователю — кратко и дружелюбно",
   "actions": [
     {"type": "create_task", "title": "string", "project_id": number|null, "status": "todo", "priority": 1-5, "due_date": "YYYY-MM-DD"|null, "person_ids": [number]},
     {"type": "move_task", "task_id": number, "status": "string"},
     {"type": "delete_task", "task_id": number},
     {"type": "update_task", "task_id": number, ...fields},
+    {"type": "bulk_update_tasks", "filter": {"query": "слово для поиска по названию", "project_id": number|null, "status": "backlog|todo|in_progress|someday"}, "changes": {"status": "someday|backlog|todo|done?", "priority": 1-5?, "project_id": number|null, "due_date": "YYYY-MM-DD"|null}},
     {"type": "create_project", "name": "string", "color": "#hex"},
     {"type": "create_idea", "title": "string", "body": "string?", "project_id": number|null, "category": "business|product|personal|growth"},
     {"type": "create_bundle", "project_name": "string (название проекта или 'все')"},
@@ -589,58 +430,12 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
 - message = что написать в сообщении при отправке
 - Файл будет отправлен пользователю в Telegram`;
 
-    const voiceChatMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
       ...parsed.data.history,
       { role: 'user', content: parsed.data.text },
     ];
 
-    // Check if client wants SSE streaming
-    const wantsStream = req.headers['accept'] === 'text/event-stream';
-    if (wantsStream) {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
-      res.flushHeaders();
-
-      let fullText = '';
-      try {
-        for await (const token of claude.chatTokenStream(voiceChatMessages, systemPrompt, 'gpt-4.1-mini')) {
-          fullText += token;
-          res.write(`data: ${JSON.stringify({ t: token })}\n\n`);
-        }
-      } catch (streamErr) {
-        res.write(`data: ${JSON.stringify({ error: streamErr instanceof Error ? streamErr.message : 'stream error' })}\n\n`);
-        res.end();
-        return;
-      }
-
-      // Parse and execute actions from full streamed text
-      let streamCommand: { actions: Array<Record<string, unknown>>; response: string };
-      try {
-        streamCommand = JSON.parse(fullText) as { actions: Array<Record<string, unknown>>; response: string };
-      } catch {
-        const m = fullText.match(/\{[\s\S]*\}/);
-        try { streamCommand = m ? JSON.parse(m[0]) : { actions: [], response: fullText }; }
-        catch { streamCommand = { actions: [], response: fullText }; }
-      }
-      if (!streamCommand.actions) streamCommand.actions = [];
-
-      const streamResults: Array<{ type: string; success: boolean; detail: string }> = [];
-      for (const action of streamCommand.actions) {
-        try {
-          streamResults.push(await executeVoiceAction(action, userId, req as AuthRequest));
-        } catch (err) {
-          streamResults.push({ type: String(action['type']), success: false, detail: err instanceof Error ? err.message : 'Ошибка' });
-        }
-      }
-
-      res.write(`data: ${JSON.stringify({ done: true, response: streamCommand.response, results: streamResults })}\n\n`);
-      res.end();
-      return;
-    }
-
-    const result = await claude.chat(voiceChatMessages, systemPrompt, 'gpt-4.1-mini', false, true, userId);
+    const result = await claude.chat(messages, systemPrompt, 'gpt-4.1-mini', false, true, userId);
 
     let command: { actions: Array<Record<string, unknown>>; response: string };
     try {
@@ -659,11 +454,253 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
     const results: Array<{ type: string; success: boolean; detail: string }> = [];
 
     for (const action of command.actions) {
-      results.push(await executeVoiceAction(action, userId, req as AuthRequest).catch(err => ({
-        type: String(action['type']),
-        success: false,
-        detail: err instanceof Error ? err.message : 'Ошибка',
-      })));
+      try {
+        switch (action['type']) {
+          case 'create_task': {
+            // Security: verify project belongs to this user
+            let safeProjId = action['project_id'] ?? null;
+            if (safeProjId) {
+              const projCheck = await queryOne('SELECT id FROM projects WHERE id = $1 AND user_id = $2', [safeProjId, userId]);
+              if (!projCheck) safeProjId = null;
+            }
+            const inserted = await queryOne<{ id: number }>(
+              'INSERT INTO tasks (project_id, title, description, status, priority, due_date, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+              [safeProjId, action['title'], (action['description'] as string) ?? '', action['status'] ?? 'todo', action['priority'] ?? 3, action['due_date'] ?? null, userId]
+            );
+            const taskId = inserted!.id;
+            // Auto-add self if no people specified
+            let peopleIds = Array.isArray(action['person_ids']) ? action['person_ids'] as number[] : [];
+            if (peopleIds.length === 0) {
+              const selfRow = await queryOne<{ id: number }>("SELECT id FROM people WHERE LOWER(name) IN ('я','me','self') LIMIT 1", []);
+              if (selfRow) peopleIds = [selfRow.id];
+            }
+            for (const pid of peopleIds) {
+              await execute('INSERT INTO task_people (task_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [taskId, pid]);
+            }
+            results.push({ type: 'create_task', success: true, detail: `Задача "${action['title']}" создана` });
+            break;
+          }
+          case 'move_task': {
+            await execute("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3", [action['status'], action['task_id'], userId]);
+            results.push({ type: 'move_task', success: true, detail: `Задача #${action['task_id']} → ${action['status']}` });
+            break;
+          }
+          case 'delete_task': {
+            await execute("UPDATE tasks SET archived = 1, updated_at = NOW() WHERE id = $1 AND user_id = $2", [action['task_id'], userId]);
+            results.push({ type: 'delete_task', success: true, detail: `Задача #${action['task_id']} удалена` });
+            break;
+          }
+          case 'update_task': {
+            const fields: string[] = []; const values: unknown[] = [];
+            for (const key of ['title', 'priority', 'urgency', 'due_date', 'start_date', 'project_id', 'description', 'status']) {
+              if (action[key] !== undefined) { fields.push(`${key} = $${fields.length + 1}`); values.push(action[key]); }
+            }
+            if (fields.length > 0) await execute(`UPDATE tasks SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`, [...values, action['task_id'], userId]);
+            results.push({ type: 'update_task', success: true, detail: `Задача #${action['task_id']} обновлена` });
+            break;
+          }
+          case 'bulk_update_tasks': {
+            // Apply changes to ALL tasks matching a filter (user-scoped), not just the ones in context
+            const filter = (action['filter'] || {}) as Record<string, unknown>;
+            const changes = (action['changes'] || {}) as Record<string, unknown>;
+            const wparts: string[] = ['user_id = $1', 'archived = 0']; const wv: unknown[] = [userId];
+            if (typeof filter['query'] === 'string' && filter['query']) { wv.push(`%${filter['query']}%`); wparts.push(`title ILIKE $${wv.length}`); }
+            if (filter['project_id'] != null) { wv.push(filter['project_id']); wparts.push(`project_id = $${wv.length}`); }
+            if (typeof filter['status'] === 'string' && filter['status']) { wv.push(filter['status']); wparts.push(`status = $${wv.length}`); }
+            const whereSql = wparts.join(' AND ');
+            const matched = await queryAll<{ title: string }>(`SELECT title FROM tasks WHERE ${whereSql}`, wv);
+            const setParts: string[] = []; const params = [...wv];
+            for (const key of ['status', 'priority', 'project_id', 'due_date']) {
+              if (changes[key] !== undefined) { params.push(changes[key]); setParts.push(`${key} = $${params.length}`); }
+            }
+            if (setParts.length === 0) { results.push({ type: 'bulk_update_tasks', success: false, detail: 'Не указано, что менять' }); break; }
+            if (matched.length === 0) { results.push({ type: 'bulk_update_tasks', success: true, detail: 'Задач по фильтру не найдено' }); break; }
+            await execute(`UPDATE tasks SET ${setParts.join(', ')}, updated_at = NOW() WHERE ${whereSql}`, params);
+            results.push({ type: 'bulk_update_tasks', success: true, detail: `Обновлено задач: ${matched.length} — ${matched.slice(0, 6).map(m => m.title).join(', ')}${matched.length > 6 ? '…' : ''}` });
+            break;
+          }
+          case 'create_project': {
+            await execute('INSERT INTO projects (name, color, user_id) VALUES ($1, $2, $3)', [action['name'], action['color'] ?? '#6366f1', userId]);
+            results.push({ type: 'create_project', success: true, detail: `Проект "${action['name']}" создан` });
+            break;
+          }
+          case 'create_idea': {
+            const ideaInserted = await queryOne<{ id: number }>(
+              'INSERT INTO ideas (title, body, category, project_id, status, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+              [action['title'], (action['body'] as string) ?? '', (action['category'] as string) ?? 'personal', action['project_id'] ?? null, 'backlog', userId]
+            );
+            const ideaId = ideaInserted!.id;
+            const projName = action['project_id'] ? (await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [action['project_id'] as number]))?.name : null;
+            results.push({ type: 'create_idea', success: true, detail: `Идея "${action['title']}"${projName ? ` → ${projName}` : ''} → Backlog` });
+            void ideaId;
+            break;
+          }
+          case 'create_goal': {
+            await execute(
+              'INSERT INTO goals (title, description, type, project_id, target_value, unit, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+              [action['title'], (action['description'] as string) ?? '', 'goal', action['project_id'] ?? null, action['target_value'] ?? 100, (action['unit'] as string) ?? '%', userId]
+            );
+            results.push({ type: 'create_goal', success: true, detail: `🎯 Цель "${action['title']}"` });
+            break;
+          }
+          case 'update_goal': {
+            const fields: string[] = []; const values: unknown[] = [];
+            if (action['current_value'] !== undefined) { fields.push(`current_value = $${fields.length + 1}`); values.push(action['current_value']); }
+            if (action['status'] !== undefined) { fields.push(`status = $${fields.length + 1}`); values.push(action['status']); }
+            if (fields.length > 0) await execute(`UPDATE goals SET ${fields.join(', ')} WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`, [...values, action['goal_id'], userId]);
+            results.push({ type: 'update_goal', success: true, detail: `🎯 Цель #${action['goal_id']} обновлена` });
+            break;
+          }
+          case 'create_bundle': {
+            const pname = (action['project_name'] as string) ?? 'все';
+            const match = await findProjectByName(pname);
+            if (match === null) {
+              results.push({ type: 'create_bundle', success: false, detail: `Проект "${pname}" не найден` });
+            } else {
+              const br = await generateBundle(match);
+              results.push({ type: 'create_bundle', success: true, detail: `📦 Bundle: ${br.vaultPath} (${br.sizeKb} KB)` });
+            }
+            break;
+          }
+          case 'update_project': {
+            const fields: string[] = []; const values: unknown[] = [];
+            for (const key of ['name', 'color', 'status']) {
+              if (action[key] !== undefined) { fields.push(`${key} = $${fields.length + 1}`); values.push(action[key]); }
+            }
+            if (fields.length > 0) await execute(`UPDATE projects SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`, [...values, action['project_id'], userId]);
+            results.push({ type: 'update_project', success: true, detail: `Проект #${action['project_id']} обновлён` });
+            break;
+          }
+          case 'delete_project': {
+            await execute("UPDATE projects SET archived = 1, updated_at = NOW() WHERE id = $1 AND user_id = $2", [action['project_id'], userId]);
+            results.push({ type: 'delete_project', success: true, detail: `Проект #${action['project_id']} удалён` });
+            break;
+          }
+          case 'create_meeting': {
+            const summaryRaw = (action['summary_raw'] as string) ?? '';
+            let safeMeetingProjId = action['project_id'] ?? null;
+            if (safeMeetingProjId) {
+              const projCheck = await queryOne('SELECT id FROM projects WHERE id = $1 AND user_id = $2', [safeMeetingProjId, userId]);
+              if (!projCheck) safeMeetingProjId = null;
+            }
+            const mInserted = await queryOne<{ id: number }>(
+              'INSERT INTO meetings (title, date, project_id, summary_raw, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+              [action['title'], action['date'], safeMeetingProjId, summaryRaw, userId]
+            );
+            const meetingId = mInserted!.id;
+            if (Array.isArray(action['person_ids'])) {
+              for (const pid of action['person_ids'] as number[]) {
+                await execute('INSERT INTO meeting_people (meeting_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [meetingId, pid]);
+              }
+            }
+            // Create tasks linked to meeting (as backlog, user reviews later)
+            const meetingTasks = Array.isArray(action['tasks']) ? action['tasks'] as string[] : [];
+            for (const taskTitle of meetingTasks) {
+              if (!taskTitle || typeof taskTitle !== 'string') continue;
+              const tInserted = await queryOne<{ id: number }>(
+                'INSERT INTO tasks (project_id, title, description, status, priority, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+                [safeMeetingProjId, taskTitle, `Из встречи: ${action['title']} (${action['date']})`, 'backlog', 3, userId]
+              );
+              const taskId = tInserted!.id;
+              // Link task to meeting via agreements
+              try { await execute('INSERT INTO agreements (meeting_id, description, status, person_id) VALUES ($1, $2, $3, $4)', [meetingId, taskTitle, 'pending', null]); } catch {}
+              void taskId;
+            }
+            const taskCount = meetingTasks.length;
+            results.push({ type: 'create_meeting', success: true, detail: `Встреча "${action['title']}" на ${action['date']}${taskCount > 0 ? ` + ${taskCount} задач в backlog` : ''}` });
+            break;
+          }
+          case 'update_meeting': {
+            const fields: string[] = []; const values: unknown[] = [];
+            for (const key of ['title', 'date', 'project_id', 'summary_raw']) {
+              if (action[key] !== undefined) { fields.push(`${key} = $${fields.length + 1}`); values.push(action[key]); }
+            }
+            if (fields.length > 0) await execute(`UPDATE meetings SET ${fields.join(', ')} WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`, [...values, action['meeting_id'], userId]);
+            results.push({ type: 'update_meeting', success: true, detail: `Встреча #${action['meeting_id']} обновлена` });
+            break;
+          }
+          case 'delete_meeting': {
+            await execute('DELETE FROM meeting_people WHERE meeting_id IN (SELECT id FROM meetings WHERE id = $1 AND user_id = $2)', [action['meeting_id'], userId]);
+            await execute('DELETE FROM meetings WHERE id = $1 AND user_id = $2', [action['meeting_id'], userId]);
+            results.push({ type: 'delete_meeting', success: true, detail: `Встреча #${action['meeting_id']} удалена` });
+            break;
+          }
+          case 'create_person': {
+            const pInserted = await queryOne<{ id: number }>(
+              'INSERT INTO people (name, company, role, phone, email, telegram, notes, project_id, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
+              [action['name'], action['company'] ?? '', action['role'] ?? '', action['phone'] ?? '', action['email'] ?? '', action['telegram'] ?? '', action['notes'] ?? '', action['project_id'] ?? null, userId]
+            );
+            const personId = pInserted!.id;
+            // Link to project via junction table if project_id provided
+            if (action['project_id']) {
+              try { await execute('INSERT INTO people_projects (person_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [personId, action['project_id']]); } catch {}
+            }
+            results.push({ type: 'create_person', success: true, detail: `Контакт "${action['name']}" создан${action['company'] ? ` (${action['company']})` : ''}${action['project_id'] ? ' + привязан к проекту' : ''}` });
+            break;
+          }
+          case 'delete_person': {
+            const personOwnerCheck = await queryOne('SELECT id FROM people WHERE id = $1 AND user_id = $2', [action['person_id'], userId]);
+            if (personOwnerCheck) {
+              await execute('DELETE FROM task_people WHERE person_id = $1', [action['person_id']]);
+              await execute('DELETE FROM meeting_people WHERE person_id = $1', [action['person_id']]);
+              await execute('DELETE FROM people_projects WHERE person_id = $1', [action['person_id']]);
+              await execute('DELETE FROM people WHERE id = $1 AND user_id = $2', [action['person_id'], userId]);
+            }
+            results.push({ type: 'delete_person', success: true, detail: `Контакт #${action['person_id']} удалён` });
+            break;
+          }
+          case 'update_person': {
+            const pid = action['person_id'] as number;
+            const fields: string[] = [];
+            const values: unknown[] = [];
+            for (const f of ['name', 'company', 'role', 'phone', 'email', 'telegram', 'project_id']) {
+              if (action[f] !== undefined) { fields.push(`${f} = $${fields.length + 1}`); values.push(action[f]); }
+            }
+            if (fields.length > 0) {
+              await execute(`UPDATE people SET ${fields.join(', ')} WHERE id = $${values.length + 1} AND user_id = $${values.length + 2}`, [...values, pid, userId]);
+              // Update project junction
+              if (action['project_id']) {
+                try { await execute('INSERT INTO people_projects (person_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [pid, action['project_id']]); } catch {}
+              }
+            }
+            results.push({ type: 'update_person', success: true, detail: `Контакт #${pid} обновлён` });
+            break;
+          }
+          case 'send_to_telegram': {
+            const content = (action['content'] as string) ?? '';
+            const filename = (action['filename'] as string) ?? 'file.md';
+            const message = (action['message'] as string) ?? '';
+            if (!content) {
+              results.push({ type: 'send_to_telegram', success: false, detail: 'Нет содержимого для файла' });
+              break;
+            }
+            // Write temp file and send via telegram
+            const fs = require('fs');
+            const tmpPath = `/tmp/pis-file-${Date.now()}-${filename}`;
+            fs.writeFileSync(tmpPath, content, 'utf-8');
+            // Find user's tg_id
+            const actionUserId = getUserId(req as AuthRequest);
+            if (actionUserId) {
+              const userRow = await queryOne<{ tg_id: string | null }>('SELECT tg_id FROM users WHERE id = $1', [actionUserId]);
+              if (userRow?.tg_id) {
+                const { telegramService } = require('../services/telegram.service');
+                await telegramService.sendFileToUser(userRow.tg_id, tmpPath, filename, message || `📄 ${filename}`);
+                results.push({ type: 'send_to_telegram', success: true, detail: `📤 Файл "${filename}" отправлен в Telegram` });
+              } else {
+                results.push({ type: 'send_to_telegram', success: false, detail: 'Telegram не привязан к аккаунту' });
+              }
+            } else {
+              results.push({ type: 'send_to_telegram', success: false, detail: 'Не авторизован' });
+            }
+            try { fs.unlinkSync(tmpPath); } catch {}
+            break;
+          }
+          default:
+            results.push({ type: String(action['type']), success: false, detail: 'Неизвестное действие' });
+        }
+      } catch (err) {
+        results.push({ type: String(action['type']), success: false, detail: err instanceof Error ? err.message : 'Ошибка' });
+      }
     }
 
     if (command.actions.length > 0) {
@@ -677,6 +714,7 @@ ${fullMeetingContent ? `\n=== ДАННЫЕ ВСТРЕЧ (${meetings.length} вс
 
 aiRouter.post('/daily-plan', async (req: AuthRequest, res: Response) => {
   try {
+    if (!(await enforceAiLimit(req, res))) return;
     const userId = getUserId(req);
     const today = moscowDateString();
 
@@ -756,6 +794,7 @@ aiRouter.post('/daily-plan', async (req: AuthRequest, res: Response) => {
 
 aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) => {
   try {
+    if (!(await enforceAiLimit(req, res))) return;
     const userId = getUserId(req);
     const today = moscowDateString();
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -798,10 +837,13 @@ aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) 
     const habits = userId != null
       ? await queryAll<{ id: number; title: string }>(`SELECT id, title FROM habits WHERE archived = 0 AND user_id = $1`, [userId])
       : await queryAll<{ id: number; title: string }>(`SELECT id, title FROM habits WHERE archived = 0`, []);
-    const habitLogs = await queryAll<{ habit_id: number; completed_days: number }>(
-      "SELECT habit_id, COUNT(*) as completed_days FROM habit_logs WHERE date >= $1 AND completed = 1 GROUP BY habit_id",
-      [weekAgo]
-    );
+    const habitLogs = userId != null
+      ? await queryAll<{ habit_id: number; completed_days: number }>(
+          "SELECT hl.habit_id, COUNT(*) as completed_days FROM habit_logs hl JOIN habits h ON h.id = hl.habit_id WHERE hl.date >= $1 AND hl.completed = 1 AND h.user_id = $2 GROUP BY hl.habit_id",
+          [weekAgo, userId])
+      : await queryAll<{ habit_id: number; completed_days: number }>(
+          "SELECT habit_id, COUNT(*) as completed_days FROM habit_logs WHERE date >= $1 AND completed = 1 GROUP BY habit_id",
+          [weekAgo]);
     const habitStats = habits.map(h => {
       const log = habitLogs.find(l => l.habit_id === h.id);
       return { title: h.title, completed_days: log?.completed_days ?? 0, total_days: 7 };
@@ -839,11 +881,13 @@ aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) 
 });
 
 aiRouter.get('/search', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
   const q = req.query['q'];
   if (typeof q !== 'string' || !q) { res.status(400).json(fail('Query parameter q is required')); return; }
   try {
-    const tasks = await queryAll("SELECT title FROM tasks WHERE title LIKE $1 LIMIT 10", [`%${q}%`]);
-    const meetings = await queryAll("SELECT title, summary_raw FROM meetings WHERE title LIKE $1 OR summary_raw LIKE $2 LIMIT 5", [`%${q}%`, `%${q}%`]);
+    if (!(await enforceAiLimit(req, res))) return;
+    const tasks = await queryAll("SELECT title FROM tasks WHERE title LIKE $1 AND user_id = $2 LIMIT 10", [`%${q}%`, userId]);
+    const meetings = await queryAll("SELECT title, summary_raw FROM meetings WHERE (title LIKE $1 OR summary_raw LIKE $2) AND user_id = $3 LIMIT 5", [`%${q}%`, `%${q}%`, userId]);
     const result = await claude.searchKnowledge(q, JSON.stringify({ tasks, meetings }));
     res.json(ok(result));
   } catch (err) {

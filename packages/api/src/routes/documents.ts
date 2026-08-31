@@ -11,10 +11,11 @@ import { config } from '../config';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
 import { syncDocToVault } from '../services/obsidian-sync.service';
+import { attachmentFileFilter } from '../utils/upload-filter';
 
 const attachDir = path.join(config.vaultPath, 'Attachments');
 if (!fs.existsSync(attachDir)) fs.mkdirSync(attachDir, { recursive: true });
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 }, fileFilter: attachmentFileFilter });
 
 export const documentsRouter = Router();
 
@@ -122,8 +123,12 @@ documentsRouter.get('/attachments/file/:filename', async (req: AuthRequest, res:
     [req.params['filename']!, userId]
   );
   if (!att) { res.status(404).json(fail('Файл не найден')); return; }
-  const filePath = path.join(attachDir, req.params['filename']!);
-  if (!fs.existsSync(filePath)) { res.status(404).json(fail('Файл не найден')); return; }
+  const safeName = path.basename(req.params['filename']!); // strip any ../ traversal
+  const filePath = path.join(attachDir, safeName);
+  if (!filePath.startsWith(attachDir) || !fs.existsSync(filePath)) { res.status(404).json(fail('Файл не найден')); return; }
+  // Force download + no MIME sniffing so an uploaded HTML/SVG can't execute in our origin
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.sendFile(filePath);
 });
 

@@ -56,11 +56,11 @@ export async function getWeather(city: string): Promise<string> {
   }
 }
 
-/** Search vault via full-text search */
-export async function searchVault(query: string, limit = 10): Promise<string> {
+/** Search vault via full-text search (scoped to the requesting user) */
+export async function searchVault(query: string, limit = 10, userId?: number | null): Promise<string> {
   try {
     const { searchService } = require('./search.service');
-    const results = await searchService.search(query, limit) as Array<{ type: string; ref_id: number; title: string; snippet: string }>;
+    const results = await searchService.search(query, limit, userId) as Array<{ type: string; ref_id: number; title: string; snippet: string }>;
     if (results.length === 0) return 'Ничего не найдено';
     return results.map(r => `[${r.type}#${r.ref_id}] ${r.title}\n${r.snippet.replace(/<\/?mark>/g, '')}`).join('\n\n') +
       '\n\nЧтобы получить полное содержимое, используй get_entity_details с type и id (например, type=meeting id=5) или read_vault_file.';
@@ -70,20 +70,20 @@ export async function searchVault(query: string, limit = 10): Promise<string> {
 }
 
 /** Search meetings by topic and return full content */
-export async function searchMeetingsFull(query: string, limit = 3): Promise<string> {
+export async function searchMeetingsFull(query: string, limit = 3, userId?: number | null): Promise<string> {
   try {
     const results = await queryAll<{ id: number; title: string; date: string; summary_raw: string }>(
       `SELECT id, title, date, summary_raw FROM meetings
-       WHERE title ILIKE $1 OR summary_raw ILIKE $1
-       ORDER BY date DESC LIMIT $2`,
-      [`%${query}%`, limit]
+       WHERE (title ILIKE $1 OR summary_raw ILIKE $1) AND user_id = $2
+       ORDER BY date DESC LIMIT $3`,
+      [`%${query}%`, userId, limit]
     );
 
     const maxChars = 15000; // per meeting, sufficient for full transcript
     if (results.length === 0) {
       const recent = await queryAll<{ id: number; title: string; date: string; summary_raw: string }>(
-        'SELECT id, title, date, summary_raw FROM meetings ORDER BY date DESC LIMIT $1',
-        [limit]
+        'SELECT id, title, date, summary_raw FROM meetings WHERE user_id = $1 ORDER BY date DESC LIMIT $2',
+        [userId, limit]
       );
       if (recent.length === 0) return 'Встреч не найдено';
       return 'По запросу ничего не найдено. Недавние встречи:\n\n' + recent.map(m =>
@@ -99,11 +99,22 @@ export async function searchMeetingsFull(query: string, limit = 3): Promise<stri
   }
 }
 
-/** Read a specific vault file by relative path */
-export function readVaultFile(relativePath: string): string {
+/** Resolve a vault-relative path inside the given user's subtree, or null if it escapes it. */
+function resolveUserVaultPath(relativePath: string, userId: number | null | undefined): string | null {
+  if (userId === null || userId === undefined) return null;
+  const userRoot = path.resolve(config.vaultPath, `user_${userId}`);
+  const fullPath = path.resolve(userRoot, relativePath);
+  const rel = path.relative(userRoot, fullPath);
+  // Reject anything that climbs out of the user's own folder.
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return fullPath;
+}
+
+/** Read a specific vault file by relative path (scoped to the user's own vault subtree) */
+export function readVaultFile(relativePath: string, userId?: number | null): string {
   try {
-    const fullPath = path.join(config.vaultPath, relativePath);
-    if (!fullPath.startsWith(config.vaultPath)) return 'Ошибка: недопустимый путь';
+    const fullPath = resolveUserVaultPath(relativePath, userId);
+    if (!fullPath) return 'Ошибка: недопустимый путь';
     if (!fs.existsSync(fullPath)) return `Файл не найден: ${relativePath}`;
     const content = fs.readFileSync(fullPath, 'utf-8');
     return content.slice(0, 10000);
@@ -112,10 +123,11 @@ export function readVaultFile(relativePath: string): string {
   }
 }
 
-/** List files in a vault folder */
-export function listVaultFolder(folder: string): string {
+/** List files in a vault folder (scoped to the user's own vault subtree) */
+export function listVaultFolder(folder: string, userId?: number | null): string {
   try {
-    const dir = path.join(config.vaultPath, folder);
+    const dir = resolveUserVaultPath(folder, userId);
+    if (!dir) return 'Ошибка: недопустимый путь';
     if (!fs.existsSync(dir)) return `Папка не найдена: ${folder}`;
     const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'));
     return files.length > 0 ? files.join('\n') : 'Папка пуста';
@@ -125,12 +137,12 @@ export function listVaultFolder(folder: string): string {
 }
 
 /** Get detailed info about a specific task, meeting, project, or person */
-export async function getEntityDetails(entityType: string, entityId: number): Promise<string> {
+export async function getEntityDetails(entityType: string, entityId: number, userId?: number | null): Promise<string> {
   try {
     let result;
     switch (entityType) {
       case 'task': {
-        const task = await queryOne('SELECT * FROM tasks WHERE id = $1', [entityId]);
+        const task = await queryOne('SELECT * FROM tasks WHERE id = $1 AND user_id = $2', [entityId, userId]);
         if (!task) return 'Задача не найдена';
         const people = await queryAll(
           'SELECT p.name FROM people p JOIN task_people tp ON p.id = tp.person_id WHERE tp.task_id = $1',
@@ -140,7 +152,7 @@ export async function getEntityDetails(entityType: string, entityId: number): Pr
         break;
       }
       case 'meeting': {
-        const meeting = await queryOne('SELECT * FROM meetings WHERE id = $1', [entityId]);
+        const meeting = await queryOne('SELECT * FROM meetings WHERE id = $1 AND user_id = $2', [entityId, userId]);
         if (!meeting) return 'Встреча не найдена';
         const people = await queryAll(
           'SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1',
@@ -150,29 +162,29 @@ export async function getEntityDetails(entityType: string, entityId: number): Pr
         break;
       }
       case 'project': {
-        const project = await queryOne('SELECT * FROM projects WHERE id = $1', [entityId]);
+        const project = await queryOne('SELECT * FROM projects WHERE id = $1 AND user_id = $2', [entityId, userId]);
         if (!project) return 'Проект не найден';
         const tasks = await queryAll(
-          'SELECT id, title, status FROM tasks WHERE project_id = $1 AND archived = 0',
-          [entityId]
+          'SELECT id, title, status FROM tasks WHERE project_id = $1 AND user_id = $2 AND archived = 0',
+          [entityId, userId]
         );
         const meetings = await queryAll(
-          'SELECT id, title, date FROM meetings WHERE project_id = $1 ORDER BY date DESC LIMIT 5',
-          [entityId]
+          'SELECT id, title, date FROM meetings WHERE project_id = $1 AND user_id = $2 ORDER BY date DESC LIMIT 5',
+          [entityId, userId]
         );
         result = { ...project, tasks, meetings };
         break;
       }
       case 'person': {
-        const person = await queryOne('SELECT * FROM people WHERE id = $1', [entityId]);
+        const person = await queryOne('SELECT * FROM people WHERE id = $1 AND user_id = $2', [entityId, userId]);
         if (!person) return 'Человек не найден';
         const tasks = await queryAll(
-          'SELECT t.id, t.title FROM tasks t JOIN task_people tp ON t.id = tp.task_id WHERE tp.person_id = $1',
-          [entityId]
+          'SELECT t.id, t.title FROM tasks t JOIN task_people tp ON t.id = tp.task_id WHERE tp.person_id = $1 AND t.user_id = $2',
+          [entityId, userId]
         );
         const meetings = await queryAll(
-          'SELECT m.id, m.title, m.date FROM meetings m JOIN meeting_people mp ON m.id = mp.meeting_id WHERE mp.person_id = $1',
-          [entityId]
+          'SELECT m.id, m.title, m.date FROM meetings m JOIN meeting_people mp ON m.id = mp.meeting_id WHERE mp.person_id = $1 AND m.user_id = $2',
+          [entityId, userId]
         );
         result = { ...person, tasks, meetings };
         break;
@@ -277,21 +289,26 @@ export const toolDefinitions = [
   },
 ];
 
-/** Execute a tool call and return result */
-export async function executeTool(name: string, args: Record<string, unknown>): Promise<string> {
+/** Execute a tool call and return result. userId scopes all data access to the requesting user. */
+export async function executeTool(name: string, args: Record<string, unknown>, userId?: number | null): Promise<string> {
+  // Fail closed: data tools require an authenticated user context.
+  const requiresUser = ['search_vault', 'search_meetings_full', 'read_vault_file', 'list_vault_folder', 'get_entity_details'];
+  if (requiresUser.includes(name) && (userId === null || userId === undefined)) {
+    return 'Ошибка: требуется аутентификация пользователя';
+  }
   switch (name) {
     case 'get_weather':
       return await getWeather(args['city'] as string);
     case 'search_vault':
-      return await searchVault(args['query'] as string, (args['limit'] as number) ?? 10);
+      return await searchVault(args['query'] as string, (args['limit'] as number) ?? 10, userId!);
     case 'search_meetings_full':
-      return await searchMeetingsFull(args['query'] as string, (args['limit'] as number) ?? 3);
+      return await searchMeetingsFull(args['query'] as string, (args['limit'] as number) ?? 3, userId!);
     case 'read_vault_file':
-      return readVaultFile(args['path'] as string);
+      return readVaultFile(args['path'] as string, userId!);
     case 'list_vault_folder':
-      return listVaultFolder(args['folder'] as string);
+      return listVaultFolder(args['folder'] as string, userId!);
     case 'get_entity_details':
-      return await getEntityDetails(args['entity_type'] as string, args['entity_id'] as number);
+      return await getEntityDetails(args['entity_type'] as string, args['entity_id'] as number, userId!);
     default:
       return `Неизвестный инструмент: ${name}`;
   }

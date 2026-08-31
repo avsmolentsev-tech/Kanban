@@ -5,6 +5,10 @@ import { KanbanPage } from './pages/KanbanPage';
 import { TimelinePage } from './pages/TimelinePage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { MeetingsPage } from './pages/MeetingsPage';
+import { CouncilPage } from './pages/CouncilPage';
+import { CommitmentsPage } from './pages/CommitmentsPage';
+import { TranscribePage } from './pages/TranscribePage';
+import { WelcomeIntro } from './components/WelcomeIntro';
 import { PeoplePage } from './pages/PeoplePage';
 import { IdeasPage } from './pages/IdeasPage';
 import { DocumentsPage } from './pages/DocumentsPage';
@@ -44,7 +48,7 @@ import { PrivacyPage } from './pages/PrivacyPage';
 import {
   LayoutDashboard, Columns3, BarChart3, FolderKanban, Users, CalendarDays,
   Lightbulb, FileText, MessageCircle, Target, BookOpen, GanttChart,
-  Flame, Sun, PieChart, LogOut, ChevronLeft, ChevronRight, Shield, Send
+  Flame, Sun, PieChart, LogOut, ChevronLeft, ChevronRight, Shield, Send, Landmark, Handshake, Mic
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -73,7 +77,10 @@ const getDesktopNav = (t: (ru: string, en: string) => string): NavSection[] => [
     title: t('Общение', 'Social'),
     items: [
       { to: '/chat', label: t('AI Чат', 'AI Chat'), icon: MessageCircle },
+      { to: '/council', label: t('Совет', 'Council'), icon: Landmark },
+      { to: '/commitments', label: t('Договорённости', 'Commitments'), icon: Handshake },
       { to: '/meetings', label: t('Встречи', 'Meetings'), icon: Users },
+      { to: '/transcribe', label: t('Транскрипция', 'Transcribe'), icon: Mic },
       { to: '/people', label: t('Люди', 'People'), icon: Users },
     ],
   },
@@ -209,6 +216,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <HotkeyProvider />
+      <WelcomeIntro />
       <div
         className="flex h-screen bg-gray-50 dark:bg-gray-900"
         style={isTg ? { height: 'var(--tg-vh, 100vh)' } : undefined}
@@ -304,6 +312,9 @@ export default function App() {
               <Route path="/timeline" element={<AnimatedPage><TimelinePage /></AnimatedPage>} />
               <Route path="/projects" element={<AnimatedPage><ProjectsPage /></AnimatedPage>} />
               <Route path="/meetings" element={<AnimatedPage><MeetingsPage /></AnimatedPage>} />
+              <Route path="/council" element={<AnimatedPage><CouncilPage /></AnimatedPage>} />
+              <Route path="/commitments" element={<AnimatedPage><CommitmentsPage /></AnimatedPage>} />
+              <Route path="/transcribe" element={<AnimatedPage><TranscribePage /></AnimatedPage>} />
               <Route path="/people" element={<AnimatedPage><PeoplePage /></AnimatedPage>} />
               <Route path="/brief" element={<AnimatedPage><DailyBriefPage /></AnimatedPage>} />
               <Route path="/calendar" element={<AnimatedPage><CalendarPage /></AnimatedPage>} />

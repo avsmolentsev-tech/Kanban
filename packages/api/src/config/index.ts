@@ -12,6 +12,9 @@ export const config = {
   databaseUrl: process.env['DATABASE_URL'] ?? '',
   openaiApiKey: process.env['OPENAI_API_KEY'] ?? '',
   openaiBaseUrl: process.env['OPENAI_BASE_URL'] || undefined,
+  // Separate key/model for the Advisory Board (own billing/limits). Falls back to the main key.
+  advisorApiKey: process.env['ADVISOR_OPENAI_API_KEY'] || '',
+  advisorModel: process.env['ADVISOR_MODEL'] || 'gpt-4.1-mini',
   maxFileSizeMb: parseInt(process.env['MAX_FILE_SIZE_MB'] ?? '50', 10),
   telegramBotToken: process.env['TELEGRAM_BOT_TOKEN'] ?? '',
   telegramUserId: process.env['TELEGRAM_USER_ID'] ?? '',

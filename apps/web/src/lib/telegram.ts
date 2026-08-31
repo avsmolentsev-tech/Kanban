@@ -12,6 +12,62 @@ export function getTelegramWebApp() {
   return (window as any).Telegram?.WebApp;
 }
 
+/**
+ * Нативная кнопка «назад» в шапке Telegram.
+ *
+ * Панели (встреча, транскрипт, задача…) открываются поверх приложения, и внутри
+ * Telegram единственным способом выйти оставался маленький серый «×» — его не
+ * находят и закрывают всё приложение целиком. Кнопка «назад» — штатный для
+ * Telegram способ, она же ловит системный жест «назад» на Android.
+ *
+ * Обработчики держим стопкой: панели вкладываются друг в друга (встреча внутри
+ * проекта), и «назад» должен закрывать верхнюю, а не все сразу.
+ */
+type BackHandler = () => void;
+const backStack: BackHandler[] = [];
+let backClickWired = false;
+
+function runTopBackHandler(): void {
+  const top = backStack[backStack.length - 1];
+  if (top) top();
+}
+
+function syncBackButton(): void {
+  const bb = getTelegramWebApp()?.BackButton;
+  if (!bb || typeof bb.show !== 'function' || typeof bb.hide !== 'function') return;
+
+  if (backStack.length > 0) {
+    if (!backClickWired && typeof bb.onClick === 'function') {
+      bb.onClick(runTopBackHandler);
+      backClickWired = true;
+    }
+    bb.show();
+  } else {
+    bb.hide();
+  }
+}
+
+/**
+ * Показывает кнопку «назад», пока панель открыта.
+ * Возвращает функцию снятия — её достаточно вернуть из useEffect.
+ * Вне Telegram не делает ничего.
+ */
+export function pushBackHandler(handler: BackHandler): () => void {
+  if (!isTelegramWebApp()) return () => {};
+
+  backStack.push(handler);
+  syncBackButton();
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const i = backStack.lastIndexOf(handler);
+    if (i !== -1) backStack.splice(i, 1);
+    syncBackButton();
+  };
+}
+
 export function initTelegramApp(): void {
   const tg = getTelegramWebApp();
   if (!tg) return;
@@ -19,6 +75,14 @@ export function initTelegramApp(): void {
   tg.ready();
   tg.expand();
   tg.enableClosingConfirmation();
+
+  // Bot API 7.7+: не даём Telegram утаскивать окно вниз, когда листаешь длинный
+  // текст внутри приложения — иначе транскрипт невозможно прокрутить, не придерживая
+  // окно пальцем. На старых клиентах метода просто нет, поведение остаётся прежним.
+  if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
+
+  // Кнопка «назад» прячется, пока ни одна панель не открыта.
+  syncBackButton();
 
   // Apply body position:fixed only in Telegram/mobile context
   // (prevents iOS keyboard viewport push, but causes horizontal

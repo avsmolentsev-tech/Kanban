@@ -4,6 +4,7 @@ import { useDocumentsStore } from '../../store/documents.store';
 import { useLangStore } from '../../store/lang.store';
 import { useEffect, useState, useCallback } from 'react';
 import { tasksApi } from '../../api/tasks.api';
+import { meetingsApi } from '../../api/meetings.api';
 import { apiGet, apiClient } from '../../api/client';
 
 interface Person {
@@ -43,9 +44,18 @@ function splitSummaryAndTranscript(raw: string): { summary: string; transcript: 
 function DownloadButton({ meetingId, type, label, icon: Icon }: {
   meetingId: number; type: 'summary' | 'full' | 'notes' | 'qa' | 'actions'; label: string; icon: typeof Download;
 }) {
-  const handleDownload = () => {
-    const token = localStorage.getItem('auth_token') || '';
-    window.open(`/v1/meetings/${meetingId}/download?type=${type}&format=pdf&token=${encodeURIComponent(token)}`, '_blank');
+  const handleDownload = async () => {
+    // Open the tab synchronously (Safari blocks window.open after await), then
+    // set its URL once the short-lived download token is ready.
+    const win = window.open('', '_blank');
+    try {
+      const { token } = await meetingsApi.downloadToken(meetingId);
+      const url = `/v1/meetings/${meetingId}/download?type=${type}&format=pdf&token=${encodeURIComponent(token)}`;
+      if (win) win.location.href = url; else window.location.href = url;
+    } catch {
+      if (win) win.close();
+      alert('Не удалось подготовить файл к скачиванию.');
+    }
   };
   return (
     <button onClick={handleDownload}

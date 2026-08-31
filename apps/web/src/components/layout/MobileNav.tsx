@@ -25,7 +25,7 @@ export function MobileNav() {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 safe-bottom">
       {/* Background bar */}
-      <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-700/50 flex items-end justify-around px-2 pt-2 pb-2">
+      <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-700/50 flex items-end justify-around px-2 pt-2.5 pb-3">
         {tabs.map(({ to, label, icon: Icon, isCenter }) => {
           if (isCenter) {
             return (
@@ -33,19 +33,19 @@ export function MobileNav() {
                 key={to}
                 to={to}
                 className={({ isActive }) =>
-                  `flex flex-col items-center -mt-7 ${isActive ? '' : ''}`
+                  `flex flex-col items-center -mt-8 ${isActive ? '' : ''}`
                 }
               >
                 {({ isActive }) => (
                   <>
-                    <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${
+                    <div className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all ${
                       isActive
                         ? 'bg-indigo-600 shadow-indigo-500/40 scale-105'
                         : 'bg-indigo-500 shadow-indigo-500/25 hover:bg-indigo-600'
                     }`}>
-                      <Icon size={26} className="text-white" strokeWidth={2} />
+                      <Icon size={30} className="text-white" strokeWidth={2} />
                     </div>
-                    <span className={`text-[10px] font-semibold mt-1 ${
+                    <span className={`text-[11px] font-semibold mt-1 ${
                       isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500'
                     }`}>{label}</span>
                   </>
@@ -60,7 +60,7 @@ export function MobileNav() {
               to={to}
               end={to === '/'}
               className={({ isActive }) =>
-                `flex-1 flex flex-col items-center py-1 text-[10px] font-medium transition-colors ${
+                `flex-1 flex flex-col items-center py-1.5 text-[11px] font-medium transition-colors ${
                   isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500'
                 }`
               }
@@ -68,9 +68,9 @@ export function MobileNav() {
               {({ isActive }) => (
                 <>
                   <Icon
-                    size={22}
+                    size={25}
                     strokeWidth={isActive ? 2.5 : 1.8}
-                    className={`mb-0.5 transition-colors ${
+                    className={`mb-1 transition-colors ${
                       isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500'
                     }`}
                   />

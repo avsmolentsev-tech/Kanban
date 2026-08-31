@@ -83,95 +83,17 @@ export function ChatPage() {
     setInput('');
     setLoading(true);
 
-    // Streaming placeholder message
-    const placeholderIdx = history.length;
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
     try {
       const activeMeetingId = useActiveMeetingStore.getState().meetingId;
-      const token = localStorage.getItem('auth_token');
-
-      const fetchRes = await fetch('/v1/ai/voice-command', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          text: text.trim(),
-          history: history.slice(-20).map(m => ({ role: m.role, content: m.content })),
-          ...(activeMeetingId ? { meeting_id: activeMeetingId } : {}),
-        }),
+      const res = await apiPost<{ response: string; results?: Array<{ detail: string }> }>('/ai/voice-command', {
+        text: text.trim(),
+        history: history.slice(-20).map(m => ({ role: m.role, content: m.content })),
+        ...(activeMeetingId ? { meeting_id: activeMeetingId } : {}),
       });
-
-      if (!fetchRes.ok || !fetchRes.body) throw new Error(`HTTP ${fetchRes.status}`);
-
-      const reader = fetchRes.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      // State machine: extract "response" field value from streaming JSON
-      // JSON format: {"response":"<text>","actions":[...]}
-      // We show tokens after we detect "response":"
-      let responseStarted = false;
-      let responseText = '';
-      let depth = 0; // track string escape
-      let inResponseValue = false;
-      let fullRaw = '';
-
-      const updateMsg = (content: string) => {
-        setMessages(prev => prev.map((m, i) => i === placeholderIdx ? { ...m, content } : m));
-      };
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const evt = JSON.parse(line.slice(6)) as { t?: string; done?: boolean; response?: string; results?: Array<{ detail: string }>; error?: string };
-            if (evt.error) throw new Error(evt.error);
-
-            if (evt.t !== undefined) {
-              fullRaw += evt.t;
-              // Extract response text progressively from JSON stream
-              if (!responseStarted) {
-                const marker = '"response":"';
-                const idx = fullRaw.indexOf(marker);
-                if (idx !== -1) { responseStarted = true; inResponseValue = true; depth = 0; fullRaw = fullRaw.slice(idx + marker.length); }
-              }
-              if (inResponseValue) {
-                // Append chars, stop at unescaped closing quote
-                for (let ci = 0; ci < fullRaw.length; ci++) {
-                  const ch = fullRaw[ci]!;
-                  if (depth === 0 && ch === '"') { inResponseValue = false; fullRaw = ''; break; }
-                  if (ch === '\\') { depth = depth === 0 ? 1 : 0; continue; }
-                  depth = 0;
-                  responseText += ch;
-                }
-                if (inResponseValue) fullRaw = '';
-                updateMsg(responseText + '▌');
-              }
-            }
-
-            if (evt.done) {
-              const resultsText = evt.results && evt.results.length > 0
-                ? '\n\n' + evt.results.map(r => r.detail).join('\n')
-                : '';
-              const finalText = (evt.response ?? responseText) + resultsText;
-              updateMsg(finalText);
-            }
-          } catch {}
-        }
-      }
+      const reply = res.response + (res.results && res.results.length > 0 ? '\n\n' + res.results.map(r => r.detail).join('\n') : '');
+      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e: unknown) {
-      setMessages(prev => prev.map((m, i) => i === placeholderIdx
-        ? { ...m, content: `${t('Ошибка:', 'Error:')} ${e instanceof Error ? e.message : 'unknown'}` }
-        : m));
+      setMessages(prev => [...prev, { role: 'assistant', content: `${t('Ошибка:', 'Error:')} ${e instanceof Error ? e.message : 'unknown'}` }]);
     } finally { setLoading(false); }
   };
 

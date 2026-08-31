@@ -129,21 +129,24 @@ export function TimelinePage() {
       <div className="pointer-events-none absolute -top-40 -right-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/15 dark:bg-indigo-400/[0.10]" style={{ animation: 'circleLeft 30s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute -top-20 -right-20 w-[350px] hidden md:block h-[350px] rounded-full bg-purple-400/12 dark:bg-purple-400/[0.08]" style={{ animation: 'circleLeftSlow 26s cubic-bezier(0.45,0,0.55,1) infinite' }} />
       <div className="pointer-events-none absolute bottom-20 -left-40 w-[500px] hidden md:block h-[500px] rounded-full bg-indigo-400/[0.14] dark:bg-violet-400/[0.09] blur-[80px]" style={{ animation: 'circleRight 34s cubic-bezier(0.45,0,0.55,1) infinite' }} />
-      <div className="relative z-10 page-header flex items-center justify-between px-4 pt-4 pb-2 border-b bg-white dark:bg-gray-900 dark:border-gray-700">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
-            <BarChart3 size={20} className="text-white" />
+      <div className="relative z-10 page-header px-4 pt-4 pb-2 border-b bg-white dark:bg-gray-900 dark:border-gray-700">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/25 flex-shrink-0">
+              <BarChart3 size={20} className="text-white" />
+            </div>
+            <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100 truncate">{t('Таймлайн', 'Timeline')}</h1>
           </div>
-          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">{t('Таймлайн', 'Timeline')}</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <SavedFilters active={activeFilter?.id ?? null} onApply={setActiveFilter} />
-          <ProjectFilter projects={projects} />
           <button onClick={() => setShowAddTask(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer shadow-sm">
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer shadow-sm flex-shrink-0">
             <Plus size={16} />
             {t('Задача', 'Task')}
           </button>
+        </div>
+        {/* Filters: single horizontally-scrollable row so nothing wraps or clips off-screen */}
+        <div className="flex items-center gap-2 mt-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <SavedFilters active={activeFilter?.id ?? null} onApply={setActiveFilter} />
+          <div className="flex-shrink-0"><ProjectFilter projects={projects} /></div>
         </div>
       </div>
       {showAddTask && <AddTaskModal status="todo" projectId={null} people={people} projects={projects} onCreated={() => { setShowAddTask(false); refresh(); }} onCancel={() => setShowAddTask(false)} />}
