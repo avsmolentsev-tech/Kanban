@@ -41,9 +41,19 @@ const CYR = 'А-Яа-яЁё';
 /**
  * Два ИЛИ три слова с заглавной подряд — кандидат в ФИО. Жадный (по умолчанию для
  * `?`), поэтому съедает тройную форму «Имя Отчество Фамилия» целиком одним токеном:
- * раньше не жадный вариант останавливался на первых двух словах и оставлял фамилию
+ * не жадный вариант останавливался на первых двух словах и оставлял фамилию
  * (самый идентифицирующий компонент) в открытом виде — например
  * «Иван Петрович Сидоров» превращалось в «[УЧАСТНИК_1] Сидоров».
+ *
+ * Ревью нашло парную проблему от той же жадности: третье слово захватывалось
+ * ДАЖЕ когда на самом деле это начало ИМЕНИ СЛЕДУЮЩЕГО ЧЕЛОВЕКА — «Иван Петров
+ * Мария Соколова» превращалось в «[УЧАСТНИК_1] Соколова», а в карте оказывалось
+ * «Иван Петров Мария» — фамилия второго участника опять утекала. Лукахед
+ * `(?![ \t][А-ЯЁ])` после третьего слова запрещает его захват, если СРАЗУ ЗА НИМ
+ * идёт ещё одно слово с заглавной через пробел — то есть если весь ряд похож не
+ * на «Имя Отчество Фамилия», а на два двухсловных имени подряд. Тройная форма
+ * (за которой следует пунктуация, конец строки или обычное слово) продолжает
+ * ловиться целиком, как и раньше — второй пример из ревью проверен тестом ниже.
  *
  * Известный компромисс: исключения по границе предложения нет вообще — см. ниже.
  * Различить «Иван Петров» и «Сроки Горят», когда оба стоят в позиции 0 всей строки,
@@ -56,7 +66,7 @@ const CYR = 'А-Яа-яЁё';
  * не проходит мимо редактирования независимо от позиции в тексте.
  */
 const FULLNAME = new RegExp(
-  `(?<![${CYR}])([А-ЯЁ][а-яё]{2,})[ \\t]+([А-ЯЁ][а-яё]{2,})(?:[ \\t]+([А-ЯЁ][а-яё]{2,}))?(?![${CYR}])`,
+  `(?<![${CYR}])([А-ЯЁ][а-яё]{2,})[ \\t]+([А-ЯЁ][а-яё]{2,})(?:[ \\t]+([А-ЯЁ][а-яё]{2,})(?![ \\t][А-ЯЁ]))?(?![${CYR}])`,
   'g'
 );
 /** Латинские имена: «John Smith», «Anna Lee» — участники из международных встреч. */
@@ -78,35 +88,52 @@ const IS_INITIALS_GROUP = /^[А-ЯЁ]\.([А-ЯЁ]\.)?$/;
  *
  * Многословные и сокращённые формы ФИО обрабатываются первым проходом. Второй
  * проход ищет одиночные слова, которые уже встретились как компонент найденного
- * имени (например «Иван» после «Иван Петров:» в реплике дальше по тексту), и
- * помечает их тем же токеном участника — без словаря имён, только по совпадению
- * с уже найденным компонентом. У полностью изолированного упоминания («Иван,
- * ты успеешь?» без единого другого упоминания имени во всём тексте) нет ничего,
- * с чем сверяться — это осознанная граница метода, а не словарь имён.
+ * имени (например «Иван» после «Иван Петров:» в реплике дальше по тексту).
+ *
+ * Важно про второй проход (найдено ревью): раньше такое одиночное слово получало
+ * ТОТ ЖЕ токен, что и полное имя, и restorePii подставляло обратно ВСЮ фразу
+ * целиком. Для настоящих имён это выглядело удобно, но у метода без словаря имён
+ * компонентом мог оказаться и обычное слово из ложного срабатывания ФИО
+ * («Сроки» из «Сроки Горят», «Москва» из «Москва Сити», «Директоров» из «Совет
+ * Директоров») — и тогда следующее обычное упоминание того же слова в СОВСЕМ
+ * другом предложении получало чужой токен, а restorePii молча дописывало в текст
+ * вторую половину когда-то распознанной "фамилии". Испорченный текст уходил в
+ * summary_raw, vault и поисковый индекс необратимо. Починено переходом на
+ * отдельный токен для каждого одиночного слова, привязанный ТОЛЬКО к этому слову
+ * (map хранит само слово, а не всю фразу) — резюме теряет красивое «слипание»
+ * «Иван» → «Иван Петров», но получает главное: restorePii больше не может
+ * подставить обратно то, чего не было ровно в этом месте текста. Круговой прогон
+ * redactPii → restorePii теперь равен исходному тексту всегда, а не «почти
+ * всегда, кроме повторов слов-компонентов».
  */
 export function redactPii(text: string): { text: string; map: PiiMap } {
   const map: PiiMap = {};
   const seen = new Map<string, string>();
   const counters: Record<string, number> = { ТЕЛЕФОН: 0, EMAIL: 0, УЧАСТНИК: 0 };
-  const nameComponents = new Map<string, string>();
+  const nameComponents = new Set<string>();
 
-  const registerComponents = (groups: Array<string | undefined>, token: string): void => {
+  const issueToken = (value: string, kind: string): string => {
+    const existing = seen.get(value);
+    if (existing) return existing;
+    counters[kind] = (counters[kind] ?? 0) + 1;
+    const token = `[${kind}_${counters[kind]}]`;
+    seen.set(value, token);
+    map[token] = value;
+    return token;
+  };
+
+  const registerComponents = (groups: Array<string | undefined>): void => {
     for (const g of groups) {
       if (!g || IS_INITIALS_GROUP.test(g)) continue;
-      if (!nameComponents.has(g)) nameComponents.set(g, token);
+      nameComponents.add(g);
     }
   };
 
-  const replace = (input: string, re: RegExp, kind: string, onGroups?: (groups: Array<string | undefined>, token: string) => void): string =>
+  const replace = (input: string, re: RegExp, kind: string, onGroups?: (groups: Array<string | undefined>) => void): string =>
     input.replace(re, (match: string, ...rest: unknown[]) => {
       const groups = rest.filter((g): g is string => typeof g === 'string');
-      const existing = seen.get(match);
-      if (existing) return existing;
-      counters[kind] = (counters[kind] ?? 0) + 1;
-      const token = `[${kind}_${counters[kind]}]`;
-      seen.set(match, token);
-      map[token] = match;
-      onGroups?.(groups, token);
+      const token = issueToken(match, kind);
+      onGroups?.(groups);
       return token;
     });
 
@@ -121,8 +148,12 @@ export function redactPii(text: string): { text: string; map: PiiMap } {
   out = replace(out, INITIALS_BEFORE, 'УЧАСТНИК', registerComponents);
 
   // Второй проход: одиночные слова, уже встреченные как компонент найденного имени.
-  out = out.replace(SINGLE_CYR_WORD, (m) => nameComponents.get(m) ?? m);
-  out = out.replace(SINGLE_LATIN_WORD, (m) => nameComponents.get(m) ?? m);
+  // Каждое СВОЁ отдельное слово — свой токен, привязанный только к этому слову
+  // (см. комментарий у redactPii про порчу текста, найденную ревью).
+  const replaceSingle = (input: string, re: RegExp): string =>
+    input.replace(re, (word: string) => (nameComponents.has(word) ? issueToken(word, 'УЧАСТНИК') : word));
+  out = replaceSingle(out, SINGLE_CYR_WORD);
+  out = replaceSingle(out, SINGLE_LATIN_WORD);
 
   return { text: out, map };
 }
@@ -157,11 +188,97 @@ export function restorePii(text: string, map: PiiMap): string {
 /**
  * Сканирует текст ПОСЛЕ restorePii на остаточные токены — те, что модель исказила
  * настолько, что даже терпимый restorePii не смог их опознать (несуществующий
- * номер участника, мусор внутри скобок и т.п.). Возвращает сами строки токенов —
+ * номер участника, мусор внутри скобок и т.п.), А ТАКЖЕ на токены, пересказанные
+ * словами вместо плейсхолдера («Участник 1» вместо «[УЧАСТНИК_1]») — несмотря на
+ * явную инструкцию в PII_TOKEN_NOTE модель иногда всё равно так делает (найдено
+ * ревью: `findResidualPiiTokens('Участник 1')` раньше возвращал `[]`, то есть
+ * резюме с «Участник 1» вместо настоящего имени сохранялось без единого
+ * предупреждения). Без-скобочный вариант — только обнаружение, БЕЗ подстановки:
+ * ложное срабатывание на случайно похожий кусок обычного текста стоит меньше,
+ * чем пропущенное искажение реального токена. Возвращает сами строки токенов —
  * НИКОГДА значения из таблицы соответствия, — вызывающий код обязан логировать
  * только их: `console.warn('...', findResidualPiiTokens(summary))`.
  */
 export function findResidualPiiTokens(text: string): string[] {
-  const re = new RegExp(`\\[\\s*(?:${TOKEN_KINDS.join('|')})[\\s_]*\\d*\\s*\\]`, 'gi');
-  return [...new Set(text.match(re) ?? [])];
+  const bracketed = new RegExp(`\\[\\s*(?:${TOKEN_KINDS.join('|')})[\\s_]*\\d*\\s*\\]`, 'gi');
+  const bracketless = new RegExp(`\\b(?:${TOKEN_KINDS.join('|')})[\\s_]+\\d+\\b`, 'gi');
+  const found = [...(text.match(bracketed) ?? []), ...(text.match(bracketless) ?? [])];
+  return [...new Set(found)];
+}
+
+/**
+ * Обёртка над restorePii, которую обязан использовать любой вызывающий код на
+ * любом пути отправки текста в модель: восстанавливает ПД и предупреждает через
+ * console.warn, если что-то не восстановилось (модель исказила токен сильнее, чем
+ * понимает терпимый restorePii). В лог уходят ТОЛЬКО сами токены
+ * (`findResidualPiiTokens`), никогда значения из таблицы соответствия.
+ */
+export function restorePiiAndWarn(text: string, map: PiiMap, context: string): string {
+  const restored = restorePii(text, map);
+  const residual = findResidualPiiTokens(restored);
+  if (residual.length) {
+    console.warn(`[pii] ${context}: модель не воспроизвела токен(ы) дословно, restorePii не смог их сопоставить:`, residual);
+  }
+  return restored;
+}
+
+/**
+ * Разделитель для склейки нескольких полей (транскрипт + название + список
+ * участников и т.п.) в ОДИН вызов redactPii — так одно и то же имя, встретившееся
+ * в разных полях, получает один и тот же токен. Отдельные вызовы redactPii на
+ * каждое поле дали бы РАЗНЫЕ токены одному и тому же человеку.
+ */
+export const PII_JOIN_BOUNDARY = '\n --pii-boundary-- \n';
+
+/** Склеивает несколько полей `PII_JOIN_BOUNDARY` перед вызовом redactPii. */
+export function joinForRedaction(parts: string[]): string {
+  return parts.join(PII_JOIN_BOUNDARY);
+}
+
+/**
+ * Разбирает склеенный через joinForRedaction/redactPii текст обратно на count
+ * исходных полей. Использует indexOf, а не String.split(boundary): если
+ * разделитель гипотетически встретился бы в самом содержимом поля, split()
+ * резал бы его неверно — здесь только первые (count-1) вхождений считаются
+ * границами, весь остаток целиком уходит в последнее поле.
+ */
+export function splitRedacted(text: string, count: number): string[] {
+  const parts: string[] = [];
+  let rest = text;
+  for (let i = 0; i < count - 1; i++) {
+    const at = rest.indexOf(PII_JOIN_BOUNDARY);
+    if (at === -1) { parts.push(rest); rest = ''; continue; }
+    parts.push(rest.slice(0, at));
+    rest = rest.slice(at + PII_JOIN_BOUNDARY.length);
+  }
+  parts.push(rest);
+  return parts;
+}
+
+/**
+ * Рекурсивно применяет restorePii к каждой строке внутри произвольного
+ * JSON-подобного значения (объект/массив/строка) — нужно для ответов модели в
+ * структурированном виде (например ExtractionResult из extractDraft или пункты
+ * из extractActionItems), где ПД может оказаться в любом строковом поле, а не
+ * в одном цельном тексте.
+ */
+export function restorePiiDeep<T>(value: T, map: PiiMap): T {
+  if (typeof value === 'string') return restorePii(value, map) as unknown as T;
+  if (Array.isArray(value)) return value.map((v) => restorePiiDeep(v, map)) as unknown as T;
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = restorePiiDeep(v, map);
+    return out as T;
+  }
+  return value;
+}
+
+/** restorePiiDeep + предупреждение об остаточных токенах — deep-аналог restorePiiAndWarn. */
+export function restorePiiDeepAndWarn<T>(value: T, map: PiiMap, context: string): T {
+  const restored = restorePiiDeep(value, map);
+  const residual = findResidualPiiTokens(JSON.stringify(restored));
+  if (residual.length) {
+    console.warn(`[pii] ${context}: модель не воспроизвела токен(ы) дословно, restorePii не смог их сопоставить:`, residual);
+  }
+  return restored;
 }
