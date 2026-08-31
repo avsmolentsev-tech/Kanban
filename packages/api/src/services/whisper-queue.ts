@@ -83,9 +83,18 @@ async function processJob(job: TranscribeJob): Promise<void> {
   }
 }
 
+/**
+ * 152-ФЗ chokepoint: единственное место в этом файле, где аудио реально уходит в
+ * OpenAI whisper-1 — сюда сходятся все три пути этого модуля: фолбэк после провала
+ * локальной расшифровки (processJob), прямой путь для плана pro_max (transcribeForUser
+ * — для него это НЕ фолбэк, а основной маршрут, но правило то же самое: без разрешения
+ * политики аудио не покидает сервер) и переполнение очереди (transcribeWithOverflow).
+ */
 export async function transcribeWithOpenAI(buffer: Buffer, filename: string): Promise<string> {
   const OpenAI = require('openai').default;
   const { config } = require('../config');
+  const { assertCloudFallbackAllowed } = require('./transcription-policy');
+  assertCloudFallbackAllowed(config.transcriptionAllowCloudFallback, 'Требуется отправка аудио в облачный OpenAI whisper-1 (whisper-queue)');
   console.log('[whisper-queue] using OpenAI API');
   const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
 
