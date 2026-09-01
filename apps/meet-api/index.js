@@ -10,6 +10,7 @@
  */
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 
 /**
  * Читаем .env рядом с сервисом сами, без dotenv.
@@ -53,6 +54,27 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '8kb' }));
 
+/**
+ * Ограничители частоты. Без них подбор пароля встречи из четырёх символов
+ * занимает порядка десяти тысяч запросов, а каждая проверка запускает scrypt
+ * — намеренно медленный, около 50 мс на этой машине. Двадцать запросов в
+ * секунду с одного адреса заняли бы единственный поток сервиса и мешали бы
+ * живым участникам входить, на машине с чувствительным к задержкам SFU.
+ */
+const лимитВхода = rateLimit({
+  windowMs: 60_000, limit: 10, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Слишком много попыток. Подождите минуту.' },
+});
+const лимитСоздания = rateLimit({
+  windowMs: 60_000, limit: 10, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Слишком много попыток. Подождите минуту.' },
+});
+/** Расшифровка стоит процессорного времени — держим её на коротком поводке. */
+const лимитРасшифровки = rateLimit({
+  windowMs: 300_000, limit: 5, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Слишком часто. Расшифровка тяжёлая, подождите.' },
+});
+
 const комнаты = require('./rooms');
 const { расшифроватьВстречу } = require('./transcribe');
 const clarity = require('./clarity');
@@ -77,7 +99,7 @@ app.get('/api/health', (_req, res) => {
  * Создать комнату. Название — любое, хоть по-русски: оно нигде не попадает
  * ни в URL, ни в имена файлов. Для этого есть идентификатор.
  */
-app.post('/api/rooms', (req, res) => {
+app.post('/api/rooms', лимитСоздания, (req, res) => {
   const { title, servicePassword, roomPassword } = req.body ?? {};
 
   // Пароль сервиса — это ответ на вопрос «кому вообще можно заводить встречи
@@ -92,8 +114,8 @@ app.post('/api/rooms', (req, res) => {
     return;
   }
   const парольВстречи = typeof roomPassword === 'string' ? roomPassword.trim() : '';
-  if (парольВстречи && парольВстречи.length < 4) {
-    res.status(400).json({ error: 'Пароль встречи — от 4 символов, либо оставьте поле пустым' });
+  if (парольВстречи && парольВстречи.length < 8) {
+    res.status(400).json({ error: 'Пароль встречи — от 8 символов, либо оставьте поле пустым' });
     return;
   }
 
@@ -118,7 +140,7 @@ app.get('/api/rooms/:id', (req, res) => {
   res.json(комната);
 });
 
-app.post('/api/token', (req, res) => {
+app.post('/api/token', лимитВхода, (req, res) => {
   const { name, roomId, password } = req.body ?? {};
 
   const комната = комнаты.найти(roomId);
@@ -163,6 +185,11 @@ app.post('/api/token', (req, res) => {
     { algorithm: 'HS256' },
   );
 
+  // Имя живёт в хранилище комнат, а не в имени файла записи: в файле остаётся
+  // только безопасный суффикс идентификатора. Иначе кириллица вычищается и
+  // два русских имени превращаются в одного безликого «Участника».
+  комнаты.запомнитьУчастника(room, identity, displayName);
+
   console.log(`[meet-api] выдан токен: комната ${room}, участник ${displayName}`);
   res.json({ token, title: комната.title });
 });
@@ -174,7 +201,7 @@ app.post('/api/token', (req, res) => {
  * её всем, у кого есть ссылка, нельзя — иначе один запрос в цикле займёт
  * машину надолго.
  */
-app.post('/api/rooms/:id/transcribe', async (req, res) => {
+app.post('/api/rooms/:id/transcribe', лимитРасшифровки, async (req, res) => {
   const { servicePassword } = req.body ?? {};
   if (!passwordMatches(servicePassword)) {
     res.status(401).json({ error: 'Неверный пароль сервиса' });
@@ -196,8 +223,23 @@ app.post('/api/rooms/:id/transcribe', async (req, res) => {
     // Отправляем в Clarity Space только содержательный результат. Пустую
     // стенограмму слать бессмысленно: там заведётся встреча без единой реплики,
     // а разбор впустую потратит вызов модели.
+    // Полный отказ расшифровки — это ошибка, а не пустая стенограмма. Отдавать
+    // 200 с пустым результатом значит скрыть поломку: вызывающий решит, что
+    // на встрече просто молчали.
+    if (результат.всёУпало) {
+      res.status(502).json({ error: результат.причина, участники: результат.участники });
+      return;
+    }
+
     let вClaritySpace = null;
-    if (!результат.безРечи && clarity.настроено()) {
+    const ужеОтправляли = комнаты.встречаClarity(комната.id);
+    if (ужеОтправляли) {
+      // Повторный запуск не должен плодить вторую карточку встречи и второй
+      // разбор: дедупликация в Clarity Space опирается на номер встречи, а он
+      // у новой карточки другой.
+      вClaritySpace = { id: ужеОтправляли, повтор: true };
+      console.log(`[meet-api] встреча уже отправлена в Clarity Space: #${ужеОтправляли}`);
+    } else if (!результат.безРечи && clarity.настроено()) {
       try {
         вClaritySpace = await clarity.отправитьВстречу({
           название: комната.title,
@@ -205,6 +247,7 @@ app.post('/api/rooms/:id/transcribe', async (req, res) => {
           стенограмма: результат.стенограмма,
           участники: результат.участники.map((у) => у.имя),
         });
+        комнаты.запомнитьВстречуClarity(комната.id, вClaritySpace.id);
         console.log(`[meet-api] встреча уехала в Clarity Space: #${вClaritySpace.id}`);
       } catch (ошибка) {
         // Отказ Clarity Space не должен ронять расшифровку: стенограмма уже

@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { LiveKitRoom, VideoConference, PreJoin, type LocalUserChoices } from '@livekit/components-react';
+import { LiveKitRoom, VideoConference, PreJoin, useIsRecording, type LocalUserChoices } from '@livekit/components-react';
 
 /** Адрес сигналинга. Медиа сюда не идёт — оно летит напрямую в SFU по UDP. */
 const LIVEKIT_URL = 'wss://livekit.clarity-space.ru';
@@ -18,6 +18,25 @@ type Экран =
 function идИзАдреса(): string | null {
   const m = window.location.pathname.match(/^\/r\/([a-z2-9]{3}-[a-z2-9]{3}-[a-z2-9]{3})\/?$/);
   return m ? m[1]! : null;
+}
+
+/**
+ * Плашка «идёт запись».
+ *
+ * Готовый VideoConference её не рисует, а участник обязан видеть, что его
+ * пишут, всё время записи — это требование прозрачности, а не украшение.
+ * Хук берёт состояние у самого LiveKit, поэтому плашка не врёт: она зависит
+ * от факта запущенного egress, а не от нашего представления о нём.
+ */
+function ПлашкаЗаписи() {
+  const идётЗапись = useIsRecording();
+  if (!идётЗапись) return null;
+  return (
+    <div className="плашка-записи" role="status" aria-live="polite">
+      <span className="точка-записи" aria-hidden="true" />
+      Идёт запись встречи
+    </div>
+  );
 }
 
 export default function App() {
@@ -290,6 +309,7 @@ export default function App() {
         onDisconnected={() => setЭкран({ вид: 'вход', комната: экран.комната })}
         data-lk-theme="default"
       >
+        <ПлашкаЗаписи />
         <VideoConference />
       </LiveKitRoom>
     </div>

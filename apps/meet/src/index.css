@@ -140,3 +140,31 @@ body {
 .поле-с-кнопкой { display: flex; gap: 8px; align-items: stretch; }
 .поле-с-кнопкой input { flex: 1; min-width: 0; }
 .поле-с-кнопкой .кнопка--тихая { align-self: stretch; }
+
+.плашка-записи {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(200, 40, 40, 0.92);
+  color: #fff;
+  border-radius: 999px;
+  padding: 7px 16px 7px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.точка-записи {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fff;
+  animation: пульс 1.6s ease-in-out infinite;
+}
+
+@keyframes пульс { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }

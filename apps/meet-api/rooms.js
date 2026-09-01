@@ -86,6 +86,55 @@ function создать(title, пароль) {
   return { id, title, защищена: есть };
 }
 
+/**
+ * Запомнить, какому человеку принадлежит идентификатор участника.
+ *
+ * Имя нельзя кодировать в имя файла записи: там вычищается всё, кроме
+ * латиницы и цифр, поэтому «Иван Петров» превращался в подчёркивания, а при
+ * разборе обратно — в безликого «Участника». Два русских имени схлопывались
+ * в одно, и вся привязка реплик к людям рушилась.
+ *
+ * Теперь в имени файла только безопасный суффикс идентификатора, а живое имя
+ * лежит здесь и достаётся по нему.
+ */
+function запомнитьУчастника(id, identity, имя) {
+  if (typeof id !== 'string' || !ID_RE.test(id)) return;
+  const данные = прочитать();
+  const запись = данные[id];
+  if (!запись) return;
+  запись.participants = запись.participants || {};
+  запись.participants[identity] = имя;
+  записать(данные);
+}
+
+/** Имя участника по идентификатору. Возвращает null, если не запоминали. */
+function участник(id, identity) {
+  if (typeof id !== 'string' || !ID_RE.test(id)) return null;
+  const запись = прочитать()[id];
+  return запись?.participants?.[identity] ?? null;
+}
+
+/** Все участники комнаты: идентификатор → имя. */
+function участники(id) {
+  if (typeof id !== 'string' || !ID_RE.test(id)) return {};
+  return прочитать()[id]?.participants ?? {};
+}
+
+/** Запомнить, какая встреча в Clarity Space соответствует этой комнате. */
+function запомнитьВстречуClarity(id, meetingId) {
+  if (typeof id !== 'string' || !ID_RE.test(id)) return;
+  const данные = прочитать();
+  if (!данные[id]) return;
+  данные[id].clarityMeetingId = meetingId;
+  записать(данные);
+}
+
+/** Идентификатор встречи в Clarity Space, если её уже отправляли. */
+function встречаClarity(id) {
+  if (typeof id !== 'string' || !ID_RE.test(id)) return null;
+  return прочитать()[id]?.clarityMeetingId ?? null;
+}
+
 /** Найти комнату. Возвращает {id, title, защищена} или null. Хеш наружу не отдаём. */
 function найти(id) {
   if (typeof id !== 'string' || !ID_RE.test(id)) return null;
@@ -102,4 +151,8 @@ function пропустить(id, пароль) {
   return сверить(пароль, запись.passwordHash);
 }
 
-module.exports = { создать, найти, пропустить, ID_RE };
+module.exports = {
+  создать, найти, пропустить, ID_RE,
+  запомнитьУчастника, участник, участники,
+  запомнитьВстречуClarity, встречаClarity,
+};
