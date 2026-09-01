@@ -2,16 +2,20 @@
 
 ## Что это
 
-Персональная система управления жизнью и проектами. Obsidian vault — единственный источник правды, SQLite — только индекс (перестраиваемый). Задачи, проекты, привычки, цели, дневник, встречи, документы, AI-чат с Claude.
+Персональная система управления жизнью и проектами. Obsidian vault — единственный источник правды, PostgreSQL — рабочая база и индекс (схема накатывается на старте автоматически). Задачи, проекты, привычки, цели, дневник, встречи, документы, AI-чат.
 
 ## Стек
 
 - **Монорепо:** pnpm workspace
 - **Frontend:** React 18 + Vite + Tailwind + Framer Motion + Tiptap (rich text)
-- **Backend:** Express + SQLite (better-sqlite3) + TypeScript
-- **AI:** Claude API (Anthropic) с prompt caching + локальный Whisper
+- **Backend:** Express + PostgreSQL (`pg`) + TypeScript
+- **AI:** OpenAI-совместимый LLM через SDK `openai`, модель по умолчанию `gpt-4.1-mini` + локальный Whisper / сервис транскрипции
 - **Бот:** Telegram @MyBestKanban_bot (ops bot в `apps/claude-ops-bot`)
 - **Деплой:** clarity-space.ru / 31.128.43.174, PM2, nginx
+
+> **AI-провайдер — важно для демо.** Класс называется `ClaudeService`, но Anthropic SDK в коде не используется ни разу — только `new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl })`. `ANTHROPIC_API_KEY` читается в конфиге, но ни один клиент от него не зависит (см. `services/claude.service.ts`, `isAiClientConfigured()`). Смена провайдера (например, на Yandex Cloud) — одна переменная `OPENAI_BASE_URL`, без правок кода. Не называть это заказчику «Claude API» — при вскрытии кода это будет выглядеть как обман.
+>
+> **База данных — тоже важно.** Раньше был SQLite (`better-sqlite3`, файл `db.sqlite.ts`), сейчас `packages/api/src/index.ts` стартует исключительно через `initPg(config.databaseUrl)` (PostgreSQL). `db.sqlite.ts` и его `initDb()`/`initTestDb()` не вызываются НИГДЕ в рабочем коде — ни в проде, ни в текущих тестах (все обращения к нему в `__tests__/*.test.ts` закомментированы, актуальны только для миграционного скрипта `scripts/migrate-sqlite-to-pg.ts`, которым когда-то перенесли данные в Postgres). Переменная `DATABASE_PATH` при этом не мёртвая: её каталог (`path.dirname`) используется сервисом `pending-jobs.ts` как место на диске для аудио незавершённых расшифровок — сама БД по этому пути не создаётся.
 
 ## Структура
 
@@ -21,7 +25,7 @@ apps/claude-ops-bot/   — Telegram ops bot
 packages/api/          — Express API (порт 3001 dev, compiled JS in dist/)
 packages/shared/       — Общие TypeScript типы
 vault/                 — Obsidian vault (source of truth)
-data/                  — SQLite database (index only)
+data/                  — рабочие файлы на диске (на проде: data/pending-jobs — аудио незавершённых расшифровок). Сама БД — PostgreSQL, не файл в этой директории
 ```
 
 ## Команды
@@ -33,6 +37,8 @@ pnpm install       # Установка зависимостей
 
 ### Сборка и деплой
 
+**`/var/www/kanban-app/` на сервере — НЕ git-репозиторий** (проверено: `.git` там нет). `git pull` на сервере не сработает — код нужно доставить на сервер файловой синхронизацией (rsync/scp), а не git-командой.
+
 ```bash
 # API (TypeScript → JS)
 cd packages/api && npx tsc
@@ -40,22 +46,31 @@ cd packages/api && npx tsc
 # Frontend
 cd apps/web && npx vite build
 
-# Перезапуск на сервере
-ssh root@31.128.43.174 "pm2 delete kanban-api && cd /var/www/kanban-app/packages/api && pm2 start dist/index.js --name kanban-api && pm2 save"
+# Доставить код на сервер (rsync, не git pull — там не git-репозиторий)
+rsync -az --exclude node_modules packages/api/src packages/api/package.json \
+  root@31.128.43.174:/var/www/kanban-app/packages/api/
+
+# dist/ ОБЯЗАТЕЛЬНО пересобрать на сервере перед рестартом — устаревший dist/
+# уже один раз унёс на прод код, которого в src/ больше нет; pm2 restart
+# без пересборки этот риск не убирает.
+ssh root@31.128.43.174 "cd /var/www/kanban-app/packages/api && npx tsc && \
+  pm2 delete kanban-api && pm2 start dist/index.js --name kanban-api && pm2 save"
 ```
 
 ## Серверные пути
 
-- Приложение: `/var/www/kanban-app/`
+- Приложение: `/var/www/kanban-app/` (не git-репозиторий — деплой файловой синхронизацией, не `git pull`)
 - API запускается из: `/var/www/kanban-app/packages/api/dist/index.js`
 - PM2 процесс: `kanban-api`
 - Vault на сервере: `/var/www/kanban-app/vault/`
-- SQLite: `/var/www/kanban-app/data/`
+- PostgreSQL: строка подключения в `DATABASE_URL` (см. `/var/www/kanban-app/packages/api/.env`), не файл в `data/`
 
-## API Routes (24 эндпоинта)
+## API Routes (27 групп маршрутов под `/v1`, плюс `/health` и `/mcp` вне `/v1`)
+
+Полный список регистрируется в `packages/api/src/routes/index.ts`; ниже — актуальный срез по группам, сверенный построчно с каждым `router.use`.
 
 ### Аутентификация
-- `/v1/auth` — login, register, profile
+- `/v1/auth` — login, register, profile, verify-email, forgot/reset-password, `/plan`, `/users`
 
 ### Основные
 - `/v1/tasks` — задачи (CRUD, статусы, приоритеты, проекты)
@@ -69,10 +84,13 @@ ssh root@31.128.43.174 "pm2 delete kanban-api && cd /var/www/kanban-app/packages
 - `/v1/documents` — документы (с файлами)
 
 ### AI и обработка
-- `/v1/ai/chat` — Claude AI чат (с контекстом из vault)
+- `/v1/ai/chat` — AI-чат (с контекстом из vault; см. предупреждение про AI-провайдера в разделе «Стек»)
 - `/v1/ingest` — загрузка файлов (до 50MB)
 - `/v1/claude-notes` — AI-генерация заметок
 - `/v1/search` — полнотекстовый поиск по vault
+- `/v1/advisors` — Совет директоров (AI-персоны): анализ ситуации, чат, синтез консенсуса
+- `/v1/commitments` — обязательства, извлечённые AI из встреч
+- `/v1/transcribe` — расшифровка аудио: загрузка, статус, саммари
 
 ### Интеграции
 - `/v1/todoist` — Todoist (токен-based, двусторонняя синхронизация)
@@ -87,11 +105,19 @@ ssh root@31.128.43.174 "pm2 delete kanban-api && cd /var/www/kanban-app/packages
 - `/v1/email-webhook` — входящие email
 - `/v1/widget` — виджет (iPhone Shortcut)
 
+### Служебные
+- `/v1/api-tokens` — выпуск/список/отзыв персональных API-токенов (`cs_...`); требуют полноценной сессии по паролю, другим токеном их не выпустить
+- `/v1/docs`, `/v1/openapi.yaml` — Swagger UI и спецификация OpenAPI 3.1, без авторизации
+
 ### Админ
 - `/v1/tags` — теги
 - `/v1/templates` — шаблоны
 - `/v1/export` — экспорт данных
-- `/v1/admin` — панель админа
+- `/v1/admin` — панель админа: статистика, управление пользователями
+
+### Вне `/v1`
+- `/health` — без авторизации. Проверяет зависимости: PostgreSQL (критичная — при отказе весь эндпоинт отвечает `503`), vault на диске, Whisper/сервис транскрипции, LLM-клиент, политику 152-ФЗ по облачному фолбэку расшифровки. Если все некритичные проверки в порядке — `200` со статусом `ok`; если что-то из некритичного отказало — `200` со статусом `degraded`; если недоступен Postgres — `503` со статусом `down`.
+- `/mcp` — Model Context Protocol (JSON-RPC 2.0), не REST-конверт `{ success, data }`. Тот же Bearer `cs_...` токен, что и у остального API.
 
 ## Todoist интеграция
 
@@ -106,23 +132,50 @@ ssh root@31.128.43.174 "pm2 delete kanban-api && cd /var/www/kanban-app/packages
 
 ## Env переменные
 
+Сверено построчно с `packages/api/src/config/index.ts` (единственный модуль, который парсит `process.env` для API).
+
 ```
 PORT, NODE_ENV
-ANTHROPIC_API_KEY       — Claude API
-OPENAI_API_KEY          — опционально
-VAULT_PATH              — путь к Obsidian vault
-DATABASE_PATH           — путь к SQLite
-TELEGRAM_BOT_TOKEN      — бот @MyBestKanban_bot
-TELEGRAM_USER_ID        — ID пользователя для бота
-MAX_FILE_SIZE_MB        — лимит загрузки (50MB)
-TODOIST_CLIENT_ID       — опционально (для OAuth, не обязательно)
-TODOIST_CLIENT_SECRET   — опционально (для OAuth, не обязательно)
+DATABASE_URL                        — строка подключения PostgreSQL — реальная рабочая БД
+DATABASE_PATH                       — НЕ путь к активной БД (SQLite по нему не создаётся). Каталог
+                                       (dirname) используется как место на диске для аудио
+                                       незавершённых расшифровок (services/pending-jobs.ts)
+VAULT_PATH                          — путь к Obsidian vault
+OPENAI_API_KEY                      — ключ для AI-чата/AI-функций; без него AI-роуты отвечают 501,
+                                       остальной API работает
+OPENAI_BASE_URL                     — опционально: смена LLM-провайдера (например, Yandex Cloud)
+                                       одной переменной, без правок кода. Обязательно со схемой
+                                       (http:// или https://)
+ANTHROPIC_API_KEY                   — зарезервирован в конфиге, НЕ используется НИ ОДНИМ клиентом —
+                                       в коде нет Anthropic SDK, только OpenAI-совместимый (см. «Стек»)
+ADVISOR_OPENAI_API_KEY              — опционально: отдельный ключ для Совета директоров (/v1/advisors),
+                                       фолбэк на OPENAI_API_KEY
+ADVISOR_MODEL                       — опционально: модель для Совета директоров (по умолчанию gpt-4.1-mini)
+TRANSCRIPTION_ALLOW_CLOUD_FALLBACK  — 152-ФЗ: разрешён ли откат расшифровки на облачный OpenAI
+                                       whisper-1, если недоступны локальные бэкенды (по умолчанию —
+                                       разрешён, т.е. не задано или не false/0/no/off)
+TRANSCRIBE_SERVICE_URL              — адрес микросервиса faster-whisper (по умолчанию
+                                       http://127.0.0.1:8091)
+MAX_FILE_SIZE_MB                    — лимит загрузки (50MB)
+TELEGRAM_BOT_TOKEN                  — бот @MyBestKanban_bot
+TELEGRAM_USER_ID                    — ID пользователя для бота
+WEBAPP_URL                          — опционально: URL веб-приложения для ссылок из бота
+GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET   — Google Calendar OAuth
+TODOIST_CLIENT_ID, TODOIST_CLIENT_SECRET — опционально (для OAuth, не обязательно — основной путь
+                                       подключения Todoist — по токену, без OAuth)
+YANDEX_CLIENT_ID, YANDEX_CLIENT_SECRET   — Yandex Calendar OAuth
+JWT_SECRET                          — обязателен в production: без него процесс отказывается
+                                       стартовать (см. config/index.ts)
+RESEND_API_KEY                      — отправка email
+EMAIL_FROM                          — адрес отправителя писем
 ```
+
+Читаются напрямую через `process.env` в отдельных модулях, а не через `config/index.ts` (найдено при сверке, не полный список): `WEBHOOK_SECRET`, `WEBHOOK_DEFAULT_USER_ID` (`routes/email-webhook.ts`).
 
 ## Архитектура
 
 - **Obsidian = Source of Truth**: все записи хранятся как .md файлы с WikiLinks
-- **SQLite = Index**: перестраиваемый индекс, не мастер-данные
+- **PostgreSQL = рабочая база и индекс**: схема (`schema-pg.sql`) накатывается автоматически при старте (`runSchema()`); SQLite (`db.sqlite.ts`) — не задействован ни в проде, ни в дев-режиме, остался только как след миграции (`scripts/migrate-sqlite-to-pg.ts`)
 - **Multi-user**: данные привязаны к user_id
 - **Dark mode**: полная поддержка через `class` toggle
 - **Mobile-first**: свайп-интерфейс, Telegram Web App, responsive layout
@@ -134,6 +187,7 @@ TODOIST_CLIENT_SECRET   — опционально (для OAuth, не обяз�
 - API v1 возвращает `{ results: [...] }` вместо plain array
 - При сборке API: `npx tsc` (компилирует в dist/), запуск через `pm2 start dist/index.js`
 - PM2: после обновления — `pm2 delete` + `pm2 start` (не restart)
+- Сервер — НЕ git-репозиторий: код доставляется rsync/scp, не `git pull`. `dist/` обязательно пересобирается на сервере (`npx tsc`) перед рестартом — устаревший `dist/` уже один раз унёс на прод код, которого в `src/` больше не было
 - Vault файлы никогда не удаляются, используется `archived: true`
 
 ## Роутинг задач
@@ -163,7 +217,7 @@ TODOIST_CLIENT_SECRET   — опционально (для OAuth, не обяз�
 3. Любое изменение кода перед завершением проходит code-reviewer.
 4. Замечания уровня critical и major устраняются до завершения; замечания minor фиксируются в ответе.
 
-**Важно:** тестовый фреймворк для этого проекта не проверен автоматически — `TEST_COMMAND` в `.claude/hooks/config.env` пуст, stop-gate не блокирует завершение работы, пока команда явно не прописана под стек проекта.
+**Важно:** `TEST_COMMAND` в `.claude/hooks/config.env` (локальный, не в git — см. `.gitignore`) прописан на `jest` для `packages/api`, stop-gate блокирует завершение при регрессии. Из общего прогона намеренно исключены 6 давно сломанных сьютов (`api`, `db`, `projects`, `search` — тесты под старый SQLite, закомментированы; `critical-paths` — написан под vitest, а не jest; `parsers` — один тест бьётся о реальный вызов OpenAI без валидного ключа в тестовом окружении). Это не наш долг, они были такими до этой задачи — но без исключения `TEST_COMMAND` был бы красным всегда, а не только при новой регрессии, и гейт был бы бесполезен. Если эти сьюты почините — уберите их из `--testPathIgnorePatterns`.
 
 ## Прозрачность
 
