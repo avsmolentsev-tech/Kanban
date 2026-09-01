@@ -1,106 +1,214 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { LiveKitRoom, VideoConference, PreJoin, type LocalUserChoices } from '@livekit/components-react';
 
 /** Адрес сигналинга. Медиа сюда не идёт — оно летит напрямую в SFU по UDP. */
 const LIVEKIT_URL = 'wss://livekit.clarity-space.ru';
 
-type Stage =
-  | { kind: 'форма' }
-  | { kind: 'настройка'; token: string; room: string }
-  | { kind: 'звонок'; token: string; choices: LocalUserChoices };
+type Комната = { id: string; title: string };
+
+type Экран =
+  | { вид: 'загрузка' }
+  | { вид: 'создание' }
+  | { вид: 'ссылка'; комната: Комната }
+  | { вид: 'вход'; комната: Комната }
+  | { вид: 'настройка'; token: string; комната: Комната }
+  | { вид: 'звонок'; token: string; комната: Комната; выбор: LocalUserChoices };
+
+/** Ссылка вида /r/xxx-xxx-xxx. Всё остальное — главная страница. */
+function идИзАдреса(): string | null {
+  const m = window.location.pathname.match(/^\/r\/([a-z2-9]{3}-[a-z2-9]{3}-[a-z2-9]{3})\/?$/);
+  return m ? m[1]! : null;
+}
 
 export default function App() {
-  const [stage, setStage] = useState<Stage>({ kind: 'форма' });
-  const [name, setName] = useState('');
-  const [room, setRoom] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [экран, setЭкран] = useState<Экран>({ вид: 'загрузка' });
+  const [название, setНазвание] = useState('');
+  const [имя, setИмя] = useState(() => localStorage.getItem('meet-имя') ?? '');
+  const [пароль, setПароль] = useState('');
+  const [ошибка, setОшибка] = useState<string | null>(null);
+  const [занято, setЗанято] = useState(false);
+  const [скопировано, setСкопировано] = useState(false);
 
-  async function requestToken(e: FormEvent) {
+  // При открытии по ссылке подтягиваем название встречи, чтобы человек видел,
+  // куда он попал, ещё до ввода пароля.
+  useEffect(() => {
+    const id = идИзАдреса();
+    if (!id) {
+      setЭкран({ вид: 'создание' });
+      return;
+    }
+    fetch(`/api/rooms/${id}`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error();
+        setЭкран({ вид: 'вход', комната: await r.json() });
+      })
+      .catch(() => {
+        setОшибка('Встреча не найдена. Проверьте ссылку.');
+        setЭкран({ вид: 'создание' });
+      });
+  }, []);
+
+  async function создатьВстречу(e: FormEvent) {
     e.preventDefault();
-    setError(null);
-    setBusy(true);
+    setОшибка(null);
+    setЗанято(true);
     try {
-      const res = await fetch('/api/token', {
+      const r = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), room: room.trim(), password }),
+        body: JSON.stringify({ title: название.trim(), password: пароль }),
       });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(body?.error ?? 'Не удалось получить доступ к комнате');
-        return;
-      }
-      setStage({ kind: 'настройка', token: body.token, room: room.trim() });
+      const тело = await r.json().catch(() => ({}));
+      if (!r.ok) { setОшибка(тело?.error ?? 'Не удалось создать встречу'); return; }
+      window.history.pushState({}, '', `/r/${тело.id}`);
+      setЭкран({ вид: 'ссылка', комната: тело });
     } catch {
-      setError('Сервер не отвечает. Проверьте соединение.');
+      setОшибка('Сервер не отвечает.');
     } finally {
-      setBusy(false);
+      setЗанято(false);
     }
   }
 
-  if (stage.kind === 'форма') {
+  async function войти(e: FormEvent) {
+    e.preventDefault();
+    if (экран.вид !== 'вход' && экран.вид !== 'ссылка') return;
+    const комната = экран.комната;
+    setОшибка(null);
+    setЗанято(true);
+    try {
+      const r = await fetch('/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: имя.trim(), roomId: комната.id, password: пароль }),
+      });
+      const тело = await r.json().catch(() => ({}));
+      if (!r.ok) { setОшибка(тело?.error ?? 'Не удалось войти'); return; }
+      localStorage.setItem('meet-имя', имя.trim());
+      setЭкран({ вид: 'настройка', token: тело.token, комната });
+    } catch {
+      setОшибка('Сервер не отвечает.');
+    } finally {
+      setЗанято(false);
+    }
+  }
+
+  function скопироватьСсылку(url: string) {
+    navigator.clipboard.writeText(url).then(
+      () => { setСкопировано(true); setTimeout(() => setСкопировано(false), 2000); },
+      () => setОшибка('Не удалось скопировать — выделите ссылку вручную'),
+    );
+  }
+
+  if (экран.вид === 'загрузка') {
+    return <div className="вход"><div className="карточка"><p className="подпись">Загрузка…</p></div></div>;
+  }
+
+  if (экран.вид === 'создание') {
     return (
       <div className="вход">
-        <form className="карточка" onSubmit={requestToken}>
+        <form className="карточка" onSubmit={создатьВстречу}>
           <h1>Clarity&nbsp;Meet</h1>
           <p className="подпись">Видеовстречи со стенограммой и задачами</p>
 
           <label>
-            Как вас зовут
+            Название встречи
             <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Иван Петров"
-              autoComplete="name"
+              value={название}
+              onChange={(e) => setНазвание(e.target.value)}
+              placeholder="Планёрка с юристами"
               required
-              maxLength={60}
-            />
-          </label>
-
-          <label>
-            Комната
-            <input
-              value={room}
-              onChange={(e) => setRoom(e.target.value)}
-              placeholder="planerka"
-              pattern="[a-zA-Z0-9\-]{2,40}"
-              title="Латиница, цифры и дефис, от 2 до 40 символов"
-              required
+              maxLength={120}
+              autoFocus
             />
           </label>
 
           <label>
             Пароль
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
+            <input type="password" value={пароль} onChange={(e) => setПароль(e.target.value)}
+                   autoComplete="current-password" required />
           </label>
 
-          {error && <div className="ошибка">{error}</div>}
+          {ошибка && <div className="ошибка">{ошибка}</div>}
 
-          <button type="submit" disabled={busy}>
-            {busy ? 'Подключаемся…' : 'Войти'}
+          <button type="submit" disabled={занято}>
+            {занято ? 'Создаём…' : 'Создать встречу'}
           </button>
         </form>
       </div>
     );
   }
 
-  if (stage.kind === 'настройка') {
+  if (экран.вид === 'ссылка') {
+    const url = `${window.location.origin}/r/${экран.комната.id}`;
+    return (
+      <div className="вход">
+        <div className="карточка">
+          <h2>{экран.комната.title}</h2>
+          <p className="подпись">Отправьте ссылку участникам</p>
+
+          <div className="ссылка-блок">
+            <code>{url}</code>
+            <button type="button" className="кнопка--тихая" onClick={() => скопироватьСсылку(url)}>
+              {скопировано ? 'Скопировано' : 'Копировать'}
+            </button>
+          </div>
+
+          <p className="подпись">Пароль сообщите отдельно — в ссылке его нет намеренно.</p>
+
+          <form onSubmit={войти} style={{ display: 'contents' }}>
+            <label>
+              Ваше имя
+              <input value={имя} onChange={(e) => setИмя(e.target.value)}
+                     placeholder="Иван Петров" required maxLength={60} />
+            </label>
+            {ошибка && <div className="ошибка">{ошибка}</div>}
+            <button type="submit" disabled={занято}>
+              {занято ? 'Подключаемся…' : 'Войти во встречу'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (экран.вид === 'вход') {
+    return (
+      <div className="вход">
+        <form className="карточка" onSubmit={войти}>
+          <h2>{экран.комната.title}</h2>
+          <p className="подпись">Вас пригласили на встречу</p>
+
+          <label>
+            Ваше имя
+            <input value={имя} onChange={(e) => setИмя(e.target.value)}
+                   placeholder="Иван Петров" required maxLength={60} autoFocus />
+          </label>
+
+          <label>
+            Пароль
+            <input type="password" value={пароль} onChange={(e) => setПароль(e.target.value)}
+                   autoComplete="current-password" required />
+          </label>
+
+          {ошибка && <div className="ошибка">{ошибка}</div>}
+
+          <button type="submit" disabled={занято}>
+            {занято ? 'Подключаемся…' : 'Войти'}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (экран.вид === 'настройка') {
     return (
       <div className="вход">
         <div className="карточка карточка--широкая">
           <h2>Проверьте камеру и микрофон</h2>
-          <p className="подпись">Комната: {stage.room}</p>
+          <p className="подпись">{экран.комната.title}</p>
           <PreJoin
-            defaults={{ username: name, videoEnabled: true, audioEnabled: true }}
-            onSubmit={(choices) => setStage({ kind: 'звонок', token: stage.token, choices })}
+            defaults={{ username: имя, videoEnabled: true, audioEnabled: true }}
+            onSubmit={(выбор) => setЭкран({ вид: 'звонок', token: экран.token, комната: экран.комната, выбор })}
             joinLabel="Присоединиться"
             micLabel="Микрофон"
             camLabel="Камера"
@@ -114,12 +222,12 @@ export default function App() {
   return (
     <div className="звонок">
       <LiveKitRoom
-        token={stage.token}
+        token={экран.token}
         serverUrl={LIVEKIT_URL}
         connect
-        video={stage.choices.videoEnabled}
-        audio={stage.choices.audioEnabled}
-        onDisconnected={() => setStage({ kind: 'форма' })}
+        video={экран.выбор.videoEnabled}
+        audio={экран.выбор.audioEnabled}
+        onDisconnected={() => setЭкран({ вид: 'вход', комната: экран.комната })}
         data-lk-theme="default"
       >
         <VideoConference />

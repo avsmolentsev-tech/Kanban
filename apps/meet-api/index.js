@@ -53,8 +53,7 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '8kb' }));
 
-/** Имя комнаты попадает в JWT и в имена файлов записи — фильтруем жёстко. */
-const ROOM_RE = /^[a-zA-Z0-9-]{2,40}$/;
+const комнаты = require('./rooms');
 
 /**
  * Сравнение пароля постоянным временем: наивное `===` на длинных строках
@@ -72,17 +71,54 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
 });
 
-app.post('/api/token', (req, res) => {
-  const { name, room, password } = req.body ?? {};
+/**
+ * Создать комнату. Название — любое, хоть по-русски: оно нигде не попадает
+ * ни в URL, ни в имена файлов. Для этого есть идентификатор.
+ */
+app.post('/api/rooms', (req, res) => {
+  const { title, password } = req.body ?? {};
 
   if (!passwordMatches(password)) {
     res.status(401).json({ error: 'Неверный пароль' });
     return;
   }
-  if (typeof room !== 'string' || !ROOM_RE.test(room)) {
-    res.status(400).json({ error: 'Имя комнаты: латиница, цифры и дефис, от 2 до 40 символов' });
+  const название = typeof title === 'string' ? title.trim().slice(0, 120) : '';
+  if (!название) {
+    res.status(400).json({ error: 'Укажите название встречи' });
     return;
   }
+
+  const комната = комнаты.создать(название);
+  console.log(`[meet-api] создана комната ${комната.id}: ${название}`);
+  res.status(201).json(комната);
+});
+
+/**
+ * Узнать название комнаты по ссылке. Пароль здесь не нужен: название —
+ * не секрет, а показать человеку, куда он попал, надо до ввода пароля.
+ */
+app.get('/api/rooms/:id', (req, res) => {
+  const комната = комнаты.найти(req.params.id);
+  if (!комната) {
+    res.status(404).json({ error: 'Встреча не найдена. Проверьте ссылку.' });
+    return;
+  }
+  res.json(комната);
+});
+
+app.post('/api/token', (req, res) => {
+  const { name, roomId, password } = req.body ?? {};
+
+  if (!passwordMatches(password)) {
+    res.status(401).json({ error: 'Неверный пароль' });
+    return;
+  }
+  const комната = комнаты.найти(roomId);
+  if (!комната) {
+    res.status(404).json({ error: 'Встреча не найдена. Проверьте ссылку.' });
+    return;
+  }
+  const room = комната.id;
   const displayName = typeof name === 'string' ? name.trim().slice(0, 60) : '';
   if (!displayName) {
     res.status(400).json({ error: 'Укажите имя' });
@@ -114,7 +150,7 @@ app.post('/api/token', (req, res) => {
   );
 
   console.log(`[meet-api] выдан токен: комната ${room}, участник ${displayName}`);
-  res.json({ token });
+  res.json({ token, title: комната.title });
 });
 
 app.listen(PORT, '127.0.0.1', () => {
