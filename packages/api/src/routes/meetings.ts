@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
-import { searchService } from '../services/search.service';
+import { searchService, MIN_MEETING_BODY_FOR_EXTRACTION } from '../services/search.service';
 import { ObsidianService } from '../services/obsidian.service';
 import { ClaudeService, PII_TOKEN_NOTE } from '../services/claude.service';
 import { mdToPdf, mdToDocx } from '../services/converter.service';
@@ -117,6 +117,27 @@ meetingsRouter.post('/', async (req: AuthRequest, res: Response) => {
   const meetingId = inserted!.id;
   if (effectiveIds.length > 0) await setMeetingProjects(meetingId, effectiveIds);
   searchService.indexRecord('meeting', meetingId, title, summary_raw);
+
+  // Извлечение обязательств из транскрипта (создание задач с commitment_type/
+  // commitment_owner/source_meeting_id для экрана /v1/commitments). Раньше это
+  // срабатывало только при синхронизации встречи из vault — встречи, созданные
+  // через API (в т.ч. с готовым summary_raw при загрузке), не порождали ни одной
+  // задачи-обязательства. Запускаем асинхронно и не ждём: это вызов LLM, а ответ
+  // на POST не должен зависеть от его длительности или исхода. Порог длины —
+  // тот же MIN_MEETING_BODY_FOR_EXTRACTION, что и в vault-sync: пустой или почти
+  // пустой summary_raw не стоит вызова модели и рискует выдумать пункты на пустом месте.
+  if (summary_raw.trim().length >= MIN_MEETING_BODY_FOR_EXTRACTION) {
+    // Обёртка в Promise.resolve().then() — не украшение. Прямой вызов с .catch()
+    // виснет намертво, если функция бросит синхронно или вернёт не промис:
+    // исключение уходит в async-обработчик Express 4, ответ не отправляется
+    // никогда, и клиент ждёт до таймаута. Здесь любой исход попадает в catch.
+    void Promise.resolve()
+      .then(() => searchService.extractTasksFromMeeting(meetingId, title, summary_raw, effectiveIds[0] ?? null, userId))
+      .catch(err => {
+        console.warn('[meetings.post] извлечение обязательств не удалось:', err instanceof Error ? err.message : err);
+      });
+  }
+
   // Sync to vault (only if enabled)
   if (shouldSync) {
     try {

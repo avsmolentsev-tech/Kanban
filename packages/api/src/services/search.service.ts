@@ -12,6 +12,16 @@ export interface SearchHit {
   rank: number;
 }
 
+/**
+ * Минимальная длина тела встречи (символов), при которой запускаем извлечение
+ * обязательств через LLM. Совпадает с порогом, которым syncMeetingFromVault уже
+ * отсекал пустые/крошечные файлы (см. syncMeetingFromVault ниже) — тот же
+ * баланс: не тратить вызов модели и не давать ей выдумывать пункты на почти
+ * пустом тексте, но не задирать планку так, чтобы отсекать короткие, но
+ * содержательные заметки.
+ */
+export const MIN_MEETING_BODY_FOR_EXTRACTION = 50;
+
 export class SearchService {
   /** No-op: tsvector on tasks is maintained by DB trigger */
   async indexRecord(_type: string, _refId: number, _title: string, _body: string): Promise<void> {
@@ -249,7 +259,7 @@ export class SearchService {
       // Parse frontmatter for metadata
       const fm = this.parseFrontmatter(content);
       const body = content.replace(/^---[\s\S]*?---\n*/, '').trim();
-      if (body.length < 50) return; // Skip empty/tiny files
+      if (body.length < MIN_MEETING_BODY_FOR_EXTRACTION) return; // Skip empty/tiny files
 
       // Extract title from filename or first heading
       const filename = vaultRelPath.split('/').pop()!.replace('.md', '');
@@ -294,8 +304,18 @@ export class SearchService {
     }
   }
 
-  /** Extract real, attributed, quote-backed action items from a meeting and create tasks. */
-  private async extractTasksFromMeeting(meetingId: number, title: string, body: string, projectId: number | null, userId?: number | null): Promise<void> {
+  /**
+   * Извлечь реальные, атрибутированные, подкреплённые цитатой action items из
+   * встречи и создать по ним задачи (commitment_type/commitment_owner/
+   * source_meeting_id — те самые поля, которые показывает экран /v1/commitments).
+   *
+   * Публичный метод: единственная точка входа для извлечения обязательств,
+   * общая для двух вызывающих путей — синхронизации из vault (syncMeetingFromVault
+   * выше) и создания встречи через API (meetingsRouter.post('/') в routes/meetings.ts).
+   * Идемпотентен: дедуп по `[meeting #N]` в description тасков делает повторный
+   * вызов для той же встречи безопасным.
+   */
+  async extractTasksFromMeeting(meetingId: number, title: string, body: string, projectId: number | null, userId?: number | null): Promise<void> {
     try {
       const { ClaudeService } = require('./claude.service');
       const claude = new ClaudeService();
