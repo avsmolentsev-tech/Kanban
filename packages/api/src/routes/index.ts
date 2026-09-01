@@ -30,6 +30,7 @@ import { downloadMeetingHandler } from './meetings';
 import { advisorsRouter } from './advisors';
 import { commitmentsRouter } from './commitments';
 import { transcribeRouter } from './transcribe';
+import { apiTokensRouter } from './api-tokens';
 
 export const router = Router();
 
@@ -86,4 +87,5 @@ router.use('/templates', templatesRouter);
 router.use('/advisors', advisorsRouter);
 router.use('/commitments', commitmentsRouter);
 router.use('/transcribe', transcribeRouter);
+router.use('/api-tokens', apiTokensRouter);
 router.use('/admin', adminRouter);

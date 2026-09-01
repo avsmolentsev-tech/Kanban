@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
+import { verifyToken } from '../services/api-tokens';
 
 export interface AuthUser {
   id: number;
@@ -13,7 +14,9 @@ export interface AuthRequest extends Request {
   user?: AuthUser;
 }
 
-export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunction): void {
+const API_TOKEN_PREFIX = 'cs_';
+
+export async function authMiddleware(req: AuthRequest, _res: Response, next: NextFunction): Promise<void> {
   // Try Authorization header first
   const header = req.headers['authorization'];
   let token = header ? (header.startsWith('Bearer ') ? header.slice(7) : header) : '';
@@ -24,6 +27,23 @@ export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunct
   }
 
   if (!token) {
+    next();
+    return;
+  }
+
+  // Служебный API-токен (cs_...) — отдельная ветка проверки по хешу, не JWT.
+  // Сам токен нигде не логируется, даже при ошибке проверки.
+  if (token.startsWith(API_TOKEN_PREFIX)) {
+    try {
+      const result = await verifyToken(token);
+      if (result) {
+        // У API-токена нет своих email/name/role — минимальные права ('user'),
+        // чтобы служебный доступ не мог случайно получить админские привилегии.
+        req.user = { id: result.userId, email: '', name: '', role: 'user' };
+      }
+    } catch {
+      // Проверка не удалась — продолжаем без пользователя
+    }
     next();
     return;
   }
