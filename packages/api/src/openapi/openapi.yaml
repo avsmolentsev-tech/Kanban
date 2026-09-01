@@ -104,6 +104,11 @@ tags:
     description: Данные для домашних экранов/виджетов (отдельная схема ключа)
   - name: email-webhook
     description: Приём задач из входящей почты (webhook)
+  - name: mcp
+    description: >-
+      MCP (Model Context Protocol) — единственный эндпоинт, через который
+      внешний MCP-клиент (например, Claude Code) управляет сервисом теми же
+      API-токенами (cs_...), что и остальной API
 components:
   securitySchemes:
     bearerAuth:
@@ -519,6 +524,35 @@ components:
       properties:
         password: { type: string, minLength: 4 }
       required: [password]
+
+    McpRequest:
+      type: object
+      description: JSON-RPC 2.0 запрос. Методы — initialize, tools/list, tools/call.
+      properties:
+        jsonrpc: { type: string, enum: ['2.0'] }
+        id: { type: [string, integer, "null"] }
+        method: { type: string, enum: [initialize, 'tools/list', 'tools/call'] }
+        params:
+          type: object
+          description: Для tools/call — { name, arguments }. Для остальных методов не обязателен.
+          properties:
+            name: { type: string, description: 'Имя инструмента, см. tools/list' }
+            arguments: { type: object, description: 'Аргументы инструмента по его inputSchema' }
+      required: [jsonrpc, method]
+    McpResponse:
+      type: object
+      description: JSON-RPC 2.0 ответ — либо result, либо error, никогда оба сразу.
+      properties:
+        jsonrpc: { type: string, enum: ['2.0'] }
+        id: { type: [string, integer, "null"] }
+        result: { type: object }
+        error:
+          type: object
+          properties:
+            code: { type: integer, description: '-32601 неизвестный метод, -32602 некорректные params, -32603 внутренняя ошибка' }
+            message: { type: string }
+          required: [code, message]
+      required: [jsonrpc, id]
   parameters:
     IdPath:
       name: id
@@ -579,6 +613,44 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HealthReport' }
+
+  /mcp:
+    post:
+      tags: [mcp]
+      summary: MCP-эндпоинт — JSON-RPC 2.0 (initialize, tools/list, tools/call)
+      description: |
+        Вне `/v1` — это отдельный протокол (JSON-RPC), а не REST-конверт
+        `{ success, data }`. Авторизация — тот же Bearer-токен, что и у
+        остального API (сессионный JWT или служебный `cs_...`); без валидного
+        токена — `401`. Каждый вызов инструмента через `tools/call` строго
+        ограничен пользователем из токена — данные другого пользователя
+        недостижимы ни при каких аргументах.
+
+        Инструменты (`tools/list`): `list_tasks`, `create_task`,
+        `complete_task`, `list_projects`, `search_vault` — тонкие обёртки над
+        той же логикой, что и соответствующие REST-маршруты (`/v1/tasks`,
+        `/v1/projects`, `/v1/search`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/McpRequest' }
+      responses:
+        '200':
+          description: >-
+            JSON-RPC ответ. Ошибки уровня протокола (неизвестный метод —
+            -32601, некорректные params — -32602) возвращаются здесь же полем
+            error, а не HTTP-статусом. Ошибка выполнения самого инструмента
+            (например, задача не найдена) приходит как `result.isError: true`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpResponse' }
+        '400':
+          description: Тело запроса — не валидный JSON (JSON-RPC parse error, code -32700)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /v1/openapi.yaml:
     get:
