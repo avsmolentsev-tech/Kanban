@@ -24,12 +24,13 @@ await build({
   outbase: 'src',
 });
 
-// Copy SQL files
-function copySql(dir) {
+// Copy non-.ts assets (SQL migrations, OpenAPI spec) that esbuild doesn't touch —
+// without this, files present in src/ silently don't exist in dist/ at runtime.
+function copyByExt(dir, extensions) {
   for (const f of readdirSync(dir)) {
     const p = join(dir, f);
-    if (statSync(p).isDirectory()) copySql(p);
-    else if (f.endsWith('.sql')) {
+    if (statSync(p).isDirectory()) copyByExt(p, extensions);
+    else if (extensions.some((ext) => f.endsWith(ext))) {
       const dest = join('dist', relative('src', p));
       const destDir = dirname(dest);
       if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
@@ -37,6 +38,6 @@ function copySql(dir) {
     }
   }
 }
-copySql('src');
+copyByExt('src', ['.sql', '.yaml', '.yml']);
 
 console.log(`Built ${entryPoints.length} files to dist/`);
