@@ -71,7 +71,12 @@ interface ToolDef {
 const TOOLS: ToolDef[] = [
   {
     name: 'list_tasks',
-    description: 'Список задач текущего пользователя с опциональной фильтрацией по проекту и статусу',
+    description:
+      'Список задач текущего пользователя с опциональной фильтрацией по проекту и статусу. ' +
+      'Каждая задача обогащается людьми, подзадачами, тегами и счётчиком зависимостей — ' +
+      'результат может быть большим, поэтому ответ ограничен параметром limit ' +
+      '(по умолчанию 50, максимум 200; F4 — без лимита список мог раздувать контекст модели ' +
+      'на тысячи токенов за один вызов).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -81,6 +86,12 @@ const TOOLS: ToolDef[] = [
           enum: ['backlog', 'todo', 'in_progress', 'done', 'someday'],
           description: 'Статус задачи для фильтрации',
         },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 200,
+          description: 'Максимум задач в ответе (по умолчанию 50, не более 200)',
+        },
       },
       additionalProperties: false,
     },
@@ -88,10 +99,15 @@ const TOOLS: ToolDef[] = [
       .object({
         project_id: z.number().int().nullable().optional(),
         status: z.enum(['backlog', 'todo', 'in_progress', 'done', 'someday']).optional(),
+        limit: z.number().int().min(1).max(200).optional(),
       })
       .strict(),
     run: (userId, args) =>
-      listTasksForUser(userId, { project_id: args.project_id ?? undefined, status: args.status ?? undefined }),
+      listTasksForUser(userId, {
+        project_id: args.project_id ?? undefined,
+        status: args.status ?? undefined,
+        limit: args.limit ?? 50,
+      }),
   },
   {
     name: 'create_task',

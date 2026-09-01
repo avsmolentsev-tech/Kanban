@@ -140,7 +140,7 @@ describe('MCP-эндпоинт: tools/call делегирует существу
     queryOneMock.mockResolvedValue(null);
   });
 
-  test('list_tasks фильтрует только по вызвавшему пользователю', async () => {
+  test('list_tasks фильтрует только по вызвавшему пользователю и по умолчанию ограничен 50 (F4)', async () => {
     queryAllMock.mockResolvedValueOnce([{ id: 1, title: 'Демо', user_id: 5 }]); // основной SELECT
     const r = await handleMcp(
       { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_tasks', arguments: {} } },
@@ -148,12 +148,17 @@ describe('MCP-эндпоинт: tools/call делегирует существу
     );
     const [sql, params] = queryAllMock.mock.calls[0];
     expect(String(sql)).toContain('user_id = $1');
-    expect(params).toEqual([5]);
+    // Было (до F4): expect(params).toEqual([5]) — без ограничения на размер
+    // результата. list_tasks без лимита мог вернуть тысячи задач одним
+    // MCP-ответом, раздувая контекст модели. Теперь по умолчанию limit=50 —
+    // последний параметр SQL.
+    expect(String(sql)).toContain('LIMIT $2');
+    expect(params).toEqual([5, 50]);
     const text = (r as any).result.content[0].text;
     expect(JSON.parse(text)[0].title).toBe('Демо');
   });
 
-  test('list_tasks с project_id и status добавляет оба фильтра в SQL', async () => {
+  test('list_tasks с project_id и status добавляет оба фильтра в SQL и лимит последним параметром', async () => {
     await handleMcp(
       {
         jsonrpc: '2.0',
@@ -166,7 +171,37 @@ describe('MCP-эндпоинт: tools/call делегирует существу
     const [sql, params] = queryAllMock.mock.calls[0];
     expect(String(sql)).toContain('project_id = $2');
     expect(String(sql)).toContain('status = $3');
-    expect(params).toEqual([5, 9, 'todo']);
+    // Было (до F4): expect(params).toEqual([5, 9, 'todo']).
+    expect(String(sql)).toContain('LIMIT $4');
+    expect(params).toEqual([5, 9, 'todo', 50]);
+  });
+
+  test('list_tasks принимает явный limit и передаёт его в SQL (F4)', async () => {
+    await handleMcp(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_tasks', arguments: { limit: 5 } } },
+      5
+    );
+    const [sql, params] = queryAllMock.mock.calls[0];
+    expect(String(sql)).toContain('LIMIT $2');
+    expect(params).toEqual([5, 5]);
+  });
+
+  test('list_tasks отклоняет limit выше разумного максимума как invalid params (F4)', async () => {
+    const r = await handleMcp(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_tasks', arguments: { limit: 100000 } } },
+      5
+    );
+    expect((r as any).error?.code).toBe(-32602);
+    expect(queryAllMock).not.toHaveBeenCalled();
+  });
+
+  test('list_tasks отклоняет limit <= 0 как invalid params (F4)', async () => {
+    const r = await handleMcp(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_tasks', arguments: { limit: 0 } } },
+      5
+    );
+    expect((r as any).error?.code).toBe(-32602);
+    expect(queryAllMock).not.toHaveBeenCalled();
   });
 
   test('create_task вставляет с правильным user_id и возвращает созданную задачу', async () => {
@@ -273,7 +308,9 @@ describe('MCP-эндпоинт: tools/call делегирует существу
     queryAllMock.mockResolvedValue([]);
     await handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_tasks', arguments: {} } }, 7);
     const paramsB = queryAllMock.mock.calls[0]![1];
-    expect(paramsA).toEqual([5]);
-    expect(paramsB).toEqual([7]);
+    // Было (до F4): expect(paramsA).toEqual([5]) / expect(paramsB).toEqual([7]) —
+    // без дефолтного лимита. Теперь последний параметр — limit=50 по умолчанию.
+    expect(paramsA).toEqual([5, 50]);
+    expect(paramsB).toEqual([7, 50]);
   });
 });

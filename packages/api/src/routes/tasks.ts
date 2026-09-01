@@ -153,6 +153,10 @@ export interface TaskListFilters {
   project_id?: number | undefined;
   status?: string | undefined;
   person_id?: number | undefined;
+  /** Максимум строк в выборке. Без него запрос не ограничен — используется
+   *  HTTP-роутом (текущее поведение SPA не меняем), MCP-инструмент list_tasks
+   *  всегда передаёт значение (F4, см. routes/mcp.ts). */
+  limit?: number | undefined;
 }
 
 /** Список задач пользователя. Используется и HTTP-роутом, и MCP-инструментом list_tasks — одна и та же выборка. */
@@ -163,6 +167,7 @@ export async function listTasksForUser(userId: number, filters: TaskListFilters 
   if (filters.status) { sql += ` AND status = $${params.length + 1}`; params.push(filters.status); }
   if (filters.person_id != null) { sql += ` AND id IN (SELECT task_id FROM task_people WHERE person_id = $${params.length + 1})`; params.push(filters.person_id); }
   sql += ' ORDER BY order_index ASC, created_at DESC';
+  if (filters.limit != null) { sql += ` LIMIT $${params.length + 1}`; params.push(filters.limit); }
   const tasks = await queryAll<Record<string, unknown>>(sql, params);
   return enrichTasksWithPeople(tasks);
 }
