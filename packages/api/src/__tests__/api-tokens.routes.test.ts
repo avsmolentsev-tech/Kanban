@@ -76,6 +76,27 @@ describe('роут /v1/api-tokens', () => {
     expect(revokeToken).not.toHaveBeenCalled();
   });
 
+  test('POST / — ошибка сервиса отвечает 500, а не виснет без ответа (F5)', async () => {
+    (issueToken as jest.Mock).mockRejectedValue(new Error('db down'));
+    const res = await request(buildApp(5)).post('/v1/api-tokens').send({ name: 'CI' });
+    expect(res.status).toBe(500);
+    expect(res.body.success).toBe(false);
+  }, 10000);
+
+  test('GET / — ошибка сервиса отвечает 500, а не виснет без ответа (F5)', async () => {
+    (listTokens as jest.Mock).mockRejectedValue(new Error('db down'));
+    const res = await request(buildApp(5)).get('/v1/api-tokens');
+    expect(res.status).toBe(500);
+    expect(res.body.success).toBe(false);
+  }, 10000);
+
+  test('DELETE /:id — ошибка сервиса отвечает 500, а не виснет без ответа (F5)', async () => {
+    (revokeToken as jest.Mock).mockRejectedValue(new Error('db down'));
+    const res = await request(buildApp(5)).delete('/v1/api-tokens/9');
+    expect(res.status).toBe(500);
+    expect(res.body.success).toBe(false);
+  }, 10000);
+
   test('весь роутер закрыт для аутентификации по API-токену (cs_) — 403, сервисы не вызываются', async () => {
     const app = buildApp(5, 'api-token');
     const resList = await request(app).get('/v1/api-tokens');

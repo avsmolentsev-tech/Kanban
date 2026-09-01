@@ -30,8 +30,15 @@ apiTokensRouter.post('/', async (req: AuthRequest, res: Response) => {
     return;
   }
   const { name, ttlDays } = parsed.data;
-  const { token, id } = await issueToken(userId, name, ttlDays ?? null);
-  res.status(201).json(ok({ id, token, name }));
+  try {
+    const { token, id } = await issueToken(userId, name, ttlDays ?? null);
+    res.status(201).json(ok({ id, token, name }));
+  } catch (err) {
+    // Без try/catch отклонённый промис (например, недоступна таблица api_tokens
+    // из-за неприменённой миграции — см. CLAUDE.md B2) уходил бы в Express 4 как
+    // необработанное исключение: ответа не будет вообще, клиент повиснет вместо 500.
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Token issue error'));
+  }
 });
 
 // Список собственных токенов пользователя, без значений токенов.
@@ -39,8 +46,12 @@ apiTokensRouter.get('/', async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) { res.status(401).json(fail('Auth required')); return; }
 
-  const tokens = await listTokens(userId);
-  res.json(ok(tokens));
+  try {
+    const tokens = await listTokens(userId);
+    res.json(ok(tokens));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Token list error'));
+  }
 });
 
 // Отзыв — только владельцу. Чужой id токена не находит строк и возвращает 404.
@@ -51,7 +62,11 @@ apiTokensRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
   const tokenId = Number(req.params['id']);
   if (!Number.isInteger(tokenId)) { res.status(400).json(fail('Invalid token id')); return; }
 
-  const revoked = await revokeToken(userId, tokenId);
-  if (!revoked) { res.status(404).json(fail('Token not found')); return; }
-  res.json(ok({ revoked: true }));
+  try {
+    const revoked = await revokeToken(userId, tokenId);
+    if (!revoked) { res.status(404).json(fail('Token not found')); return; }
+    res.json(ok({ revoked: true }));
+  } catch (err) {
+    res.status(500).json(fail(err instanceof Error ? err.message : 'Token revoke error'));
+  }
 });
