@@ -5,7 +5,7 @@ import { queryAll, queryOne, execute } from '../db/db';
 import { config } from '../config';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest, AuthUser } from '../middleware/auth';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, denyApiTokenAuth } from '../middleware/auth';
 import { sendVerificationEmail, generateCode } from '../services/email.service';
 import { getUserPlan, getAiUsageToday } from '../middleware/plan';
 
@@ -126,14 +126,16 @@ authRouter.post('/login', rateLimitLogin, async (req: AuthRequest, res: Response
   }
 });
 
-// GET /auth/me
-authRouter.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
+// GET /auth/me — служебный API-токен не несёт email/name, отдавать по нему
+// профиль пользователя (пусть и с пустыми полями) вводит в заблуждение — отказываем явно.
+authRouter.get('/me', requireAuth, denyApiTokenAuth, async (req: AuthRequest, res: Response) => {
   const plan = await getUserPlan(req.user!.id);
   res.json(ok({ ...req.user, plan }));
 });
 
-// PATCH /auth/me — update profile
-authRouter.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
+// PATCH /auth/me — update profile. Мнит новую JWT-сессию (30 дней) и меняет пароль
+// без проверки старого — служебному API-токену сюда доступа нет ни при какой роли.
+authRouter.patch('/me', requireAuth, denyApiTokenAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { name, password } = req.body;
 
@@ -254,8 +256,9 @@ authRouter.get('/plan', requireAuth, async (req: AuthRequest, res: Response) => 
   }
 });
 
-// POST /auth/plan — switch plan (no payment for now)
-authRouter.post('/plan', requireAuth, async (req: AuthRequest, res: Response) => {
+// POST /auth/plan — switch plan (no payment for now). Меняет состояние аккаунта —
+// служебный API-токен этого делать не может.
+authRouter.post('/plan', requireAuth, denyApiTokenAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { plan } = req.body as { plan?: string };
     if (!plan || !['free', 'pro_max'].includes(plan)) {

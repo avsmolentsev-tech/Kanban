@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken';
 
 jest.mock('../services/api-tokens', () => ({ verifyToken: jest.fn() }));
 import { verifyToken } from '../services/api-tokens';
-import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { authMiddleware, denyApiTokenAuth, AuthRequest } from '../middleware/auth';
 import { config } from '../config';
 
 function makeReq(headers: Record<string, string> = {}, query: Record<string, string> = {}): AuthRequest {
@@ -19,12 +19,14 @@ const res = {} as Response;
 describe('authMiddleware — ветка API-токенов', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  test('валидный cs_-токен кладёт userId в req.user с минимальной ролью', async () => {
+  test('валидный cs_-токен кладёт userId в req.user с минимальной ролью и помечает authKind', async () => {
     (verifyToken as jest.Mock).mockResolvedValue({ userId: 5, tokenId: 9 });
     const req = makeReq({ authorization: 'Bearer cs_validtoken' });
     const next = jest.fn();
     await authMiddleware(req, res, next as NextFunction);
     expect(req.user).toEqual({ id: 5, email: '', name: '', role: 'user' });
+    expect(req.authKind).toBe('api-token');
+    expect(req.tokenId).toBe(9);
     expect(next).toHaveBeenCalledTimes(1);
   });
 
@@ -52,6 +54,7 @@ describe('authMiddleware — ветка API-токенов', () => {
     const next = jest.fn();
     await authMiddleware(req, res, next as NextFunction);
     expect(req.user).toMatchObject({ id: 1, email: 'a@b.com', name: 'A', role: 'admin' });
+    expect(req.authKind).toBe('session');
     expect(verifyToken).not.toHaveBeenCalled();
   });
 
@@ -77,6 +80,7 @@ describe('authMiddleware — ветка API-токенов', () => {
     const next = jest.fn();
     await authMiddleware(req, res, next as NextFunction);
     expect(req.user).toBeUndefined();
+    expect(req.authKind).toBeUndefined();
     expect(verifyToken).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
   });
@@ -89,5 +93,33 @@ describe('authMiddleware — ветка API-токенов', () => {
     // purpose: 'download' — не сессия, но и не отклонена как cs_-токен из query
     expect(req.user).toBeUndefined();
     expect(verifyToken).not.toHaveBeenCalled();
+  });
+});
+
+describe('denyApiTokenAuth', () => {
+  test('запрос по API-токену получает 403 с русским сообщением, next не вызывается', () => {
+    const req = { authKind: 'api-token' } as unknown as AuthRequest;
+    const json = jest.fn();
+    const status = jest.fn(() => ({ json }));
+    const res2 = { status } as unknown as Response;
+    const next = jest.fn();
+    denyApiTokenAuth(req, res2, next as NextFunction);
+    expect(status).toHaveBeenCalledWith(403);
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('сессия (authKind = session) проходит дальше', () => {
+    const req = { authKind: 'session' } as unknown as AuthRequest;
+    const next = jest.fn();
+    denyApiTokenAuth(req, {} as Response, next as NextFunction);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  test('анонимный запрос (authKind не задан) проходит дальше — его отклонит requireAuth раньше по цепочке', () => {
+    const req = {} as unknown as AuthRequest;
+    const next = jest.fn();
+    denyApiTokenAuth(req, {} as Response, next as NextFunction);
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });

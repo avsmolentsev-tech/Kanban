@@ -12,6 +12,12 @@ export interface AuthUser {
 
 export interface AuthRequest extends Request {
   user?: AuthUser;
+  // Помечает запрос, аутентифицированный служебным API-токеном (cs_...), а не
+  // полноценной сессией (JWT логина). Используется, чтобы отдельно закрыть
+  // маршруты, которые выдают новые учётные данные или меняют состояние аккаунта —
+  // им токен не доверяется, даже если req.user заполнен.
+  authKind?: 'session' | 'api-token';
+  tokenId?: number;
 }
 
 const API_TOKEN_PREFIX = 'cs_';
@@ -44,9 +50,14 @@ export async function authMiddleware(req: AuthRequest, _res: Response, next: Nex
     try {
       const result = await verifyToken(token);
       if (result) {
-        // У API-токена нет своих email/name/role — минимальные права ('user'),
-        // чтобы служебный доступ не мог случайно получить админские привилегии.
+        // У API-токена нет своих email/name/role — минимальные права ('user').
+        // Это защита в глубину, а не единственная граница: маршруты, которые
+        // выдают новые учётные данные или меняют состояние аккаунта, дополнительно
+        // проверяют req.authKind через denyApiTokenAuth() и отказывают токену
+        // независимо от того, какая роль сюда подставлена.
         req.user = { id: result.userId, email: '', name: '', role: 'user' };
+        req.authKind = 'api-token';
+        req.tokenId = result.tokenId;
       }
     } catch {
       // Проверка не удалась — продолжаем без пользователя
@@ -60,6 +71,7 @@ export async function authMiddleware(req: AuthRequest, _res: Response, next: Nex
     // Scoped download tokens are NOT sessions — they only work on the download route.
     if (payload.purpose !== 'download') {
       req.user = payload;
+      req.authKind = 'session';
     }
   } catch {
     // Invalid token — continue without user
@@ -70,6 +82,20 @@ export async function authMiddleware(req: AuthRequest, _res: Response, next: Nex
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction): void {
   if (!req.user) {
     res.status(401).json({ success: false, error: 'Authentication required' });
+    return;
+  }
+  next();
+}
+
+/**
+ * Блокирует запросы, аутентифицированные служебным API-токеном (cs_...), на
+ * маршрутах, которые выдают новые учётные данные (JWT-сессию, новый API-токен)
+ * или меняют состояние аккаунта (пароль, план). Ставится ПОСЛЕ requireAuth.
+ * Анонимные запросы этот guard не трогает — их отклонит requireAuth раньше.
+ */
+export function denyApiTokenAuth(req: AuthRequest, res: Response, next: NextFunction): void {
+  if (req.authKind === 'api-token') {
+    res.status(403).json({ success: false, error: 'Служебный API-токен не может использоваться для этой операции' });
     return;
   }
   next();

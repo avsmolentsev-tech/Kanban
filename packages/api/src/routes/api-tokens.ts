@@ -2,10 +2,16 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest } from '../middleware/auth';
+import { denyApiTokenAuth } from '../middleware/auth';
 import { getUserId } from '../middleware/user-scope';
 import { issueToken, listTokens, revokeToken } from '../services/api-tokens';
 
 export const apiTokensRouter = Router();
+
+// Управление токенами доступно только полноценной сессии (логин по паролю).
+// Иначе один API-токен мог бы выпускать себе замену без ограничения по сроку —
+// отзыв одного токена не отзывает другие, выпущенные им ранее.
+apiTokensRouter.use(denyApiTokenAuth);
 
 const CreateSchema = z.object({
   name: z.string().min(1),

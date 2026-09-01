@@ -15,12 +15,13 @@ import { issueToken, listTokens, revokeToken } from '../services/api-tokens';
 import { apiTokensRouter } from '../routes/api-tokens';
 import type { AuthRequest } from '../middleware/auth';
 
-function buildApp(userId: number | null) {
+function buildApp(userId: number | null, authKind: 'session' | 'api-token' = 'session') {
   const app = express();
   app.use(express.json());
   app.use((req: AuthRequest, _res, next) => {
     if (userId !== null) {
       req.user = { id: userId, email: 'u@test.com', name: 'U', role: 'user' };
+      req.authKind = authKind;
     }
     next();
   });
@@ -72,6 +73,21 @@ describe('роут /v1/api-tokens', () => {
   test('нечисловой id в DELETE — 400, сервис не вызывается', async () => {
     const res = await request(buildApp(5)).delete('/v1/api-tokens/not-a-number');
     expect(res.status).toBe(400);
+    expect(revokeToken).not.toHaveBeenCalled();
+  });
+
+  test('весь роутер закрыт для аутентификации по API-токену (cs_) — 403, сервисы не вызываются', async () => {
+    const app = buildApp(5, 'api-token');
+    const resList = await request(app).get('/v1/api-tokens');
+    expect(resList.status).toBe(403);
+    expect(listTokens).not.toHaveBeenCalled();
+
+    const resCreate = await request(app).post('/v1/api-tokens').send({ name: 'child-token' });
+    expect(resCreate.status).toBe(403);
+    expect(issueToken).not.toHaveBeenCalled();
+
+    const resDelete = await request(app).delete('/v1/api-tokens/9');
+    expect(resDelete.status).toBe(403);
     expect(revokeToken).not.toHaveBeenCalled();
   });
 });
