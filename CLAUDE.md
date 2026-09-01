@@ -39,22 +39,55 @@ pnpm install       # Установка зависимостей
 
 **`/var/www/kanban-app/` на сервере — НЕ git-репозиторий** (проверено: `.git` там нет). `git pull` на сервере не сработает — код нужно доставить на сервер файловой синхронизацией (rsync/scp), а не git-командой.
 
+**Сборка API — `pnpm build` (= `node build.mjs`), НИКОГДА не `npx tsc`.** Два независимых основания, каждого по отдельности достаточно, чтобы `tsc` не годился для деплоя:
+
+1. `npx tsc` **сейчас падает с exit 2** — 64 предсуществующих ошибки типов, не имеющих отношения к этой ветке. Если зацепить рестарт на `tsc` через `&&`, цепочка оборвётся ДО `pm2 delete`/`pm2 start` — PM2 не перезапустится, а деплоер увидит короткий обрыв вывода и решит, что просто «ничего не изменилось», а не что деплой не произошёл.
+2. Даже если бы `tsc` не падал: он компилирует только `.ts` и не копирует ничего больше. `build.mjs` — единственное, что переносит в `dist/` два файла, которые процесс читает в рантайме относительно `__dirname`: `src/db/schema-pg.sql` → `dist/db/schema-pg.sql` (читает `db/pg.ts`: `runSchema()` применяет именно этот файл к БД при каждом старте) и `src/openapi/openapi.yaml` → `dist/openapi/openapi.yaml` (читает `routes/docs.ts`, отдаёт как `/v1/openapi.yaml`). Без `build.mjs` в `dist/` компилируются только `.js`, эти два файла в `dist/` не появляются вовсе, даже если `tsc` отработал бы чисто.
+
+Устаревший `dist/db/schema-pg.sql` — не гипотетический риск, а то, что стоит на проде прямо сейчас: файл датирован 20 августа и не содержит ни одного упоминания `api_tokens` (таблица появилась позже). Накатить эту схему поверх — значит: таблица `api_tokens` не создаётся → выпуск токена виснет/падает → любой `Bearer cs_...` деградирует до анонимного → `/mcp` отклоняет каждый токен → `/v1/openapi.yaml` отвечает 500 (файла нет). При этом `/health` всё равно отвечает `ok`, потому что Postgres поднят и критичная проверка проходит — по `/health` эту поломку не увидеть.
+
 ```bash
-# API (TypeScript → JS)
-cd packages/api && npx tsc
+# API — собрать build.mjs'ом, НЕ tsc (см. выше)
+cd packages/api && pnpm build   # = node build.mjs: esbuild src/ → dist/ + копирует .sql/.yaml в dist/
 
 # Frontend
 cd apps/web && npx vite build
 
-# Доставить код на сервер (rsync, не git pull — там не git-репозиторий)
-rsync -az --exclude node_modules packages/api/src packages/api/package.json \
+# Доставить код на сервер (rsync, не git pull — там не git-репозиторий).
+# build.mjs — ОБЯЗАТЕЛЕН в рассылке: без него на сервере нечем пересобрать
+# dist/ (а npx tsc его не заменяет — см. выше, и ассетов всё равно не копирует).
+rsync -az --exclude node_modules \
+  packages/api/src packages/api/package.json packages/api/build.mjs \
   root@31.128.43.174:/var/www/kanban-app/packages/api/
 
+# scripts/ — отдельно, в корень приложения на сервере (там же, где он лежит
+# в репозитории): без него на сервере нечем прогнать smoke-тест после рестарта.
+rsync -az scripts root@31.128.43.174:/var/www/kanban-app/
+
 # dist/ ОБЯЗАТЕЛЬНО пересобрать на сервере перед рестартом — устаревший dist/
-# уже один раз унёс на прод код, которого в src/ больше нет; pm2 restart
-# без пересборки этот риск не убирает.
-ssh root@31.128.43.174 "cd /var/www/kanban-app/packages/api && npx tsc && \
-  pm2 delete kanban-api && pm2 start dist/index.js --name kanban-api && pm2 save"
+# уже один раз унёс на прод код, которого в src/ больше нет; pm2 restart без
+# пересборки этот риск не убирает. Рестарт НЕ зацеплен через && за сборкой —
+# намеренно: если сборка когда-нибудь снова начнёт падать, это должно
+# остановить деплой видимой ошибкой, а не тихо пропустить рестарт.
+ssh root@31.128.43.174 "cd /var/www/kanban-app/packages/api && pnpm build"
+ssh root@31.128.43.174 "pm2 delete kanban-api; cd /var/www/kanban-app/packages/api && \
+  pm2 start dist/index.js --name kanban-api && pm2 save"
+```
+
+**После рестарта — два шага, не один.** `scripts/smoke.sh` проверяет форму ответов (`/health` — JSON с `status`/`checks`, `/v1/openapi.yaml` — YAML, а не HTML-фолбэк SPA, `/mcp` без токена — `401` с JSON-ошибкой) и ловит отсутствующий `openapi.yaml`. Он **не ловит** отсутствующую таблицу `api_tokens` — без `MCP_TOKEN` проверка `tools/list` пропускается, а до самой таблицы код доходит только при попытке выпустить или проверить токен:
+
+```bash
+# 1) форма ответов
+./scripts/smoke.sh   # или BASE=https://clarity-space.ru ./scripts/smoke.sh
+
+# 2) единственная проверка, которая реально бьёт по таблице api_tokens —
+#    выпустить токен вручную по настоящей сессии (сначала логин, JWT из ответа
+#    /v1/auth/login подставить сюда):
+curl -sS -X POST https://clarity-space.ru/v1/api-tokens \
+  -H "Authorization: Bearer <JWT из логина>" -H "Content-Type: application/json" \
+  -d '{"name":"post-deploy-check"}'
+# Ожидаем 201 и { success: true, data: { id, token, name } }. Зависание или
+# 500 здесь — признак того, что накатилась старая schema-pg.sql без api_tokens.
 ```
 
 ## Серверные пути
@@ -185,9 +218,9 @@ EMAIL_FROM                          — адрес отправителя пис
 
 - **Todoist API v1** (не v2!) — v2 deprecated, возвращает 410
 - API v1 возвращает `{ results: [...] }` вместо plain array
-- При сборке API: `npx tsc` (компилирует в dist/), запуск через `pm2 start dist/index.js`
+- При сборке API: `pnpm build` (= `node build.mjs`, компилирует в dist/ И копирует schema-pg.sql/openapi.yaml), запуск через `pm2 start dist/index.js`. **Не `npx tsc`** — он сейчас падает с exit 2 (64 предсуществующие ошибки типов) и в любом случае не копирует ассеты (см. раздел «Сборка и деплой»)
 - PM2: после обновления — `pm2 delete` + `pm2 start` (не restart)
-- Сервер — НЕ git-репозиторий: код доставляется rsync/scp, не `git pull`. `dist/` обязательно пересобирается на сервере (`npx tsc`) перед рестартом — устаревший `dist/` уже один раз унёс на прод код, которого в `src/` больше не было
+- Сервер — НЕ git-репозиторий: код доставляется rsync/scp, не `git pull`. `dist/` обязательно пересобирается на сервере (`pnpm build`) перед рестартом — устаревший `dist/` уже один раз унёс на прод код, которого в `src/` больше не было
 - Vault файлы никогда не удаляются, используется `archived: true`
 
 ## Роутинг задач
