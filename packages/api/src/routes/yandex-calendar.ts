@@ -61,8 +61,12 @@ async function getYandexToken(userId: number): Promise<string | null> {
 
 yandexCalendarRouter.get('/auth', (req: AuthRequest, res: Response) => {
   if (!config.yandexClientId) { res.status(400).json(fail('YANDEX_CLIENT_ID not configured')); return; }
-  const userId = getUserId(req) || (req.query['uid'] ? Number(req.query['uid']) : null);
-  if (!userId) { res.status(401).json(fail('Not authenticated')); return; }
+  // userId — только из аутентифицированной сессии (JWT) или API-токена.
+  // Раньше здесь был запасной вариант через query-параметр ?uid=, который позволял
+  // привязать чужой OAuth-обмен к произвольному user_id без какой-либо аутентификации —
+  // это было устранено как уязвимость (см. отчёт fix-uid-bypass-report.md).
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Требуется авторизация')); return; }
   const state = jwt.sign({ userId }, config.jwtSecret, { expiresIn: '10m' });
   const redirectUri = `${config.webappUrl}/v1/yandex-calendar/callback`;
   const url = `https://oauth.yandex.ru/authorize?response_type=code&client_id=${config.yandexClientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&force_confirm=yes`;
@@ -82,6 +86,10 @@ yandexCalendarRouter.get('/callback', async (req: AuthRequest, res: Response) =>
     res.status(403).json(fail('Invalid or expired OAuth state'));
     return;
   }
+  // Оборонительная проверка на случай payload без userId (не должна срабатывать
+  // на валидном state — этот токен подписывает только наш /auth). Соответствует
+  // такой же проверке в google-calendar.ts.
+  if (!userId) { res.status(401).json(fail('Требуется авторизация')); return; }
 
   try {
     const tokenRes = await fetch('https://oauth.yandex.ru/token', {
