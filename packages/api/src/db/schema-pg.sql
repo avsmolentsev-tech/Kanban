@@ -480,3 +480,17 @@ ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS summary TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_type TEXT;      -- my_task | their_commitment | mutual_agreement
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_owner TEXT;     -- who is responsible (name / "я")
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_meeting_id INTEGER; -- meeting it was extracted from
+
+-- Служебные API-токены (сервисный доступ, отзываемый, с опциональным сроком жизни).
+-- В базе хранится только SHA-256 сырого токена — сам токен нигде не сохраняется.
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id          SERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL,
+  name        TEXT NOT NULL,
+  token_hash  TEXT NOT NULL UNIQUE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at  TIMESTAMPTZ,
+  revoked_at  TIMESTAMPTZ,
+  last_used_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens (token_hash);
