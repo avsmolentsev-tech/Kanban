@@ -55,6 +55,7 @@ app.use(express.json({ limit: '8kb' }));
 
 const комнаты = require('./rooms');
 const { расшифроватьВстречу } = require('./transcribe');
+const clarity = require('./clarity');
 
 /**
  * Сравнение пароля постоянным временем: наивное `===` на длинных строках
@@ -191,7 +192,29 @@ app.post('/api/rooms/:id/transcribe', async (req, res) => {
       `[meet-api] комната ${комната.id}: участников ${результат.участники.length}, ` +
       `реплик ${результат.реплики.length}${результат.безРечи ? ' — речи не найдено' : ''}`,
     );
-    res.json({ комната: { id: комната.id, title: комната.title }, ...результат });
+
+    // Отправляем в Clarity Space только содержательный результат. Пустую
+    // стенограмму слать бессмысленно: там заведётся встреча без единой реплики,
+    // а разбор впустую потратит вызов модели.
+    let вClaritySpace = null;
+    if (!результат.безРечи && clarity.настроено()) {
+      try {
+        вClaritySpace = await clarity.отправитьВстречу({
+          название: комната.title,
+          дата: new Date().toISOString().slice(0, 10),
+          стенограмма: результат.стенограмма,
+          участники: результат.участники.map((у) => у.имя),
+        });
+        console.log(`[meet-api] встреча уехала в Clarity Space: #${вClaritySpace.id}`);
+      } catch (ошибка) {
+        // Отказ Clarity Space не должен ронять расшифровку: стенограмма уже
+        // готова и лежит у нас, отправить её можно повторно.
+        console.warn('[meet-api] отправка в Clarity Space не удалась:', ошибка.message);
+        вClaritySpace = { ошибка: ошибка.message };
+      }
+    }
+
+    res.json({ комната: { id: комната.id, title: комната.title }, ...результат, вClaritySpace });
   } catch (ошибка) {
     console.error('[meet-api] расшифровка не удалась:', ошибка);
     res.status(500).json({ error: 'Не удалось расшифровать запись' });
