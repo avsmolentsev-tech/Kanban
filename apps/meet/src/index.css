@@ -136,3 +136,7 @@ body {
   opacity: 0.75;
   line-height: 1.4;
 }
+
+.поле-с-кнопкой { display: flex; gap: 8px; align-items: stretch; }
+.поле-с-кнопкой input { flex: 1; min-width: 0; }
+.поле-с-кнопкой .кнопка--тихая { align-self: stretch; }

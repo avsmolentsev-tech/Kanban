@@ -29,6 +29,7 @@ export default function App() {
   const [ошибка, setОшибка] = useState<string | null>(null);
   const [занято, setЗанято] = useState(false);
   const [скопировано, setСкопировано] = useState(false);
+  const [показатьПароль, setПоказатьПароль] = useState(false);
 
   // При открытии по ссылке подтягиваем название встречи, чтобы человек видел,
   // куда он попал, ещё до ввода пароля.
@@ -129,14 +130,38 @@ export default function App() {
 
           <label>
             Пароль сервиса
-            <input type="password" value={парольСервиса} onChange={(e) => setПарольСервиса(e.target.value)}
-                   autoComplete="current-password" required />
+            <div className="поле-с-кнопкой">
+              <input
+                type={показатьПароль ? 'text' : 'password'}
+                value={парольСервиса}
+                onChange={(e) => setПарольСервиса(e.target.value)}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                name="clarity-meet-service-key"
+                required
+              />
+              <button type="button" className="кнопка--тихая"
+                      onClick={() => setПоказатьПароль((v) => !v)}>
+                {показатьПароль ? 'Скрыть' : 'Показать'}
+              </button>
+            </div>
           </label>
 
           <label>
             Пароль встречи
-            <input type="password" value={парольВстречи} onChange={(e) => setПарольВстречи(e.target.value)}
-                   autoComplete="new-password" placeholder="можно не задавать" />
+            <input
+              type={показатьПароль ? 'text' : 'password'}
+              value={парольВстречи}
+              onChange={(e) => setПарольВстречи(e.target.value)}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              name="clarity-meet-room-key"
+              placeholder="можно не задавать"
+            />
             <span className="сноска">
               Оставьте пустым — тогда войти сможет любой, у кого есть ссылка.
             </span>
@@ -205,8 +230,23 @@ export default function App() {
           {экран.комната.защищена && (
             <label>
               Пароль встречи
-              <input type="password" value={парольВстречи} onChange={(e) => setПарольВстречи(e.target.value)}
-                     autoComplete="current-password" required />
+              <div className="поле-с-кнопкой">
+                <input
+                  type={показатьПароль ? 'text' : 'password'}
+                  value={парольВстречи}
+                  onChange={(e) => setПарольВстречи(e.target.value)}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  name="clarity-meet-room-key"
+                  required
+                />
+                <button type="button" className="кнопка--тихая"
+                        onClick={() => setПоказатьПароль((v) => !v)}>
+                  {показатьПароль ? 'Скрыть' : 'Показать'}
+                </button>
+              </div>
             </label>
           )}
 
