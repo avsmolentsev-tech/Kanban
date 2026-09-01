@@ -9,6 +9,26 @@
 # обновление прилетит в момент перезапуска и сломает звонок без объяснений.
 
 services:
+  # Шина задач между SFU и egress.
+  #
+  # В ТЗ было записано, что Redis не нужен — это оказалось верно только для
+  # одиночного SFU. Egress использует Redis как транспорт psrpc и без него
+  # падает с segfault в NewRedisMessageBus ещё до вывода внятной ошибки.
+  # Проверено запуском 01.09.2026.
+  redis:
+    image: redis:7-alpine
+    container_name: clarity-meet-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD} --save "" --appendonly no
+    # Наружу не публикуется: доступен только внутри сети стека.
+    expose:
+      - "6379"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: 128M
+
   livekit:
     image: livekit/livekit-server:v1.13.6
     container_name: clarity-meet-livekit
@@ -16,9 +36,11 @@ services:
     command: --config /etc/livekit.yaml
     environment:
       # Формат: "ключ: секрет". Значения берутся из .env рядом с этим файлом.
-      # Та же пара обязана стоять в egress и в приложении — рассинхрон даёт
-      # молчаливый отказ авторизации, без внятной ошибки в логе.
+      # Та же пара обязана стоять в egress — рассинхрон даёт молчаливый отказ
+      # авторизации, без внятной ошибки в логе.
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+      LIVEKIT_REDIS_ADDRESS: redis:6379
+      LIVEKIT_REDIS_PASSWORD: "${REDIS_PASSWORD}"
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro
     ports:
@@ -27,8 +49,41 @@ services:
       # Медиа идёт напрямую, мимо всех прокси.
       - "7881:7881"
       - "7882:7882/udp"
+    depends_on:
+      - redis
     deploy:
       resources:
         limits:
           cpus: "2.0"
+          memory: 2G
+
+  egress:
+    image: livekit/egress:v1.14.1
+    container_name: clarity-meet-egress
+    restart: unless-stopped
+    environment:
+      # Конфиг передаётся телом, а не файлом. Файл пришлось бы держать
+      # доступным на чтение контейнеру, который работает от непривилегированного
+      # пользователя, — а в нём лежат секрет API и пароль Redis. Так секреты
+      # остаются только в .env с правами 600.
+      EGRESS_CONFIG_BODY: |
+        redis:
+          address: redis:6379
+          password: ${REDIS_PASSWORD}
+        api_key: ${LIVEKIT_API_KEY}
+        api_secret: ${LIVEKIT_API_SECRET}
+        ws_url: ws://livekit:7880
+        log_level: info
+    volumes:
+      - ./recordings:/out
+    depends_on:
+      - redis
+      - livekit
+    # Пишем звук по дорожкам и демонстрацию экрана. Камеры не пишем, общую
+    # сборку через headless Chrome не делаем — она стоит около четырёх ядер
+    # на встречу. Поэтому лимит скромный.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
           memory: 2G
