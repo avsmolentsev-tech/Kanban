@@ -37,6 +37,19 @@ describe('API-токены', () => {
     expect(await verifyToken('cs_нет')).toBeNull();
   });
 
+  test('падение записи last_used_at не мешает опознать валидный токен', async () => {
+    (queryOne as jest.Mock).mockResolvedValue({ id: 9, user_id: 5 });
+    (execute as jest.Mock).mockRejectedValue(new Error('statement timeout'));
+    const r = await verifyToken('cs_abc');
+    expect(r).toEqual({ userId: 5, tokenId: 9 });
+  });
+
+  test('неизвестный токен не запускает запись last_used_at', async () => {
+    (queryOne as jest.Mock).mockResolvedValue(null);
+    await verifyToken('cs_нет');
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   test('отзыв проставляет revoked_at только своему токену', async () => {
     (execute as jest.Mock).mockResolvedValue(1);
     expect(await revokeToken(5, 9)).toBe(true);

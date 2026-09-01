@@ -39,7 +39,10 @@ export async function verifyToken(raw: string): Promise<{ userId: number; tokenI
     [hash(raw)]
   );
   if (!row) return null;
-  await execute(`UPDATE api_tokens SET last_used_at = now() WHERE id = $1`, [row.id]);
+  // last_used_at — учётная запись, а не решение об аутентификации: если запись не
+  // удалась (таймаут БД, read-only реплика, обрыв соединения), валидный токен всё
+  // равно должен аутентифицировать запрос. Не await — ошибка не должна всплывать.
+  void execute(`UPDATE api_tokens SET last_used_at = now() WHERE id = $1`, [row.id]).catch(() => {});
   return { userId: row.user_id, tokenId: row.id };
 }
 
