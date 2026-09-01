@@ -10,7 +10,7 @@ import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
-import { attachmentFileFilter } from '../utils/upload-filter';
+import { attachmentFileFilter, taskAttachmentFilename } from '../utils/upload-filter';
 
 const obsidian = new ObsidianService(config.vaultPath);
 
@@ -374,7 +374,9 @@ tasksRouter.post('/:id/attachments', upload.single('file'), async (req: AuthRequ
   if (!req.file) { res.status(400).json(fail('Файл не предоставлен')); return; }
 
   const ext = path.extname(req.file.originalname);
-  const filename = `task-${taskId}-${Date.now()}${ext}`;
+  // Файл отдаётся публично (routes/index.ts) без авторизации — непредсказуемость
+  // имени держится на randomAttachmentToken() внутри generator'а, а не на id/времени.
+  const filename = taskAttachmentFilename(taskId, ext);
   fs.writeFileSync(path.join(attachDir, filename), req.file.buffer);
 
   const inserted = await queryOne<{ id: number }>(

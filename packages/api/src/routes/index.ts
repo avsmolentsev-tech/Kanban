@@ -44,7 +44,14 @@ router.use('/google-calendar', googleCalendarRouter);
 router.use('/todoist', todoistRouter);
 router.use('/yandex-calendar', yandexCalendarRouter);
 
-// Public: serve attachment files (images in documents) without auth — filenames are random/unguessable
+// Публично: отдаёт файлы вложений (изображения в документах) без авторизации.
+// Префикс имени файла из id и timestamp (например, "42-1756640000000.png")
+// подбирается перебором — непредсказуемость, на которую опирается этот
+// маршрут, держится на крипто-случайном токене (crypto.randomBytes(16)),
+// который добавляет к имени каждый обработчик загрузки (documents.ts,
+// people.ts, tasks.ts — см. randomAttachmentToken() в utils/upload-filter.ts).
+// Файлы, загруженные до появления токена, сохраняют старое предсказуемое имя
+// и этим свойством не защищены.
 const INLINE_IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico']);
 router.get('/documents/attachments/file/:filename', (req, res) => {
   const attachDir = path.resolve(config.vaultPath, 'Attachments');
