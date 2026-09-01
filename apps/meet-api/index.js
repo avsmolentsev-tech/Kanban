@@ -54,6 +54,7 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '8kb' }));
 
 const комнаты = require('./rooms');
+const { расшифроватьВстречу } = require('./transcribe');
 
 /**
  * Сравнение пароля постоянным временем: наивное `===` на длинных строках
@@ -163,6 +164,38 @@ app.post('/api/token', (req, res) => {
 
   console.log(`[meet-api] выдан токен: комната ${room}, участник ${displayName}`);
   res.json({ token, title: комната.title });
+});
+
+/**
+ * Расшифровать записи встречи и собрать диалог.
+ *
+ * Требует пароль сервиса: расшифровка стоит процессорного времени, и открывать
+ * её всем, у кого есть ссылка, нельзя — иначе один запрос в цикле займёт
+ * машину надолго.
+ */
+app.post('/api/rooms/:id/transcribe', async (req, res) => {
+  const { servicePassword } = req.body ?? {};
+  if (!passwordMatches(servicePassword)) {
+    res.status(401).json({ error: 'Неверный пароль сервиса' });
+    return;
+  }
+  const комната = комнаты.найти(req.params.id);
+  if (!комната) {
+    res.status(404).json({ error: 'Встреча не найдена' });
+    return;
+  }
+  try {
+    console.log(`[meet-api] расшифровка комнаты ${комната.id}`);
+    const результат = await расшифроватьВстречу(комната.id);
+    console.log(
+      `[meet-api] комната ${комната.id}: участников ${результат.участники.length}, ` +
+      `реплик ${результат.реплики.length}${результат.безРечи ? ' — речи не найдено' : ''}`,
+    );
+    res.json({ комната: { id: комната.id, title: комната.title }, ...результат });
+  } catch (ошибка) {
+    console.error('[meet-api] расшифровка не удалась:', ошибка);
+    res.status(500).json({ error: 'Не удалось расшифровать запись' });
+  }
 });
 
 app.listen(PORT, '127.0.0.1', () => {
