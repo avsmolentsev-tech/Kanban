@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -10,9 +10,11 @@ import { seedAdvisors } from './db/advisors.seed';
 import { searchService } from './services/search.service';
 import { telegramService } from './services/telegram.service';
 import { startNotificationScheduler } from './services/notification.service';
-import { authMiddleware } from './middleware/auth';
+import { authMiddleware, requireAuth, AuthRequest } from './middleware/auth';
+import { getUserId } from './middleware/user-scope';
 import { startVaultWatcher } from './services/obsidian-sync.service';
 import { checkHealth } from './services/health.service';
+import { handleMcp } from './routes/mcp';
 
 // Catch-all crash protection — log and keep running
 process.on('uncaughtException', (err) => {
@@ -66,6 +68,34 @@ app.use('/v1', router);
 app.get('/health', async (_req, res) => {
   const report = await checkHealth();
   res.status(report.status === 'down' ? 503 : 200).json(report);
+});
+
+// MCP-эндпоинт (Model Context Protocol) — вне /v1, как и /health: это отдельный
+// протокол (JSON-RPC 2.0), а не часть REST-конверта { success, data }. Тот же
+// Bearer cs_... токен, что и остальной API — requireAuth уже отклоняет запрос
+// без валидного токена 401-м до того, как тело дойдёт до handleMcp.
+app.post('/mcp', requireAuth, async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (userId == null) {
+    // requireAuth гарантирует req.user, но перестраховка на случай будущих изменений
+    // middleware — MCP не должен выполнить ни одного инструмента без пользователя.
+    res.status(401).json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Authentication required' } });
+    return;
+  }
+  const result = await handleMcp(req.body, userId);
+  res.json(result);
+});
+
+// Тело POST /mcp с синтаксически невалидным JSON роняется express.json() раньше,
+// чем запрос доходит до маршрута выше — здесь превращаем это в валидный JSON-RPC
+// parse error вместо HTML-страницы дефолтного обработчика ошибок Express.
+app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+  const isBodyParseError = err && typeof err === 'object' && 'type' in err && (err as { type?: string }).type === 'entity.parse.failed';
+  if (isBodyParseError && req.path === '/mcp') {
+    res.status(400).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error: invalid JSON' } });
+    return;
+  }
+  next(err);
 });
 
 async function start(): Promise<void> {
