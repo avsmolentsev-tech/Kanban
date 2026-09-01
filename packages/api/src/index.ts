@@ -1,7 +1,7 @@
 import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import { apiRateLimit, authRateLimit, healthRateLimit, mcpRateLimit } from './middleware/rate-limit';
 import { config } from './config';
 import { router } from './routes';
 import { initPg, runSchema } from './db/db';
@@ -44,28 +44,21 @@ app.use(express.json({ limit: `${config.maxFileSizeMb}mb` }));
 app.use(express.urlencoded({ extended: true }));
 
 // Rate limiting — 200 requests per minute per IP
-app.use('/v1/', rateLimit({
-  windowMs: 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, error: 'Too many requests. Please try again later.' },
-}));
+app.use('/v1/', apiRateLimit);
 
 // Stricter rate limit for auth endpoints — 10 per minute
-app.use('/v1/auth/', rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, error: 'Too many auth attempts. Please try again later.' },
-}));
+app.use('/v1/auth/', authRateLimit);
 
 app.use(authMiddleware);
 
 app.use('/v1', router);
 
-app.get('/health', async (_req, res) => {
+// /health и /mcp объявлены вне app.use('/v1/', ...) выше — путь-скоупнутый
+// общий лимитер их не покрывает (F1). У каждого свой лимит на IP: /health
+// бьёт по Postgres и делает исходящий вызов к сервису транскрипции на каждый
+// хит, /mcp читает/пишет через несколько запросов на вызов инструмента —
+// без лимита оба открыты для шторма прямо мимо общего REST-лимита.
+app.get('/health', healthRateLimit, async (_req, res) => {
   const report = await checkHealth();
   res.status(report.status === 'down' ? 503 : 200).json(report);
 });
@@ -74,7 +67,7 @@ app.get('/health', async (_req, res) => {
 // протокол (JSON-RPC 2.0), а не часть REST-конверта { success, data }. Тот же
 // Bearer cs_... токен, что и остальной API — requireAuth уже отклоняет запрос
 // без валидного токена 401-м до того, как тело дойдёт до handleMcp.
-app.post('/mcp', requireAuth, async (req: AuthRequest, res: Response) => {
+app.post('/mcp', mcpRateLimit, requireAuth, async (req: AuthRequest, res: Response) => {
   const userId = getUserId(req);
   if (userId == null) {
     // requireAuth гарантирует req.user, но перестраховка на случай будущих изменений
