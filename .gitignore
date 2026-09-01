@@ -3,6 +3,8 @@
 # Только корневой пример — без якоря `!.env.example` расковыряло бы игнор и для
 # apps/claude-ops-bot/.env.example (там реальный ALLOWED_TG_ID, персональные данные).
 !/.env.example
+# И пример для Meet — там перечислены переменные, без которых сервис не стартует.
+!apps/meet-api/.env.example
 config.env
 *.key
 *.pem
