@@ -31,11 +31,13 @@ import { advisorsRouter } from './advisors';
 import { commitmentsRouter } from './commitments';
 import { transcribeRouter } from './transcribe';
 import { apiTokensRouter } from './api-tokens';
+import { docsRouter } from './docs';
 
 export const router = Router();
 
 // Public routes (no auth required)
 router.use('/auth', authRouter);
+router.use(docsRouter); // GET /openapi.yaml, GET /docs — без авторизации
 router.use('/widget', widgetRouter);
 router.use('/email-webhook', emailWebhookRouter);
 router.use('/google-calendar', googleCalendarRouter);

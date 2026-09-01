@@ -1,0 +1,2624 @@
+openapi: 3.1.0
+info:
+  title: Clarity Space API
+  version: 1.0.0
+  description: |
+    Персональная система управления задачами, проектами, встречами и заметками
+    поверх Obsidian-хранилища.
+
+    ## Авторизация
+
+    Два независимых способа, оба передаются одинаково — заголовком
+    `Authorization: Bearer <токен>`:
+
+    1. **Сессионный JWT** — выдаётся при `POST /v1/auth/login` или
+       `POST /v1/auth/register`, живёт 30 дней. Несёт email, имя и роль
+       пользователя.
+    2. **Служебный API-токен** (`cs_...`) — выпускается на `POST /v1/api-tokens`
+       в уже открытой сессии, отзывается на `DELETE /v1/api-tokens/{id}`.
+       Не имеет email/имени, роль всегда `user`. Часть маршрутов — там, где это
+       явно указано в описании операции, — принимает **только** сессионный JWT
+       и отклоняет API-токен 403-м ("Служебный API-токен не может
+       использоваться для этой операции"): это операции, которые выдают новые
+       учётные данные или меняют состояние аккаунта (профиль, пароль, тариф,
+       сами API-токены).
+
+    Запрос без токена на защищённом маршруте получает `401`. Ответ,
+    объявленный ниже как `security: []`, авторизации не требует вовсе.
+
+    ## Формат ответа
+
+    Все маршруты `/v1/*` возвращают один и тот же конверт:
+
+    ```json
+    { "success": true, "data": { ... }, "meta": { ... } }
+    { "success": false, "error": "человекочитаемое сообщение" }
+    ```
+
+    `meta` присутствует не всегда. Поля `data` в этой спецификации описаны на
+    основе Zod-схем тела запроса и реального кода обработчиков; сама запись,
+    которую отдаёт база, может содержать больше служебных полей (например,
+    `vault_path`, `created_at`, `archived`) — они не перечисляются, чтобы не
+    выдавать невалидированную информацию.
+servers:
+  - url: https://clarity-space.ru
+    description: Продакшн
+  - url: http://localhost:3001
+    description: Локальная разработка
+tags:
+  - name: health
+    description: Проверка состояния сервиса
+  - name: docs
+    description: Спецификация и Swagger UI
+  - name: auth
+    description: Регистрация, вход, профиль
+  - name: api-tokens
+    description: Служебные API-токены (cs_...) для интеграций
+  - name: tasks
+    description: Задачи
+  - name: projects
+    description: Проекты
+  - name: meetings
+    description: Встречи и их расшифровки/резюме
+  - name: people
+    description: Контакты
+  - name: habits
+    description: Привычки
+  - name: goals
+    description: Цели (OKR-подобная структура)
+  - name: journal
+    description: Дневник
+  - name: ideas
+    description: Идеи
+  - name: documents
+    description: Документы и вложения
+  - name: search
+    description: Полнотекстовый поиск
+  - name: tags
+    description: Теги задач
+  - name: templates
+    description: Шаблоны задач
+  - name: export
+    description: Экспорт в CSV
+  - name: commitments
+    description: Договорённости, извлечённые из встреч
+  - name: claude-notes
+    description: Заметки, присланные из Telegram-бота
+  - name: transcribe
+    description: Расшифровка аудио без создания встречи
+  - name: ingest
+    description: Универсальная загрузка файлов/текста/ссылок в inbox
+  - name: ai
+    description: AI-чат и брифинги (требуют настроенного ключа модели)
+  - name: advisors
+    description: Совет директоров — AI-советники (требуют настроенного ключа модели)
+  - name: admin
+    description: Административная панель (только роль admin)
+  - name: todoist
+    description: Двусторонняя синхронизация с Todoist
+  - name: google-calendar
+    description: Интеграция с Google Calendar
+  - name: yandex-calendar
+    description: Интеграция с Yandex Calendar
+  - name: widget
+    description: Данные для домашних экранов/виджетов (отдельная схема ключа)
+  - name: email-webhook
+    description: Приём задач из входящей почты (webhook)
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        JWT-сессия ИЛИ служебный API-токен с префиксом `cs_`. См. описание
+        авторизации в `info.description`.
+    widgetKey:
+      type: apiKey
+      in: query
+      name: key
+      description: |
+        Отдельный долгоживущий ключ виджета (`pis_...`), не связанный с
+        bearer-схемой выше. Выдаётся на `GET /v1/widget/key` (там нужен именно
+        bearer), используется только маршрутами `GET /v1/widget/*`.
+    webhookSecret:
+      type: apiKey
+      in: query
+      name: token
+      description: |
+        Общий секрет из переменной окружения `WEBHOOK_SECRET`, сверяется
+        буквально. Можно передать и заголовком `X-Webhook-Secret` вместо
+        query-параметра `token`.
+  schemas:
+    ApiResponseOk:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        data: {}
+        meta:
+          type: object
+      required: [success]
+    ApiResponseError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+      required: [success, error]
+    HealthCheck:
+      type: object
+      properties:
+        name:
+          type: string
+          example: postgres
+        ok:
+          type: boolean
+        detail:
+          type: string
+      required: [name, ok]
+    HealthReport:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, down]
+        ts:
+          type: string
+          format: date-time
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/HealthCheck'
+      required: [status, ts, checks]
+
+    RegisterRequest:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 6 }
+        name: { type: string }
+      required: [email, password]
+    LoginRequest:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+      required: [email, password]
+    AuthUser:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [admin, user] }
+        plan: { type: string, enum: [free, pro_max] }
+    UpdateMeRequest:
+      type: object
+      properties:
+        name: { type: string }
+        password: { type: string, minLength: 6 }
+    SetPlanRequest:
+      type: object
+      properties:
+        plan: { type: string, enum: [free, pro_max] }
+      required: [plan]
+
+    ApiTokenCreateRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        ttlDays:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Срок жизни в днях; null/не указан — токен бессрочный.
+      required: [name]
+    ApiTokenCreated:
+      type: object
+      description: Сырой токен виден только в этом ответе, дальше в базе хранится лишь его SHA-256.
+      properties:
+        id: { type: integer }
+        token: { type: string, example: 'cs_AbCdEf0123...' }
+        name: { type: string }
+    ApiTokenListItem:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+
+    TaskCreateRequest:
+      type: object
+      properties:
+        project_id: { type: integer }
+        parent_id: { type: integer, nullable: true }
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        status: { type: string, enum: [backlog, todo, in_progress, done, someday], default: backlog }
+        priority: { type: integer, minimum: 1, maximum: 5, default: 3 }
+        urgency: { type: integer, minimum: 1, maximum: 5, default: 3 }
+        due_date: { type: string, format: date }
+        start_date: { type: string, format: date }
+        person_ids:
+          type: array
+          items: { type: integer }
+          description: Если не передано, задача автоматически привязывается к "себе" (person с именем "я"/"me").
+        recurrence: { type: string, nullable: true, enum: [daily, weekly, monthly], description: 'Повтор после перевода в done.' }
+        goal_id: { type: integer, nullable: true }
+      required: [title]
+    TaskUpdateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        status: { type: string, enum: [backlog, todo, in_progress, done, someday] }
+        priority: { type: integer, minimum: 1, maximum: 5 }
+        urgency: { type: integer, minimum: 1, maximum: 5 }
+        due_date: { type: string, format: date, nullable: true }
+        start_date: { type: string, format: date, nullable: true }
+        archived: { type: boolean }
+        project_id: { type: integer, nullable: true }
+        parent_id: { type: integer, nullable: true }
+        person_ids:
+          type: array
+          items: { type: integer }
+        recurrence: { type: string, nullable: true }
+    TaskMoveRequest:
+      type: object
+      properties:
+        status: { type: string, enum: [backlog, todo, in_progress, done, someday] }
+        order_index: { type: integer }
+      required: [status, order_index]
+    TaskCommentCreateRequest:
+      type: object
+      properties:
+        text: { type: string, minLength: 1 }
+      required: [text]
+    TaskDependencyCreateRequest:
+      type: object
+      properties:
+        depends_on_id: { type: integer }
+      required: [depends_on_id]
+
+    ProjectCreateRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        description: { type: string }
+        status: { type: string, enum: [active, paused, completed, archived], default: active }
+        color: { type: string, default: '#6366f1' }
+      required: [name]
+    ProjectUpdateRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        description: { type: string }
+        status: { type: string, enum: [active, paused, completed, archived] }
+        color: { type: string }
+        archived: { type: boolean }
+    ProjectReorderRequest:
+      type: array
+      items:
+        type: object
+        properties:
+          id: { type: integer }
+          order_index: { type: integer }
+        required: [id, order_index]
+
+    MeetingCreateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        date: { type: string, format: date }
+        project_id: { type: integer }
+        project_ids:
+          type: array
+          items: { type: integer }
+        summary_raw: { type: string, default: '' }
+        sync_vault: { type: boolean, default: true }
+      required: [title, date]
+    MeetingUpdateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        date: { type: string, format: date }
+        project_id: { type: integer, nullable: true }
+        project_ids:
+          type: array
+          items: { type: integer }
+        person_ids:
+          type: array
+          items: { type: integer }
+        sync_vault: { type: boolean }
+        summary_raw: { type: string }
+        meeting_type: { type: string, enum: [meeting, lecture, interview] }
+    MeetingSendToTelegramRequest:
+      type: object
+      description: Точные допустимые значения type/format не перевыведены из кода — см. параметры GET /meetings/{id}/download, они те же.
+      properties:
+        type: { type: string, enum: [summary, full, notes, qa, actions] }
+        format: { type: string, enum: [md, pdf, docx] }
+
+    PersonCreateRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        company: { type: string }
+        role: { type: string }
+        telegram: { type: string, description: '"@username" — при наличии система пытается подтянуть аватар.' }
+        email: { type: string }
+        phone: { type: string }
+        notes: { type: string }
+        project_id: { type: integer, nullable: true }
+        project_ids:
+          type: array
+          items: { type: integer }
+      required: [name]
+    PersonUpdateRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        company: { type: string }
+        role: { type: string }
+        telegram: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        notes: { type: string }
+        project_id: { type: integer, nullable: true }
+        project_ids:
+          type: array
+          items: { type: integer }
+        meet_asap: { type: boolean }
+
+    HabitCreateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        icon: { type: string, default: '✅' }
+        color: { type: string, default: '#6366f1' }
+        frequency: { type: string, enum: [daily, weekly], default: daily }
+      required: [title]
+    HabitUpdateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        icon: { type: string }
+        color: { type: string }
+        frequency: { type: string }
+        remind_time: { type: string, nullable: true }
+    HabitLogRequest:
+      type: object
+      description: Переключает лог за дату (создаёт, если не было; удаляет, если уже был).
+      properties:
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+      required: [date]
+
+    GoalCreateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        type: { type: string, enum: [goal, key_result, bhag, milestone], default: goal }
+        parent_id: { type: integer, nullable: true }
+        project_id: { type: integer, nullable: true }
+        target_value: { type: number, nullable: true }
+        unit: { type: string, default: '%' }
+        due_date: { type: string, format: date, nullable: true }
+      required: [title]
+    GoalUpdateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        type: { type: string, enum: [goal, key_result] }
+        parent_id: { type: integer, nullable: true }
+        project_id: { type: integer, nullable: true }
+        target_value: { type: number, nullable: true }
+        current_value: { type: number }
+        unit: { type: string }
+        due_date: { type: string, format: date, nullable: true }
+        status: { type: string, enum: [active, completed, cancelled] }
+
+    JournalCreateRequest:
+      type: object
+      description: Upsert по дате — повторная запись за тот же день обновляет существующую.
+      properties:
+        date: { type: string, format: date }
+        focus: { type: string, default: '' }
+        gratitude: { type: string, default: '' }
+        notes: { type: string, default: '' }
+        results: { type: string, default: '' }
+        mood: { type: integer, minimum: 1, maximum: 5, default: 3 }
+      required: [date]
+    JournalUpdateRequest:
+      type: object
+      properties:
+        focus: { type: string }
+        gratitude: { type: string }
+        notes: { type: string }
+        results: { type: string }
+        mood: { type: integer, minimum: 1, maximum: 5 }
+
+    IdeaCreateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        body: { type: string, default: '' }
+        category: { type: string, enum: [business, product, personal, growth], default: personal }
+        project_id: { type: integer, nullable: true }
+        status: { type: string, enum: [backlog, in_obsidian, completed, garbage], default: backlog }
+      required: [title]
+    IdeaUpdateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        body: { type: string }
+        category: { type: string, enum: [business, product, personal, growth] }
+        project_id: { type: integer, nullable: true }
+        status: { type: string, enum: [backlog, in_obsidian, completed, garbage] }
+
+    DocumentCreateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        body: { type: string, default: '' }
+        project_id: { type: integer, nullable: true }
+        parent_id: { type: integer, nullable: true }
+        category: { type: string, enum: [note, reference, template, archive], default: note }
+        vault_path: { type: string, nullable: true }
+        status: { type: string, enum: [draft, active, in_obsidian, archive], default: draft }
+      required: [title]
+    DocumentUpdateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        body: { type: string }
+        project_id: { type: integer, nullable: true }
+        parent_id: { type: integer, nullable: true }
+        category: { type: string, enum: [note, reference, template, archive] }
+        vault_path: { type: string, nullable: true }
+        status: { type: string, enum: [draft, active, in_obsidian, archive] }
+
+    TagCreateRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        color: { type: string, default: '#6366f1' }
+      required: [name]
+
+    TemplateCreateRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string, default: '' }
+        priority: { type: integer, minimum: 1, maximum: 5, default: 3 }
+        project_id: { type: integer, nullable: true }
+        tags: { type: string, default: '[]', description: 'JSON-строка со списком тегов.' }
+      required: [title]
+
+    ClaudeNoteCreateRequest:
+      type: object
+      properties:
+        content: { type: string, minLength: 1 }
+        source: { type: string, default: api }
+      required: [content]
+
+    AdminUpdateUserRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        email: { type: string, format: email }
+        role: { type: string, enum: [user, admin] }
+        tg_id: { type: string, nullable: true }
+    AdminResetPasswordRequest:
+      type: object
+      properties:
+        password: { type: string, minLength: 4 }
+      required: [password]
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+  responses:
+    Ok:
+      description: Успех
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseOk'
+    NotFound:
+      description: Не найдено или принадлежит другому пользователю
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseError'
+    BadRequest:
+      description: Тело запроса не прошло валидацию
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseError'
+    Unauthorized:
+      description: Токен отсутствует или недействителен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseError'
+    Forbidden:
+      description: Доступ запрещён (роль, либо маршрут не принимает API-токен)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseError'
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Состояние сервиса и его зависимостей
+      description: |
+        Без авторизации. `status: down` только если недоступен Postgres —
+        остальные проверки (vault, whisper, LLM, политика 152-ФЗ) деградируют
+        мягко и не переводят сервис в 503.
+      security: []
+      responses:
+        '200':
+          description: сервис здоров (ok) или деградирован (degraded)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthReport' }
+        '503':
+          description: отказала критичная зависимость (Postgres)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthReport' }
+
+  /v1/openapi.yaml:
+    get:
+      tags: [docs]
+      summary: Текст этой спецификации
+      security: []
+      responses:
+        '200':
+          description: OpenAPI 3.1, text/yaml
+          content:
+            text/yaml:
+              schema: { type: string }
+  /v1/docs:
+    get:
+      tags: [docs]
+      summary: Swagger UI, читает /v1/openapi.yaml
+      security: []
+      responses:
+        '200':
+          description: HTML-страница со Swagger UI
+          content:
+            text/html:
+              schema: { type: string }
+
+  /v1/auth/register:
+    post:
+      tags: [auth]
+      summary: Регистрация. Первый созданный пользователь получает роль admin.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '200':
+          description: 'токен + пользователь; needsVerification: true — письмо с кодом отправлено'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: email уже зарегистрирован
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Вход по email/паролю
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: токен + пользователь
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '401':
+          description: неверный email или пароль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/auth/verify-email:
+    post:
+      tags: [auth]
+      summary: Подтверждение email по коду из письма
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { email: { type: string }, code: { type: string } }
+              required: [email, code]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/auth/resend-code:
+    post:
+      tags: [auth]
+      summary: Повторная отправка кода подтверждения регистрации
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { email: { type: string } }
+              required: [email]
+      responses:
+        '200':
+          description: 'всегда { sent: true } — наличие email в базе не палится'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+  /v1/auth/forgot-password:
+    post:
+      tags: [auth]
+      summary: Запрос кода сброса пароля
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { email: { type: string } }
+              required: [email]
+      responses:
+        '200':
+          description: 'всегда { sent: true }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+  /v1/auth/reset-password:
+    post:
+      tags: [auth]
+      summary: Сброс пароля по коду
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                code: { type: string }
+                password: { type: string, minLength: 6 }
+              required: [email, code, password]
+      responses:
+        '200':
+          description: токен + пользователь
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Текущий пользователь и его тариф
+      description: Требует сессионный JWT — служебный API-токен отклоняется 403 (нет email/имени для полноценного ответа).
+      responses:
+        '200':
+          description: пользователь + план
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: запрос аутентифицирован API-токеном, а не сессией
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+    patch:
+      tags: [auth]
+      summary: Обновить имя и/или пароль, перевыпускает сессионный JWT
+      description: Требует сессионный JWT — служебный API-токен отклоняется 403.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMeRequest' }
+      responses:
+        '200':
+          description: новый токен + пользователь
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403':
+          description: запрос аутентифицирован API-токеном, а не сессией
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/auth/plan:
+    get:
+      tags: [auth]
+      summary: Текущий тариф и использование AI за сегодня
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [auth]
+      summary: Сменить тариф (free/pro_max), оплата не подключена
+      description: Требует сессионный JWT — служебный API-токен отклоняется 403.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetPlanRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403':
+          description: запрос аутентифицирован API-токеном, а не сессией
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/auth/users:
+    get:
+      tags: [auth]
+      summary: Список всех пользователей (только для role=admin)
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/api-tokens:
+    get:
+      tags: [api-tokens]
+      summary: Список собственных API-токенов (без значений самих токенов)
+      description: Требует сессионный JWT — служебный API-токен отклоняется 403.
+      responses:
+        '200':
+          description: массив ApiTokenListItem
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [api-tokens]
+      summary: Выпустить новый служебный API-токен
+      description: |
+        Требует сессионный JWT — служебный API-токен отклоняется 403 (иначе
+        токен мог бы бесконтрольно плодить себе замену). Сырое значение токена
+        возвращается один раз, в базе хранится только его SHA-256.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiTokenCreateRequest' }
+      responses:
+        '201':
+          description: 'id, token, name'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/api-tokens/{id}:
+    delete:
+      tags: [api-tokens]
+      summary: Отозвать токен
+      description: Требует сессионный JWT — служебный API-токен отклоняется 403. Чужой id не находит строк и возвращает 404.
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: '{ revoked: true }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/tasks:
+    get:
+      tags: [tasks]
+      summary: Список задач текущего пользователя (без вложенных подзадач в топ-уровне)
+      description: Возвращает верхнеуровневые незаархивированные задачи, каждая обогащена people/subtasks/tags/dependencies_count.
+      parameters:
+        - name: project
+          in: query
+          schema: { type: integer }
+        - name: status
+          in: query
+          schema: { type: string, enum: [backlog, todo, in_progress, done, someday] }
+        - name: person
+          in: query
+          schema: { type: integer }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [tasks]
+      summary: Создать задачу
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/tasks/process-recurring:
+    post:
+      tags: [tasks]
+      summary: Создать следующие экземпляры повторяющихся задач, переведённых в done
+      responses:
+        '200':
+          description: '{ processed, created_ids }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/tasks/{id}:
+    get:
+      tags: [tasks]
+      summary: Задача по id
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [tasks]
+      summary: Обновить поля задачи
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [tasks]
+      summary: Архивировать задачу (мягкое удаление, archived=1)
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/tasks/{id}/move:
+    patch:
+      tags: [tasks]
+      summary: Сменить статус (колонку канбана) и порядок внутри неё
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskMoveRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/tasks/{id}/comments:
+    get:
+      tags: [tasks]
+      summary: Комментарии к задаче
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [tasks]
+      summary: Добавить комментарий
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskCommentCreateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/tasks/{id}/comments/{commentId}:
+    delete:
+      tags: [tasks]
+      summary: Удалить комментарий
+      parameters:
+        - { $ref: '#/components/parameters/IdPath' }
+        - name: commentId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/tasks/{id}/dependencies:
+    get:
+      tags: [tasks]
+      summary: Список задач, от которых зависит эта
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [tasks]
+      summary: Добавить зависимость
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskDependencyCreateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/tasks/{id}/dependencies/{depId}:
+    delete:
+      tags: [tasks]
+      summary: Убрать зависимость
+      parameters:
+        - { $ref: '#/components/parameters/IdPath' }
+        - name: depId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/tasks/{id}/attachments:
+    get:
+      tags: [tasks]
+      summary: Вложения задачи
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [tasks]
+      summary: Загрузить вложение (до 50MB)
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+              required: [file]
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/projects:
+    get:
+      tags: [projects]
+      summary: Список проектов текущего пользователя
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [projects]
+      summary: Создать проект
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/projects/reorder:
+    patch:
+      tags: [projects]
+      summary: Массово задать order_index для нескольких проектов
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectReorderRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/projects/{id}:
+    get:
+      tags: [projects]
+      summary: Проект + его задачи и встречи
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [projects]
+      summary: Обновить проект
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [projects]
+      summary: Архивировать проект
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/meetings:
+    get:
+      tags: [meetings]
+      summary: Список встреч текущего пользователя
+      parameters:
+        - name: project
+          in: query
+          schema: { type: integer }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [meetings]
+      summary: Создать встречу
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MeetingCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/meetings/{id}:
+    get:
+      tags: [meetings]
+      summary: Встреча + договорённости (agreements) и участники
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [meetings]
+      summary: Обновить встречу
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MeetingUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [meetings]
+      summary: Удалить встречу безвозвратно (не архивирование, в отличие от задач/проектов)
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/meetings/{id}/transcribe:
+    post:
+      tags: [meetings]
+      summary: Загрузить аудио/видео и запустить фоновую расшифровку + авто-резюме
+      description: Отвечает 202 сразу; статус смотреть в поле processing_status встречи через GET /meetings/{id}. Файл — multipart/form-data, поле audio.
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                audio: { type: string, format: binary }
+                summarize: { type: string, description: "'false' отключает авто-резюме после расшифровки" }
+      responses:
+        '202':
+          description: задача поставлена в очередь
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/meetings/{id}/summarize:
+    post:
+      tags: [meetings]
+      summary: Сгенерировать AI-резюме из уже имеющегося summary_raw и дописать его в начало
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200':
+          description: '{ summary, summary_raw }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/meetings/{id}/regenerate-summaries:
+    post:
+      tags: [meetings]
+      summary: Пересобрать структурированное резюме (Notes/Q&A/Actions) из транскрипта, асинхронно
+      description: Отвечает сразу { status:"generating" }, результат приходит в summary_structured встречи позже.
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                meeting_type: { type: string, enum: [meeting, lecture, interview] }
+      responses:
+        '200':
+          description: '{ status: "generating", meeting_type }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/meetings/{id}/download-token:
+    post:
+      tags: [meetings]
+      summary: Выпустить короткоживущий (10 мин) токен для GET /meetings/{id}/download
+      description: Полная сессия в скачиваемую ссылку не подставляется намеренно — только этот scoped-токен.
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200':
+          description: '{ token }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/meetings/{id}/download:
+    get:
+      tags: [meetings]
+      summary: Скачать файл встречи (md/pdf/docx)
+      description: |
+        Публичный маршрут (смонтирован до requireAuth) — обычная навигация
+        браузера не может отправить заголовок Authorization. Авторизуется
+        сам: либо заголовком Authorization с обычной сессией, либо
+        query-параметром `?token=` со scoped-токеном из
+        `POST /meetings/{id}/download-token` (полный 30-дневный JWT в query
+        не принимается никогда).
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/IdPath' }
+        - name: token
+          in: query
+          schema: { type: string }
+          description: scoped-токен из download-token; обязателен, если нет заголовка Authorization
+        - name: type
+          in: query
+          schema: { type: string, enum: [summary, full, notes, qa, actions], default: summary }
+        - name: format
+          in: query
+          schema: { type: string, enum: [md, pdf, docx], default: md }
+      responses:
+        '200':
+          description: файл на скачивание
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/meetings/{id}/send-to-telegram:
+    post:
+      tags: [meetings]
+      summary: Отправить файл встречи в Telegram-бот пользователя
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MeetingSendToTelegramRequest' }
+      responses:
+        '200':
+          description: '{ sent: true, format, type }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/people:
+    get:
+      tags: [people]
+      summary: Список контактов
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [people]
+      summary: Создать контакт
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PersonCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/people/{id}:
+    patch:
+      tags: [people]
+      summary: Обновить контакт
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PersonUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [people]
+      summary: Удалить контакт безвозвратно
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/people/{id}/history:
+    get:
+      tags: [people]
+      summary: Встречи, договорённости и задачи, связанные с контактом
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/people/{id}/photo:
+    post:
+      tags: [people]
+      summary: Загрузить фото контакта вручную (jpg/png/webp/gif, до 10MB)
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+              required: [file]
+      responses:
+        '200':
+          description: '{ photo_url }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/people/{id}/refresh-photo:
+    post:
+      tags: [people]
+      summary: Подтянуть аватар из Telegram по указанному @username контакта
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200':
+          description: '{ photo_url }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/habits:
+    get:
+      tags: [habits]
+      summary: Список активных привычек со streak (серией подряд идущих дней)
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [habits]
+      summary: Создать привычку
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HabitCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/habits/stats:
+    get:
+      tags: [habits]
+      summary: Статистика выполнения привычек за текущий месяц
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/habits/{id}:
+    patch:
+      tags: [habits]
+      summary: Обновить привычку
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HabitUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [habits]
+      summary: Архивировать привычку
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/habits/{id}/log:
+    post:
+      tags: [habits]
+      summary: Переключить отметку выполнения за дату
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HabitLogRequest' }
+      responses:
+        '200':
+          description: '{ logged: boolean, date }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/goals:
+    get:
+      tags: [goals]
+      summary: Цели верхнего уровня (goal/bhag) с вложенными key_result/milestone
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [goals]
+      summary: Создать цель
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoalCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/goals/{id}:
+    patch:
+      tags: [goals]
+      summary: Обновить цель
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoalUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [goals]
+      summary: Удалить цель
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/goals/{id}/mindmap:
+    get:
+      tags: [goals]
+      summary: Представление цели и её узлов в виде mindmap
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/goals/{id}/mindmap-positions:
+    get:
+      tags: [goals]
+      summary: Сохранённые координаты узлов mindmap
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+    put:
+      tags: [goals]
+      summary: Сохранить координаты узлов mindmap
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /v1/goals/{id}/decompose:
+    post:
+      tags: [goals]
+      summary: AI-декомпозиция цели на key results/задачи
+      description: Требует настроенного ключа модели (см. GET /health, проверка llm).
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/goals/{id}/nodes:
+    patch:
+      tags: [goals]
+      summary: Обновить узлы mindmap цели
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /v1/goals/{id}/tasks-to-kanban:
+    post:
+      tags: [goals]
+      summary: Превратить узлы-задачи mindmap в реальные задачи канбана
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/journal:
+    get:
+      tags: [journal]
+      summary: Последние 60 записей дневника
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [journal]
+      summary: Создать или обновить запись (upsert по date)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JournalCreateRequest' }
+      responses:
+        '200':
+          description: запись обновлена (уже существовала за эту дату)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '201':
+          description: запись создана
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/journal/{id}:
+    patch:
+      tags: [journal]
+      summary: Обновить запись дневника по id
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JournalUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/ideas:
+    get:
+      tags: [ideas]
+      summary: Список идей
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string, enum: [business, product, personal, growth] }
+        - name: project
+          in: query
+          schema: { type: integer }
+        - name: status
+          in: query
+          schema: { type: string, enum: [backlog, in_obsidian, completed, garbage] }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [ideas]
+      summary: Создать идею
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdeaCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/ideas/{id}:
+    get:
+      tags: [ideas]
+      summary: Идея по id
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [ideas]
+      summary: Обновить идею (перевод в status=in_obsidian синхронизирует её в vault)
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdeaUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [ideas]
+      summary: Удалить идею безвозвратно
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/documents:
+    get:
+      tags: [documents]
+      summary: Список документов, опционально деревом
+      parameters:
+        - name: project
+          in: query
+          schema: { type: integer }
+        - name: category
+          in: query
+          schema: { type: string, enum: [note, reference, template, archive] }
+        - name: tree
+          in: query
+          schema: { type: string, enum: ['true'] }
+          description: "'true' — вернуть иерархию parent_id/children вместо плоского списка."
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [documents]
+      summary: Создать документ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DocumentCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/documents/{id}:
+    get:
+      tags: [documents]
+      summary: Документ по id
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [documents]
+      summary: Обновить документ
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DocumentUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [documents]
+      summary: Удалить документ (дочерние документы становятся корневыми, не удаляются)
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/documents/{id}/ancestors:
+    get:
+      tags: [documents]
+      summary: Цепочка родителей документа (для хлебных крошек)
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /v1/documents/{id}/attachments:
+    get:
+      tags: [documents]
+      summary: Вложения документа
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [documents]
+      summary: Загрузить вложение к документу (до 50MB)
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+              required: [file]
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/documents/attachments/{attId}:
+    delete:
+      tags: [documents]
+      summary: Удалить вложение документа
+      parameters:
+        - name: attId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/documents/attachments/file/{filename}:
+    get:
+      tags: [documents]
+      summary: Скачать файл вложения (публично, без проверки владельца)
+      description: |
+        Публичный маршрут — зарегистрирован в `routes/index.ts` до
+        `requireAuth` и до монтирования `documentsRouter`, поэтому именно он
+        обрабатывает этот путь для GET (в `documentsRouter` есть одноимённый
+        обработчик с проверкой владения документом, но Express matчит первый
+        зарегистрированный маршрут — до него запрос не доходит). Модель
+        безопасности — неугадываемое имя файла, не авторизация. Изображения
+        отдаются inline, остальные типы — принудительно как вложение
+        (`Content-Disposition: attachment`) с `X-Content-Type-Options: nosniff`.
+      security: []
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: файл на скачивание
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/search:
+    get:
+      tags: [search]
+      summary: Полнотекстовый поиск по задачам/встречам/людям/идеям/документам
+      description: Задачи ищутся через tsvector (ранжирование), остальные сущности — через ILIKE.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/search/reindex:
+    post:
+      tags: [search]
+      summary: Не требуется — tsvector обновляется триггерами БД автоматически
+      description: Оставлен для обратной совместимости с фронтендом; ничего не делает.
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /v1/tags:
+    get:
+      tags: [tags]
+      summary: Теги текущего пользователя
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [tags]
+      summary: Создать тег
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TagCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/tags/{id}:
+    delete:
+      tags: [tags]
+      summary: Удалить тег
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/tags/tasks/{taskId}/tags/{tagId}:
+    post:
+      tags: [tags]
+      summary: Привязать тег к задаче
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: tagId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [tags]
+      summary: Отвязать тег от задачи
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: tagId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/templates:
+    get:
+      tags: [templates]
+      summary: Шаблоны задач текущего пользователя
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [templates]
+      summary: Создать шаблон
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplateCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/templates/{id}:
+    delete:
+      tags: [templates]
+      summary: Удалить шаблон
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/templates/{id}/create-task:
+    post:
+      tags: [templates]
+      summary: Создать задачу (status=todo) из шаблона
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/export/tasks.csv:
+    get:
+      tags: [export]
+      summary: Экспорт незаархивированных задач в CSV (Excel, UTF-8 с BOM)
+      responses:
+        '200':
+          description: CSV-файл
+          content:
+            text/csv:
+              schema: { type: string }
+  /v1/export/meetings.csv:
+    get:
+      tags: [export]
+      summary: Экспорт встреч в CSV
+      responses:
+        '200':
+          description: CSV-файл
+          content:
+            text/csv:
+              schema: { type: string }
+
+  /v1/commitments:
+    get:
+      tags: [commitments]
+      summary: Договорённости, извлечённые из встреч, разбитые на "мои" и "чужие"
+      description: mine — commitment_type=my_task; theirs — всё остальное (их обязательства и взаимные договорённости).
+      responses:
+        '200':
+          description: '{ mine: [...], theirs: [...] }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/claude-notes:
+    get:
+      tags: [claude-notes]
+      summary: Заметки, присланные из Telegram-бота (или API)
+      parameters:
+        - name: pending
+          in: query
+          schema: { type: string, enum: ['true'] }
+          description: "'true' — только необработанные (processed=0)."
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [claude-notes]
+      summary: Создать заметку
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClaudeNoteCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/claude-notes/{id}:
+    patch:
+      tags: [claude-notes]
+      summary: Отметить обработанной и/или привязать к vault_path
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                processed: { type: boolean }
+                vault_path: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [claude-notes]
+      summary: Удалить заметку
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /v1/transcribe:
+    get:
+      tags: [transcribe]
+      summary: Последние 20 задач расшифровки текущего пользователя
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [transcribe]
+      summary: Загрузить аудио/видео (до 500MB) и расшифровать без создания встречи
+      description: Отвечает 202 сразу, статус смотреть в GET /transcribe/{id}.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+              required: [file]
+      responses:
+        '202':
+          description: '{ id, status: "processing" }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/transcribe/{id}:
+    get:
+      tags: [transcribe]
+      summary: Статус, текст и резюме задачи расшифровки
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [transcribe]
+      summary: Удалить задачу расшифровки
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /v1/transcribe/{id}/summarize:
+    post:
+      tags: [transcribe]
+      summary: Структурированное AI-резюме расшифровки (без создания встречи)
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200':
+          description: '{ summary }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/ingest:
+    get:
+      tags: [ingest]
+      summary: Последние 50 элементов inbox текущего пользователя
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [ingest]
+      summary: Загрузить файл, текст или ссылку — распознаётся и превращается в задачи/встречи/идеи
+      description: Ровно одно из полей — file (multipart), text или url. Опционально project_id — привязать созданные записи к проекту.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                text: { type: string }
+                url: { type: string }
+                project_id: { type: string }
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/ingest/status/{id}:
+    get:
+      tags: [ingest]
+      summary: Статус обработки элемента inbox
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/ingest/{id}:
+    delete:
+      tags: [ingest]
+      summary: Удалить элемент inbox
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/ai/chat:
+    post:
+      tags: [ai]
+      summary: AI-чат с контекстом vault
+      description: |
+        Требует настроенный ключ модели — без него весь роутер отвечает 501
+        (см. `checkLlm` в GET /health). Ограничен дневным лимитом сообщений
+        (тариф free — 50/день, отвечает 429 при превышении).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      role: { type: string, enum: [user, assistant] }
+                      content: { type: string }
+                    required: [role, content]
+                context: { type: string }
+              required: [messages]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429':
+          description: превышен дневной лимит AI-сообщений
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+        '501':
+          description: ключ модели не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/ai/daily-brief:
+    post:
+      tags: [ai]
+      summary: Ежедневный AI-брифинг по задачам/встречам/привычкам
+      description: Требует настроенный ключ модели (иначе 501).
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '429':
+          description: превышен дневной лимит AI-сообщений
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+        '501':
+          description: ключ модели не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/ai/weekly-brief:
+    post:
+      tags: [ai]
+      summary: Еженедельный AI-брифинг
+      description: Требует настроенный ключ модели (иначе 501).
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '501':
+          description: ключ модели не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/ai/voice-command:
+    post:
+      tags: [ai]
+      summary: Голосовая команда → структурированное действие (создание задачи и т.п.)
+      description: Требует настроенный ключ модели (иначе 501).
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '501':
+          description: ключ модели не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/ai/daily-plan:
+    post:
+      tags: [ai]
+      summary: AI-план на день
+      description: Требует настроенный ключ модели (иначе 501).
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '501':
+          description: ключ модели не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/ai/productivity-analysis:
+    post:
+      tags: [ai]
+      summary: AI-анализ продуктивности
+      description: Требует настроенный ключ модели (иначе 501).
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '501':
+          description: ключ модели не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/ai/search:
+    get:
+      tags: [ai]
+      summary: AI-переранжированный поиск
+      description: Требует настроенный ключ модели (иначе 501).
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '501':
+          description: ключ модели не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+
+  /v1/advisors:
+    get:
+      tags: [advisors]
+      summary: Список доступных AI-советников (без системного промпта персоны)
+      description: |
+        Требует настроенный ключ advisor-клиента (ADVISOR_OPENAI_API_KEY,
+        либо фолбэк на OPENAI_API_KEY) — без него весь роутер отвечает 501.
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '501':
+          description: совет директоров не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/advisors/analyze:
+    post:
+      tags: [advisors]
+      summary: Разбор ситуации выбранными советниками
+      description: Требует настроенный ключ advisor-клиента (иначе 501).
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '501':
+          description: совет директоров не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/advisors/chat:
+    post:
+      tags: [advisors]
+      summary: Диалог с одним советником
+      description: Требует настроенный ключ advisor-клиента (иначе 501).
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '501':
+          description: совет директоров не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/advisors/synthesize:
+    post:
+      tags: [advisors]
+      summary: Свести мнения нескольких советников в общий вывод
+      description: Требует настроенный ключ advisor-клиента (иначе 501).
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '501':
+          description: совет директоров не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/advisors/council-chat:
+    post:
+      tags: [advisors]
+      summary: Групповой чат с несколькими советниками одновременно
+      description: Требует настроенный ключ advisor-клиента (иначе 501).
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '501':
+          description: совет директоров не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/advisors/sessions/{id}:
+    get:
+      tags: [advisors]
+      summary: История сессии совета директоров
+      description: Требует настроенный ключ advisor-клиента (иначе 501).
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '501':
+          description: совет директоров не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+
+  /v1/admin/stats:
+    get:
+      tags: [admin]
+      summary: Данные для дашборда админа (пользователи, использование и т.п.)
+      description: Только role=admin.
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/admin/users/{id}:
+    get:
+      tags: [admin]
+      summary: Карточка пользователя для редактирования
+      description: Только role=admin.
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [admin]
+      summary: Изменить данные пользователя (имя, email, роль, tg_id)
+      description: Только role=admin.
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminUpdateUserRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [admin]
+      summary: Удалить пользователя и все его данные (каскадно)
+      description: Только role=admin. Нельзя удалить самого себя (400).
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/admin/users/{id}/reset-password:
+    post:
+      tags: [admin]
+      summary: Задать новому пользователю пароль напрямую
+      description: Только role=admin.
+      parameters: [{ $ref: '#/components/parameters/IdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminResetPasswordRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/todoist/status:
+    get:
+      tags: [todoist]
+      summary: Подключён ли Todoist у текущего пользователя
+      description: |
+        Роутер смонтирован в `routes/index.ts` до `requireAuth` (публично), но
+        каждый обработчик сам требует bearer-токен через `getUserId(req)` —
+        без него отвечает как неавторизованный запрос, а не 401 автоматически.
+        Здесь конкретно: без токена просто возвращает `{ connected: false }`.
+      responses:
+        '200':
+          description: '{ connected: boolean }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+  /v1/todoist/connect-token:
+    post:
+      tags: [todoist]
+      summary: Подключить Todoist по личному API-токену (без OAuth)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { token: { type: string } }
+              required: [token]
+      responses:
+        '200':
+          description: '{ connected: true }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/todoist/disconnect:
+    post:
+      tags: [todoist]
+      summary: Отключить Todoist
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/todoist/projects:
+    get:
+      tags: [todoist]
+      summary: Проекты Todoist подключённого аккаунта
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/todoist/mapping:
+    get:
+      tags: [todoist]
+      summary: Маппинг проектов Clarity Space ↔ Todoist
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [todoist]
+      summary: Задать маппинг проекта Clarity Space ↔ Todoist
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/todoist/sync:
+    post:
+      tags: [todoist]
+      summary: Полная двусторонняя синхронизация (pull + push + авто-создание проектов)
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/todoist/auth:
+    get:
+      tags: [todoist]
+      summary: Редирект на OAuth Todoist (требует bearer, начинает флоу подключения)
+      security: []
+      responses:
+        '302':
+          description: редирект на todoist.com
+        '400':
+          description: TODOIST_CLIENT_ID не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/todoist/callback:
+    get:
+      tags: [todoist]
+      summary: OAuth callback Todoist (вызывается Todoist, не клиентом напрямую)
+      description: Авторизуется подписанным state-параметром (JWT на 10 минут), а не заголовком Authorization.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: HTML-страница "Todoist подключён"
+          content:
+            text/html:
+              schema: { type: string }
+        '400':
+          description: код/state отсутствует или недействителен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+
+  /v1/google-calendar/status:
+    get:
+      tags: [google-calendar]
+      summary: Подключён ли Google Calendar
+      description: Роутер смонтирован публично (см. описание для /v1/todoist/status) — та же модель авторизации per-handler.
+      responses:
+        '200':
+          description: '{ connected: boolean }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+  /v1/google-calendar/disconnect:
+    post:
+      tags: [google-calendar]
+      summary: Отключить Google Calendar
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/google-calendar/sync:
+    post:
+      tags: [google-calendar]
+      summary: Синхронизировать события с Google Calendar
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/google-calendar/events:
+    get:
+      tags: [google-calendar]
+      summary: Список событий из Google Calendar
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [google-calendar]
+      summary: Создать событие в Google Calendar
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/google-calendar/events/{eventId}:
+    patch:
+      tags: [google-calendar]
+      summary: Обновить событие Google Calendar
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [google-calendar]
+      summary: Удалить событие Google Calendar
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/google-calendar/calendars:
+    get:
+      tags: [google-calendar]
+      summary: Список календарей аккаунта Google
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/google-calendar/auth:
+    get:
+      tags: [google-calendar]
+      summary: Редирект на OAuth Google (требует bearer)
+      security: []
+      responses:
+        '302':
+          description: редирект на accounts.google.com
+        '400':
+          description: GOOGLE_CLIENT_ID не настроен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/google-calendar/callback:
+    get:
+      tags: [google-calendar]
+      summary: OAuth callback Google (вызывается Google)
+      description: Авторизуется подписанным state-параметром, а не заголовком Authorization.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: успешное подключение
+        '400':
+          description: код/state отсутствует или недействителен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+        '403':
+          description: state недействителен или истёк
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+
+  /v1/yandex-calendar/status:
+    get:
+      tags: [yandex-calendar]
+      summary: Подключён ли Yandex Calendar
+      description: Роутер смонтирован публично (см. описание для /v1/todoist/status) — та же модель авторизации per-handler.
+      responses:
+        '200':
+          description: '{ connected: boolean }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+  /v1/yandex-calendar/disconnect:
+    post:
+      tags: [yandex-calendar]
+      summary: Отключить Yandex Calendar
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/yandex-calendar/events:
+    get:
+      tags: [yandex-calendar]
+      summary: Список событий из Yandex Calendar
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/yandex-calendar/auth:
+    get:
+      tags: [yandex-calendar]
+      summary: Редирект на OAuth Yandex (требует bearer)
+      security: []
+      responses:
+        '302':
+          description: редирект на oauth.yandex.ru
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/yandex-calendar/callback:
+    get:
+      tags: [yandex-calendar]
+      summary: OAuth callback Yandex (вызывается Yandex)
+      description: Авторизуется подписанным state-параметром, а не заголовком Authorization.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: успешное подключение
+        '400':
+          description: код/state отсутствует или недействителен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+
+  /v1/widget/key:
+    get:
+      tags: [widget]
+      summary: Выдать (или вернуть существующий) API-ключ виджета (pis_...)
+      description: Единственный маршрут виджета, использующий обычную bearer-схему — остальные используют widgetKey (?key=).
+      responses:
+        '200':
+          description: '{ api_key }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/widget/key/rotate:
+    post:
+      tags: [widget]
+      summary: Отозвать старый ключ виджета и выдать новый
+      responses:
+        '200':
+          description: '{ api_key }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/widget/today:
+    get:
+      tags: [widget]
+      summary: Данные для домашнего экрана — задачи, привычки, встречи, фокус дня
+      security:
+        - widgetKey: []
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/widget/render:
+    get:
+      tags: [widget]
+      summary: Готовый HTML-виджет для Android web-widget приложений
+      security:
+        - widgetKey: []
+      responses:
+        '200':
+          description: HTML (в т.ч. при невалидном ключе — страница с сообщением об ошибке, не JSON)
+          content:
+            text/html:
+              schema: { type: string }
+  /v1/widget/week:
+    get:
+      tags: [widget]
+      summary: Сводка за неделю для виджета
+      security:
+        - widgetKey: []
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/email-webhook:
+    post:
+      tags: [email-webhook]
+      summary: Создать задачу из пересланного письма (Zapier/Make/n8n/прямой webhook)
+      description: |
+        Публичный маршрут — вместо bearer использует общий секрет
+        (см. схему webhookSecret). Пользователь указывается явно —
+        `?user_id=` / `body.user_id`, либо переменной окружения
+        `WEBHOOK_DEFAULT_USER_ID`.
+      security:
+        - webhookSecret: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subject: { type: string }
+                from: { type: string }
+                text: { type: string }
+                html: { type: string }
+                body: { type: string }
+                user_id: { type: integer }
+      responses:
+        '200':
+          description: '{ task_id, title }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403':
+          description: неверный или отсутствующий секрет webhook
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseError' }
+  /v1/email-webhook/test:
+    get:
+      tags: [email-webhook]
+      summary: Проверка доступности webhook (без создания задачи)
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
