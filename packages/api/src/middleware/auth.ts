@@ -21,9 +21,16 @@ export async function authMiddleware(req: AuthRequest, _res: Response, next: Nex
   const header = req.headers['authorization'];
   let token = header ? (header.startsWith('Bearer ') ? header.slice(7) : header) : '';
 
-  // Fallback: token in query param (for direct URL downloads on mobile)
+  // Fallback: JWT in query param (for direct URL downloads on mobile). API-токены
+  // (cs_...) из query-параметра НЕ принимаются ни при каких условиях — иначе сырой
+  // токен оседает в логах nginx, истории браузера и заголовке Referer. Такое
+  // значение просто игнорируется, запрос остаётся анонимным вместо попытки
+  // разобрать его как JWT.
   if (!token && req.query['token']) {
-    token = String(req.query['token']);
+    const queryToken = String(req.query['token']);
+    if (!queryToken.startsWith(API_TOKEN_PREFIX)) {
+      token = queryToken;
+    }
   }
 
   if (!token) {

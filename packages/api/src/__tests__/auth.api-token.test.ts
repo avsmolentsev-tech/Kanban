@@ -10,8 +10,8 @@ import { verifyToken } from '../services/api-tokens';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { config } from '../config';
 
-function makeReq(headers: Record<string, string> = {}): AuthRequest {
-  return { headers, query: {} } as unknown as AuthRequest;
+function makeReq(headers: Record<string, string> = {}, query: Record<string, string> = {}): AuthRequest {
+  return { headers, query } as unknown as AuthRequest;
 }
 
 const res = {} as Response;
@@ -68,6 +68,25 @@ describe('authMiddleware — ветка API-токенов', () => {
     const req = makeReq({ authorization: 'Bearer garbage.not.a.jwt' });
     const next = jest.fn();
     await authMiddleware(req, res, next as NextFunction);
+    expect(req.user).toBeUndefined();
+    expect(verifyToken).not.toHaveBeenCalled();
+  });
+
+  test('?token=cs_... в query-параметре остаётся анонимным — API-токены принимаются только из заголовка', async () => {
+    const req = makeReq({}, { token: 'cs_leaked-in-url' });
+    const next = jest.fn();
+    await authMiddleware(req, res, next as NextFunction);
+    expect(req.user).toBeUndefined();
+    expect(verifyToken).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  test('?token=<JWT> в query-параметре продолжает работать (регрессия для скачивания по ссылке)', async () => {
+    const token = jwt.sign({ id: 1, email: 'a@b.com', name: 'A', role: 'user', purpose: 'download' }, config.jwtSecret);
+    const req = makeReq({}, { token });
+    const next = jest.fn();
+    await authMiddleware(req, res, next as NextFunction);
+    // purpose: 'download' — не сессия, но и не отклонена как cs_-токен из query
     expect(req.user).toBeUndefined();
     expect(verifyToken).not.toHaveBeenCalled();
   });
