@@ -129,3 +129,10 @@ body {
 }
 
 .кнопка--тихая:hover { color: var(--текст) !important; border-color: var(--акцент) !important; }
+
+.сноска {
+  font-size: 12px;
+  color: var(--приглушённый);
+  opacity: 0.75;
+  line-height: 1.4;
+}

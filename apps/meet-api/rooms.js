@@ -6,8 +6,12 @@
  * попадает в имя комнаты LiveKit, в ссылку и в пути к файлам записи, поэтому
  * обязан быть безопасным для URL и файловой системы.
  *
+ * У каждой комнаты свой пароль — или его нет вовсе, и тогда пропуском служит
+ * сама ссылка. Идентификатор из девяти символов алфавита в 31 знак даёт
+ * порядка 2.6e13 вариантов, перебором такое не находится.
+ *
  * Хранение — JSON-файл на диске. Для прототипа этого достаточно, а переезд
- * в Postgres будет заменой трёх функций ниже.
+ * в Postgres будет заменой функций ниже.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -44,21 +48,58 @@ function новыйId() {
 
 const ID_RE = /^[a-z2-9]{3}-[a-z2-9]{3}-[a-z2-9]{3}$/;
 
-/** Создать комнату с произвольным названием. Возвращает {id, title}. */
-function создать(title) {
+/**
+ * Пароль комнаты хранится хешем со своей солью. scrypt, а не голый sha256:
+ * пароли встреч люди делают короткими и предсказуемыми, а scrypt намеренно
+ * медленный и требует памяти, поэтому перебор украденного файла невыгоден.
+ */
+function захешировать(пароль) {
+  const соль = crypto.randomBytes(16);
+  const хеш = crypto.scryptSync(пароль, соль, 32);
+  return `${соль.toString('hex')}:${хеш.toString('hex')}`;
+}
+
+function сверить(пароль, хранимое) {
+  if (!хранимое) return true; // у комнаты нет пароля — пускаем по ссылке
+  const [сольHex, хешHex] = String(хранимое).split(':');
+  if (!сольHex || !хешHex) return false;
+  const ожидаемый = Buffer.from(хешHex, 'hex');
+  const полученный = crypto.scryptSync(String(пароль ?? ''), Buffer.from(сольHex, 'hex'), 32);
+  return ожидаемый.length === полученный.length && crypto.timingSafeEqual(ожидаемый, полученный);
+}
+
+/**
+ * Создать комнату. Пароль необязателен: без него пропуском служит ссылка.
+ * Возвращает {id, title, защищена}.
+ */
+function создать(title, пароль) {
   const данные = прочитать();
   let id = новыйId();
   while (данные[id]) id = новыйId();
-  данные[id] = { title, createdAt: new Date().toISOString() };
+  const есть = typeof пароль === 'string' && пароль.length > 0;
+  данные[id] = {
+    title,
+    passwordHash: есть ? захешировать(пароль) : null,
+    createdAt: new Date().toISOString(),
+  };
   записать(данные);
-  return { id, title };
+  return { id, title, защищена: есть };
 }
 
-/** Найти комнату по идентификатору. Возвращает {id, title} или null. */
+/** Найти комнату. Возвращает {id, title, защищена} или null. Хеш наружу не отдаём. */
 function найти(id) {
   if (typeof id !== 'string' || !ID_RE.test(id)) return null;
   const запись = прочитать()[id];
-  return запись ? { id, title: запись.title } : null;
+  if (!запись) return null;
+  return { id, title: запись.title, защищена: Boolean(запись.passwordHash) };
 }
 
-module.exports = { создать, найти, ID_RE };
+/** Проверить пароль входа в комнату. Для комнаты без пароля всегда true. */
+function пропустить(id, пароль) {
+  if (typeof id !== 'string' || !ID_RE.test(id)) return false;
+  const запись = прочитать()[id];
+  if (!запись) return false;
+  return сверить(пароль, запись.passwordHash);
+}
+
+module.exports = { создать, найти, пропустить, ID_RE };

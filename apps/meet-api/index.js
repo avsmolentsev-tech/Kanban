@@ -76,10 +76,12 @@ app.get('/api/health', (_req, res) => {
  * ни в URL, ни в имена файлов. Для этого есть идентификатор.
  */
 app.post('/api/rooms', (req, res) => {
-  const { title, password } = req.body ?? {};
+  const { title, servicePassword, roomPassword } = req.body ?? {};
 
-  if (!passwordMatches(password)) {
-    res.status(401).json({ error: 'Неверный пароль' });
+  // Пароль сервиса — это ответ на вопрос «кому вообще можно заводить встречи
+  // на нашем сервере». Он не имеет отношения к паролю самой встречи.
+  if (!passwordMatches(servicePassword)) {
+    res.status(401).json({ error: 'Неверный пароль сервиса' });
     return;
   }
   const название = typeof title === 'string' ? title.trim().slice(0, 120) : '';
@@ -87,9 +89,17 @@ app.post('/api/rooms', (req, res) => {
     res.status(400).json({ error: 'Укажите название встречи' });
     return;
   }
+  const парольВстречи = typeof roomPassword === 'string' ? roomPassword.trim() : '';
+  if (парольВстречи && парольВстречи.length < 4) {
+    res.status(400).json({ error: 'Пароль встречи — от 4 символов, либо оставьте поле пустым' });
+    return;
+  }
 
-  const комната = комнаты.создать(название);
-  console.log(`[meet-api] создана комната ${комната.id}: ${название}`);
+  const комната = комнаты.создать(название, парольВстречи || undefined);
+  console.log(
+    `[meet-api] создана комната ${комната.id}: ${название}` +
+    (комната.защищена ? ' (с паролем)' : ' (вход по ссылке)'),
+  );
   res.status(201).json(комната);
 });
 
@@ -109,13 +119,15 @@ app.get('/api/rooms/:id', (req, res) => {
 app.post('/api/token', (req, res) => {
   const { name, roomId, password } = req.body ?? {};
 
-  if (!passwordMatches(password)) {
-    res.status(401).json({ error: 'Неверный пароль' });
-    return;
-  }
   const комната = комнаты.найти(roomId);
   if (!комната) {
     res.status(404).json({ error: 'Встреча не найдена. Проверьте ссылку.' });
+    return;
+  }
+  // Пароль проверяется у самой встречи. Если её создали без пароля, пропуском
+  // служит ссылка: идентификатор из девяти символов перебором не находится.
+  if (!комнаты.пропустить(комната.id, password)) {
+    res.status(401).json({ error: 'Неверный пароль встречи' });
     return;
   }
   const room = комната.id;

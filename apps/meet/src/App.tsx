@@ -4,7 +4,7 @@ import { LiveKitRoom, VideoConference, PreJoin, type LocalUserChoices } from '@l
 /** Адрес сигналинга. Медиа сюда не идёт — оно летит напрямую в SFU по UDP. */
 const LIVEKIT_URL = 'wss://livekit.clarity-space.ru';
 
-type Комната = { id: string; title: string };
+type Комната = { id: string; title: string; защищена: boolean };
 
 type Экран =
   | { вид: 'загрузка' }
@@ -24,7 +24,8 @@ export default function App() {
   const [экран, setЭкран] = useState<Экран>({ вид: 'загрузка' });
   const [название, setНазвание] = useState('');
   const [имя, setИмя] = useState(() => localStorage.getItem('meet-имя') ?? '');
-  const [пароль, setПароль] = useState('');
+  const [парольСервиса, setПарольСервиса] = useState('');
+  const [парольВстречи, setПарольВстречи] = useState('');
   const [ошибка, setОшибка] = useState<string | null>(null);
   const [занято, setЗанято] = useState(false);
   const [скопировано, setСкопировано] = useState(false);
@@ -56,7 +57,11 @@ export default function App() {
       const r = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: название.trim(), password: пароль }),
+        body: JSON.stringify({
+          title: название.trim(),
+          servicePassword: парольСервиса,
+          roomPassword: парольВстречи,
+        }),
       });
       const тело = await r.json().catch(() => ({}));
       if (!r.ok) { setОшибка(тело?.error ?? 'Не удалось создать встречу'); return; }
@@ -79,7 +84,7 @@ export default function App() {
       const r = await fetch('/api/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: имя.trim(), roomId: комната.id, password: пароль }),
+        body: JSON.stringify({ name: имя.trim(), roomId: комната.id, password: парольВстречи }),
       });
       const тело = await r.json().catch(() => ({}));
       if (!r.ok) { setОшибка(тело?.error ?? 'Не удалось войти'); return; }
@@ -123,9 +128,18 @@ export default function App() {
           </label>
 
           <label>
-            Пароль
-            <input type="password" value={пароль} onChange={(e) => setПароль(e.target.value)}
+            Пароль сервиса
+            <input type="password" value={парольСервиса} onChange={(e) => setПарольСервиса(e.target.value)}
                    autoComplete="current-password" required />
+          </label>
+
+          <label>
+            Пароль встречи
+            <input type="password" value={парольВстречи} onChange={(e) => setПарольВстречи(e.target.value)}
+                   autoComplete="new-password" placeholder="можно не задавать" />
+            <span className="сноска">
+              Оставьте пустым — тогда войти сможет любой, у кого есть ссылка.
+            </span>
           </label>
 
           {ошибка && <div className="ошибка">{ошибка}</div>}
@@ -153,7 +167,11 @@ export default function App() {
             </button>
           </div>
 
-          <p className="подпись">Пароль сообщите отдельно — в ссылке его нет намеренно.</p>
+          <p className="подпись">
+            {экран.комната.защищена
+              ? 'Пароль встречи сообщите отдельно — в ссылке его нет намеренно.'
+              : 'Пароль не нужен: войдёт любой, у кого есть эта ссылка.'}
+          </p>
 
           <form onSubmit={войти} style={{ display: 'contents' }}>
             <label>
@@ -184,11 +202,13 @@ export default function App() {
                    placeholder="Иван Петров" required maxLength={60} autoFocus />
           </label>
 
-          <label>
-            Пароль
-            <input type="password" value={пароль} onChange={(e) => setПароль(e.target.value)}
-                   autoComplete="current-password" required />
-          </label>
+          {экран.комната.защищена && (
+            <label>
+              Пароль встречи
+              <input type="password" value={парольВстречи} onChange={(e) => setПарольВстречи(e.target.value)}
+                     autoComplete="current-password" required />
+            </label>
+          )}
 
           {ошибка && <div className="ошибка">{ошибка}</div>}
 
