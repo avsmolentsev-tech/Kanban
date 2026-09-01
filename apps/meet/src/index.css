@@ -1,0 +1,101 @@
+/* Clarity Meet. Тёмная тема и шрифт как в Clarity Space, чтобы сервисы
+   выглядели одним продуктом, а не приклеенными друг к другу. */
+
+:root {
+  --фон: #0f1115;
+  --карточка: #171a21;
+  --рамка: #262b36;
+  --текст: #e8eaed;
+  --приглушённый: #9aa0aa;
+  --акцент: #4f7cff;
+  --ошибка: #ff6b6b;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--фон);
+  color: var(--текст);
+  font-family: Onest, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.вход {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.карточка {
+  width: 100%;
+  max-width: 380px;
+  background: var(--карточка);
+  border: 1px solid var(--рамка);
+  border-radius: 16px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.карточка--широкая { max-width: 720px; }
+
+.карточка h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+.карточка h2 { margin: 0; font-size: 20px; font-weight: 600; }
+
+.подпись { margin: 0; color: var(--приглушённый); font-size: 14px; }
+
+.карточка label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--приглушённый);
+}
+
+.карточка input {
+  background: #0d0f14;
+  border: 1px solid var(--рамка);
+  border-radius: 10px;
+  padding: 11px 13px;
+  color: var(--текст);
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.карточка input:focus { border-color: var(--акцент); }
+
+.карточка button {
+  margin-top: 4px;
+  background: var(--акцент);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.карточка button:hover:not(:disabled) { opacity: 0.9; }
+.карточка button:disabled { opacity: 0.5; cursor: default; }
+
+.ошибка {
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  color: var(--ошибка);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.звонок { height: 100%; }
+.звонок [data-lk-theme] { height: 100%; }
