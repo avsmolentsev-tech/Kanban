@@ -2304,14 +2304,34 @@ paths:
     get:
       tags: [todoist]
       summary: Маппинг проектов Clarity Space ↔ Todoist
+      description: 'Объект { [todoist_project_id]: clarity_project_id }.'
       responses:
         '200': { $ref: '#/components/responses/Ok' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [todoist]
-      summary: Задать маппинг проекта Clarity Space ↔ Todoist
+      summary: Полностью заменить маппинг проектов
+      description: Перезаписывает весь маппинг целиком (старый удаляется), не мержит по одной паре.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mapping:
+                  type: object
+                  additionalProperties:
+                    type: integer
+                    nullable: true
+                  description: 'Ключ — id проекта Todoist (строка), значение — id проекта Clarity Space (null — пропускается).'
+              required: [mapping]
       responses:
-        '200': { $ref: '#/components/responses/Ok' }
+        '200':
+          description: '{ saved: true }'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponseOk' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /v1/todoist/sync:
@@ -2325,7 +2345,6 @@ paths:
     get:
       tags: [todoist]
       summary: Редирект на OAuth Todoist (требует bearer, начинает флоу подключения)
-      security: []
       responses:
         '302':
           description: редирект на todoist.com
@@ -2433,7 +2452,6 @@ paths:
     get:
       tags: [google-calendar]
       summary: Редирект на OAuth Google (требует bearer)
-      security: []
       responses:
         '302':
           description: редирект на accounts.google.com
@@ -2499,7 +2517,6 @@ paths:
     get:
       tags: [yandex-calendar]
       summary: Редирект на OAuth Yandex (требует bearer)
-      security: []
       responses:
         '302':
           description: редирект на oauth.yandex.ru
@@ -2530,7 +2547,12 @@ paths:
     get:
       tags: [widget]
       summary: Выдать (или вернуть существующий) API-ключ виджета (pis_...)
-      description: Единственный маршрут виджета, использующий обычную bearer-схему — остальные используют widgetKey (?key=).
+      description: |
+        Единственные два маршрута виджета, использующие обычную bearer-схему —
+        остальные используют widgetKey (?key=). Обработчик парсит заголовок
+        Authorization сам, минуя общий authMiddleware, и всегда вызывает
+        `jwt.verify` — служебный API-токен (`cs_...`) не проходит его формат
+        и получает `401 Invalid token`, даже без явного `denyApiTokenAuth`.
       responses:
         '200':
           description: '{ api_key }'
