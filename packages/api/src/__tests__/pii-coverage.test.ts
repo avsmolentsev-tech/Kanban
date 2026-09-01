@@ -68,8 +68,12 @@ describe('services/telegram.service.ts: захват встречи (главн�
 });
 
 describe('services/search.service.ts: синхронизация из vault обезличивает тело встречи перед extractActionItems', () => {
+  // Якорь без слова private: метод стал публичным, когда извлечение
+  // обязательств подключили к созданию встречи через API. Модификатор
+  // доступа к обезличиванию отношения не имеет, поэтому в якорь не входит —
+  // иначе безобидная правка сигнатуры молча выключает эту проверку.
   const fn = SEARCH_SRC.slice(
-    SEARCH_SRC.indexOf('private async extractTasksFromMeeting'),
+    SEARCH_SRC.indexOf('async extractTasksFromMeeting'),
     SEARCH_SRC.indexOf('/** Archive DB records'),
   );
 
