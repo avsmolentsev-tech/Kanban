@@ -80,7 +80,15 @@ export async function authMiddleware(req: AuthRequest, _res: Response, next: Nex
 }
 
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction): void {
-  if (!req.user) {
+  // Проверка не просто на truthy req.user, а на числовой req.user.id: OAuth
+  // state-JWT (google-calendar.ts/yandex-calendar.ts/todoist.ts) подписан тем же
+  // JWT_SECRET, но несёт { userId } (не { id }) и не имеет claim'а purpose —
+  // внутри своих 10 минут жизни, отправленный как Bearer, он проходил ветку
+  // JWT в authMiddleware и делал req.user truthy ({ userId: N }, без id).
+  // Сегодня это не течёт данные — getUserId() читает req.user?.id и получает
+  // null, роуты фейлятся закрыто, — но токен не того типа не должен проходить
+  // сам гейт аутентификации.
+  if (!req.user || typeof req.user.id !== 'number') {
     res.status(401).json({ success: false, error: 'Authentication required' });
     return;
   }
