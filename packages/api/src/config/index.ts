@@ -28,6 +28,19 @@ export const config = {
   jwtSecret: process.env['JWT_SECRET'] ?? 'pis-default-secret-change-me',
   resendApiKey: process.env['RESEND_API_KEY'] ?? '',
   emailFrom: process.env['EMAIL_FROM'] ?? 'Clarity Space <noreply@clarity-space.ru>',
+  // 152-ФЗ: разрешён ли откат расшифровки аудио на облачный OpenAI whisper-1, когда
+  // локальные бэкенды (faster-whisper / whisper.cpp) недоступны. Сырая запись голоса —
+  // самые чувствительные персданные, а отправка в OpenAI — трансграничная передача в США.
+  // По умолчанию (переменная не задана или пустая строка) — true, чтобы не менять
+  // поведение прода молча. Запрещающее значение сверяется по списку (false/0/no/off,
+  // без учёта регистра и пробелов) — раньше было `!== 'false'`, из-за чего оператор,
+  // выставивший `=0` или `=OFF` для комплаенса, тихо получал разрешённый фолбэк вместо
+  // запрещённого: строка "0" !== "false", условие было true. Явный список безопаснее
+  // одиночного сравнения именно потому, что порог ошибки — не "не сработало", а
+  // "сработало наоборот, никто не заметил".
+  transcriptionAllowCloudFallback: !['false', '0', 'no', 'off'].includes(
+    (process.env['TRANSCRIPTION_ALLOW_CLOUD_FALLBACK'] ?? '').trim().toLowerCase()
+  ),
 } as const;
 
 if (config.jwtSecret === 'pis-default-secret-change-me') {

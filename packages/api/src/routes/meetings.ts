@@ -1,17 +1,19 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import * as fs from 'fs';
 import * as path from 'path';
-import { query, queryAll, queryOne, execute } from '../db/db';
+import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
-import { searchService } from '../services/search.service';
+import { searchService, MIN_MEETING_BODY_FOR_EXTRACTION } from '../services/search.service';
 import { ObsidianService } from '../services/obsidian.service';
-import { ClaudeService } from '../services/claude.service';
+import { ClaudeService, PII_TOKEN_NOTE } from '../services/claude.service';
 import { mdToPdf, mdToDocx } from '../services/converter.service';
 import { telegramService } from '../services/telegram.service';
 import { isLocalWhisperAvailable, isTranscribeServiceAvailable, transcribeLocal, compressForTranscription, looksLikeGarbage, safeTmpName } from '../services/whisper-local.service';
+import { redactPii, restorePiiAndWarn, joinForRedaction, splitRedacted } from '../services/pii-redact';
+import { assertCloudFallbackAllowed } from '../services/transcription-policy';
 import { config } from '../config';
 import { registerJob, completeJob, resumePendingJobs, type PendingJob } from '../services/pending-jobs';
 import OpenAI from 'openai';
@@ -22,6 +24,13 @@ const obsidian = new ObsidianService(config.vaultPath);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } }); // 500MB for video files
 const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
 const claude = new ClaudeService();
+
+// 152-ФЗ: единый системный промпт для всех путей резюмирования встречи (авто- и
+// ручное — «Сделать резюме», экспорт в Telegram/скачивание) с явной инструкцией
+// про плейсхолдеры redactPii — без неё модель, пишущая связное резюме, склонна
+// пересказывать «[УЧАСТНИК_1]» как «Участник 1», и restorePii ничего не находит.
+const SUMMARY_SYS_PROMPT = `Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды. ${PII_TOKEN_NOTE}`;
+const COMPACT_SUMMARY_SYS_PROMPT = `Ты редактор. Сделай компактное структурированное резюме встречи в markdown: цели, ключевые решения, договорённости, задачи, следующие шаги. 200-500 слов, без воды. ${PII_TOKEN_NOTE}`;
 
 export const meetingsRouter = Router();
 
@@ -108,6 +117,27 @@ meetingsRouter.post('/', async (req: AuthRequest, res: Response) => {
   const meetingId = inserted!.id;
   if (effectiveIds.length > 0) await setMeetingProjects(meetingId, effectiveIds);
   searchService.indexRecord('meeting', meetingId, title, summary_raw);
+
+  // Извлечение обязательств из транскрипта (создание задач с commitment_type/
+  // commitment_owner/source_meeting_id для экрана /v1/commitments). Раньше это
+  // срабатывало только при синхронизации встречи из vault — встречи, созданные
+  // через API (в т.ч. с готовым summary_raw при загрузке), не порождали ни одной
+  // задачи-обязательства. Запускаем асинхронно и не ждём: это вызов LLM, а ответ
+  // на POST не должен зависеть от его длительности или исхода. Порог длины —
+  // тот же MIN_MEETING_BODY_FOR_EXTRACTION, что и в vault-sync: пустой или почти
+  // пустой summary_raw не стоит вызова модели и рискует выдумать пункты на пустом месте.
+  if (summary_raw.trim().length >= MIN_MEETING_BODY_FOR_EXTRACTION) {
+    // Обёртка в Promise.resolve().then() — не украшение. Прямой вызов с .catch()
+    // виснет намертво, если функция бросит синхронно или вернёт не промис:
+    // исключение уходит в async-обработчик Express 4, ответ не отправляется
+    // никогда, и клиент ждёт до таймаута. Здесь любой исход попадает в catch.
+    void Promise.resolve()
+      .then(() => searchService.extractTasksFromMeeting(meetingId, title, summary_raw, effectiveIds[0] ?? null, userId))
+      .catch(err => {
+        console.warn('[meetings.post] извлечение обязательств не удалось:', err instanceof Error ? err.message : err);
+      });
+  }
+
   // Sync to vault (only if enabled)
   if (shouldSync) {
     try {
@@ -259,6 +289,11 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
     let transcript = '';
     const finalMb = audioBuffer.length / 1024 / 1024;
     const canUseOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB;
+    // 152-ФЗ: сырая запись голоса — самые чувствительные персданные, а отправка в
+    // OpenAI — трансграничная передача в США. `canUseOpenAI` — это техническая
+    // возможность (есть ключ, файл влезает в лимит), `cloudFallbackAllowed` — это
+    // разрешение политики. Оба условия нужны, чтобы реально уйти в облако.
+    const cloudFallbackAllowed = config.transcriptionAllowCloudFallback;
 
     /** Платный облачный бэкенд. Держим только как страховку. */
     const viaOpenAI = async (): Promise<string> => {
@@ -297,12 +332,15 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
       } catch (err) {
         console.error(`[bg-job ${meetingId}] local transcription failed:`, err instanceof Error ? err.message : err);
         if (!canUseOpenAI) throw err;
+        assertCloudFallbackAllowed(cloudFallbackAllowed, 'Локальная расшифровка не удалась');
         console.log(`[bg-job ${meetingId}] falling back to OpenAI whisper-1`);
         transcript = await viaOpenAI();
       }
-    } else if (canUseOpenAI) {
+    } else if (canUseOpenAI && cloudFallbackAllowed) {
       console.warn(`[bg-job ${meetingId}] no local backend available, using paid OpenAI whisper-1`);
       transcript = await viaOpenAI();
+    } else if (canUseOpenAI && !cloudFallbackAllowed) {
+      assertCloudFallbackAllowed(cloudFallbackAllowed, 'Локальный бэкенд расшифровки недоступен');
     } else {
       throw new Error('No transcription backend available');
     }
@@ -332,8 +370,12 @@ async function processAudioInBackground(meetingId: number, fileBuffer: Buffer, o
     if (autoSummarize && transcript.trim() && !isGarbage) {
       await setStatus('summarizing');
       try {
-        const sys = 'Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды.';
-        const summary = (await claude.chat([{ role: 'user', content: transcript }], sys, 'gpt-4.1-mini', false, false)).trim();
+        // 152-ФЗ: в модель уходит только обезличенный текст. `piiMap` живёт исключительно
+        // в этой переменной — она не пишется в БД, лог или поисковый индекс, и подстановка
+        // реальных значений обратно в резюме делается нашим кодом ниже, без участия модели.
+        const { text: redactedTranscript, map: piiMap } = redactPii(transcript);
+        const rawSummary = (await claude.chat([{ role: 'user', content: redactedTranscript }], SUMMARY_SYS_PROMPT, 'gpt-4.1-mini', false, false)).trim();
+        const summary = restorePiiAndWarn(rawSummary, piiMap, `meeting #${meetingId} auto-summary`);
         if (summary && !mergedBody.startsWith('## Ключевые решения')) {
           mergedBody = `${summary}\n\n---\n\n${mergedBody}`;
           await execute('UPDATE meetings SET summary_raw = $1, updated_at = NOW() WHERE id = $2', [mergedBody, meetingId]);
@@ -453,11 +495,14 @@ async function buildMeetingFile(meetingId: number, type: MeetingFileType, format
     const transcript = structured.transcript || '';
     body = (m.summary_raw ?? '') + (transcript ? `\n\n---\n\n## Полная транскрипция\n\n${transcript}` : '');
   } else {
-    // summary or fallback
+    // summary or fallback — используется и скачиванием файла, и отправкой в Telegram
+    // (sendMeetingToTelegram → buildMeetingFile). 152-ФЗ: транскрипт обезличивается
+    // перед отправкой в модель так же, как на пути авто-резюме при загрузке.
     const raw = (m.summary_raw ?? '').trim();
     if (!raw) throw new Error('No content');
-    const sys = 'Ты редактор. Сделай компактное структурированное резюме встречи в markdown: цели, ключевые решения, договорённости, задачи, следующие шаги. 200-500 слов, без воды.';
-    body = await claude.chat([{ role: 'user', content: raw }], sys, 'gpt-4.1-mini', false, false);
+    const { text: redactedRaw, map: piiMap } = redactPii(raw);
+    const rawBody = await claude.chat([{ role: 'user', content: redactedRaw }], COMPACT_SUMMARY_SYS_PROMPT, 'gpt-4.1-mini', false, false);
+    body = restorePiiAndWarn(rawBody, piiMap, `meeting #${meetingId} file export (${type})`);
   }
 
   const header = [
@@ -507,8 +552,13 @@ meetingsRouter.post('/:id/summarize', async (req: AuthRequest, res: Response) =>
   if (!raw) { res.status(400).json(fail('No content to summarize')); return; }
 
   try {
-    const sys = 'Ты редактор. Сделай структурированное резюме встречи в markdown: ## Ключевые решения, ## Договорённости, ## Задачи, ## Следующие шаги. 200-500 слов, по делу, без воды.';
-    const summary = (await claude.chat([{ role: 'user', content: raw }], sys, 'gpt-4.1-mini', false, false)).trim();
+    // 152-ФЗ: тот же путь резюмирования, что и авто-резюме при загрузке — просто
+    // запущен пользователем вручную кнопкой «Сделать резюме». Транскрипт
+    // обезличивается перед отправкой в модель, реальные значения подставляются
+    // обратно нашим кодом до сохранения в БД и поисковый индекс.
+    const { text: redactedRaw, map: piiMap } = redactPii(raw);
+    const rawSummary = (await claude.chat([{ role: 'user', content: redactedRaw }], SUMMARY_SYS_PROMPT, 'gpt-4.1-mini', false, false)).trim();
+    const summary = restorePiiAndWarn(rawSummary, piiMap, `meeting #${id} manual summarize`);
     const separator = '\n\n---\n\n';
     const marker = '## Ключевые решения';
     const existingStart = raw.indexOf(marker);
@@ -550,12 +600,35 @@ meetingsRouter.post('/:id/regenerate-summaries', async (req: AuthRequest, res: R
   const peopleRows = await queryAll<{ name: string }>('SELECT p.name FROM people p JOIN meeting_people mp ON p.id = mp.person_id WHERE mp.meeting_id = $1', [id]);
   const people = peopleRows.map(p => p.name);
 
+  // 152-ФЗ: этот путь шлёт в модель не только транскрипт, но и заголовок встречи, и
+  // `people` — реальные имена контактов из таблицы `people`, а не то, что модель сама
+  // распознала в речи (найдено ревью: заголовок вида «Созвон с Иваном Петровым» раньше
+  // уходил в модель как есть, рядом с уже обезличенным транскриптом — реальное имя в
+  // заголовке ещё и подсказывало модели, как расшифровать токены в теле). Обезличиваем
+  // все три поля ОДНИМ вызовом redactPii через joinForRedaction/splitRedacted, чтобы
+  // одно и то же имя в транскрипте, заголовке и списке участников получило один и тот
+  // же токен; восстанавливаем во всех трёх документах, которые вернёт generateProSummaries
+  // (notes/qa/actions) — сам заголовок в БД не переписывается, он используется только
+  // как контекст для модели.
+  const title = (meeting['title'] as string) ?? '';
+  const { text: redactedCombined, map: piiMap } = redactPii(joinForRedaction([transcript, title, people.join('\n')]));
+  const redactedParts = splitRedacted(redactedCombined, 3);
+  const redactedTranscript = redactedParts[0] ?? '';
+  const redactedTitle = redactedParts[1] ?? '';
+  const redactedPeopleBlock = redactedParts[2] ?? '';
+  const redactedPeople = redactedPeopleBlock ? redactedPeopleBlock.split('\n') : [];
+
   res.json(ok({ status: 'generating', meeting_type: meetingType }));
 
   // Async generation
   const { ClaudeService } = require('../services/claude.service');
   const claudeSvc = new ClaudeService();
-  claudeSvc.generateProSummaries(transcript, meeting['title'] as string, people, meetingType).then(async (summaries: { notes: string; qa: string; actions?: string }) => {
+  claudeSvc.generateProSummaries(redactedTranscript, redactedTitle, redactedPeople, meetingType).then(async (rawSummaries: { notes: string; qa: string; actions?: string }) => {
+    const summaries = {
+      notes: restorePiiAndWarn(rawSummaries.notes, piiMap, `meeting #${id} pro-summary notes`),
+      qa: restorePiiAndWarn(rawSummaries.qa, piiMap, `meeting #${id} pro-summary qa`),
+      ...(rawSummaries.actions ? { actions: restorePiiAndWarn(rawSummaries.actions, piiMap, `meeting #${id} pro-summary actions`) } : {}),
+    };
     const existingRow = await queryOne<{ summary_structured: string | null }>('SELECT summary_structured FROM meetings WHERE id = $1', [id]);
     let merged: Record<string, unknown> = {};
     try { merged = JSON.parse(existingRow?.summary_structured || '{}'); } catch {}

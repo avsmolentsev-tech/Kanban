@@ -19,6 +19,30 @@ export function isLocalWhisperAvailable(): boolean {
 }
 
 /**
+ * Фильтр обрезки тишины для ffmpeg.
+ * Whisper на длинной тишине выдумывает текст («Музыка», «Продолжение следует»),
+ * поэтому паузы режутся ДО распознавания, а не чистятся после.
+ * stop_duration=1.5 — короткие паузы в речи сохраняются, схлопываются только длинные.
+ */
+export function buildSilenceFilter(): string {
+  return 'silenceremove=start_periods=1:start_duration=0.3:start_threshold=-45dB:' +
+    'stop_periods=-1:stop_duration=1.5:stop_threshold=-45dB';
+}
+
+/**
+ * Подпись пропавшего сегмента при отправке в faster-whisper.
+ * Раньше здесь указывались минуты записи (индекс сегмента × CHUNK_SECONDS) —
+ * это было честно, пока сегментирование шло по исходному аудио. Теперь оно
+ * идёт по аудио ПОСЛЕ обрезки тишины: `silenceremove` с `stop_periods=-1`
+ * схлопывает все паузы длиннее 1.5с, а не только по краям, поэтому минута по
+ * номеру сегмента больше не совпадает с минутой в исходной записи — тем
+ * сильнее, чем больше в записи пауз. Номер фрагмента честен всегда.
+ */
+export function formatSegmentFailure(index: number, total: number): string {
+  return `[фрагмент ${index + 1} из ${total} не распознан]`;
+}
+
+/**
  * Обеззараживает имя загруженного файла перед подстановкой в путь.
  *
  * `req.file.originalname` приходит от клиента как есть, multer его не трогает.
@@ -149,14 +173,42 @@ export async function transcribeViaService(buffer: Buffer, filename: string): Pr
   fs.writeFileSync(inputPath, buffer);
   const segmentPaths: string[] = [];
 
+  // Обрезаем тишину ОДНИМ проходом ffmpeg на весь файл, до сегментирования —
+  // если резать внутри каждого сегмента, границы кусков поедут и склейка по
+  // порядку сломается. Один процесс на файл, не на сегмент: сервер общий,
+  // рядом крутится ещё десяток чужих продуктов на 4 ядрах.
+  // Тишина — оптимизация качества, а не обязательное условие: если ffmpeg на
+  // этом файле упал, едем дальше на исходном аудио, а не роняем расшифровку.
+  const trimmedPath = path.join(tmpDir, `svc-${id}-trimmed.mp3`);
+  let workPath = inputPath;
+  let workFilename = filename;
   try {
-    const duration = await probeDurationSeconds(inputPath);
+    await runCommand('ffmpeg', [
+      '-i', inputPath, '-vn',
+      '-af', buildSilenceFilter(),
+      '-ar', '16000', '-ac', '1', '-q:a', '6',
+      trimmedPath, '-y',
+    ], 300000);
+    if (fs.existsSync(trimmedPath)) {
+      workPath = trimmedPath;
+      // .replace(/\.[^.]+$/, ...) не трогает имя без расширения вообще (нет
+      // литерального совпадения) — .mp3 нужно ДОБАВИТЬ всегда, а не только
+      // заменить существующее расширение.
+      workFilename = filename.replace(/\.[^./]+$/, '') + '.mp3';
+    }
+  } catch (err) {
+    console.warn('[transcribe] обрезка тишины не удалась, используем исходное аудио:', err instanceof Error ? err.message : err);
+    try { fs.unlinkSync(trimmedPath); } catch {}
+  }
+
+  try {
+    const duration = await probeDurationSeconds(workPath);
     let transcript: string;
 
     if (duration > CHUNK_THRESHOLD_SECONDS) {
       // Split into CHUNK_SECONDS segments (stream copy → fast, frame-accurate enough).
       const pattern = path.join(tmpDir, `svc-${id}-seg-%03d.mp3`);
-      await runCommand('ffmpeg', ['-i', inputPath, '-vn', '-f', 'segment', '-segment_time', String(CHUNK_SECONDS), '-c', 'copy', pattern, '-y'], 300000);
+      await runCommand('ffmpeg', ['-i', workPath, '-vn', '-f', 'segment', '-segment_time', String(CHUNK_SECONDS), '-c', 'copy', pattern, '-y'], 300000);
       let n = 0;
       for (;;) {
         const p = path.join(tmpDir, `svc-${id}-seg-${String(n).padStart(3, '0')}.mp3`);
@@ -192,11 +244,9 @@ export async function transcribeViaService(buffer: Buffer, filename: string): Pr
               }
               failed++;
               console.warn(`[transcribe] segment ${i}/${segmentPaths.length} failed:`, err instanceof Error ? err.message : err);
-              // Потерянные минуты помечаем прямо в тексте. Молчаливый пропуск читается
+              // Потерянный фрагмент помечаем прямо в тексте. Молчаливый пропуск читается
               // как «здесь ничего не говорили» — а на деле кусок записи просто выпал.
-              const from = Math.round((i * CHUNK_SECONDS) / 60);
-              const to = Math.round(((i + 1) * CHUNK_SECONDS) / 60);
-              parts[i] = `[фрагмент ${from}–${to} мин не распознан]`;
+              parts[i] = formatSegmentFailure(i, segmentPaths.length);
             }
           }
         }
@@ -208,7 +258,11 @@ export async function transcribeViaService(buffer: Buffer, filename: string): Pr
       if (failed > 0) console.warn(`[transcribe] ${failed}/${segmentPaths.length} segments dropped, returning partial transcript`);
       transcript = parts.join(' ').replace(/\s+/g, ' ').trim();
     } else {
-      transcript = await serviceRequest(buffer, filename);
+      // Короткий файл шлём одним запросом. Если тишина обрезалась — читаем
+      // результат прохода ffmpeg, иначе экономим лишний диск-I/O и берём
+      // буфер, который уже есть в памяти.
+      const shortAudio = workPath === trimmedPath ? fs.readFileSync(trimmedPath) : buffer;
+      transcript = await serviceRequest(shortAudio, workFilename);
     }
 
     try {
@@ -219,6 +273,7 @@ export async function transcribeViaService(buffer: Buffer, filename: string): Pr
     return transcript;
   } finally {
     try { fs.unlinkSync(inputPath); } catch {}
+    if (workPath === trimmedPath) { try { fs.unlinkSync(trimmedPath); } catch {} }
     for (const p of segmentPaths) { try { fs.unlinkSync(p); } catch {} }
   }
 }
@@ -397,8 +452,12 @@ export async function transcribeLocal(buffer: Buffer, filename: string): Promise
   };
 
   try {
-    // 1. Convert to WAV 16kHz mono (any format → wav via ffmpeg)
-    await runCommand('ffmpeg', ['-i', inputPath, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', wavPath, '-y'], 300000);
+    // 1. Convert to WAV 16kHz mono (any format → wav via ffmpeg), обрезая тишину
+    await runCommand('ffmpeg', [
+      '-i', inputPath, '-vn',
+      '-af', buildSilenceFilter(),
+      '-ar', '16000', '-ac', '1', '-f', 'wav', wavPath, '-y',
+    ], 300000);
 
     // 2. Run whisper.cpp (up to 45 min for large files)
     await runCommand(WHISPER_CLI, [

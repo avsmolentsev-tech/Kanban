@@ -1,15 +1,28 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId } from '../middleware/user-scope';
 import { checkAiLimit } from '../middleware/plan';
-import { ClaudeService } from '../services/claude.service';
+import { ClaudeService, isAdvisorClientConfigured } from '../services/claude.service';
 import { config } from '../config';
 
 export const advisorsRouter = Router();
 const claude = new ClaudeService();
+
+// Мягкая деградация: ключ advisor-клиента (ADVISOR_OPENAI_API_KEY, с фолбэком на
+// OPENAI_API_KEY) не задан — все эндпоинты Advisory Board идут через
+// ClaudeService.advisorClient, поэтому именно эта проверка (см.
+// isAdvisorClientConfigured) и определяет готовность. Без этого гварда советники
+// падали бы 500 с сырым сообщением OpenAI SDK вместо понятного русского 501.
+advisorsRouter.use((_req: Request, res: Response, next) => {
+  if (!isAdvisorClientConfigured()) {
+    res.status(501).json({ success: false, error: 'Совет директоров не настроен: не задан ключ модели' });
+    return;
+  }
+  next();
+});
 
 interface AdvisorRow {
   id: number; slug: string; name: string; domain: string;

@@ -3,6 +3,85 @@ import { config } from '../config';
 import type { MeetingStructured, InboxAnalysis, ExtractionResult, DraftCard } from '@pis/shared';
 import { toolDefinitions, executeTool } from './tools.service';
 
+// 152-ФЗ: transcript/people, приходящие в generateProSummaries, могут быть уже
+// обезличены вызывающим кодом (см. packages/api/src/services/pii-redact.ts) —
+// плейсхолдеры вида [УЧАСТНИК_1] должны дойти до ответа модели дословно, иначе
+// restorePii на стороне вызывающего кода не сможет подставить обратно реальные
+// значения. Безвредно, если redactPii не применялся — просто лишняя строка в промпте.
+export const PII_TOKEN_NOTE =
+  'Если в тексте встречаются служебные метки вида [СЛОВО_N] (например [УЧАСТНИК_1], [ТЕЛЕФОН_2], [EMAIL_3]) — ' +
+  'это не реальные имена и данные, а технические плейсхолдеры. Воспроизводи их в ответе ТОЧНО так же посимвольно ' +
+  '(те же квадратные скобки, регистр и подчёркивание), не переводи их и не заменяй словами вроде «Участник 1».';
+
+/**
+ * Настроен ли основной клиент (this.client в ClaudeService), которым пользуется
+ * aiRouter (routes/ai.ts) — /chat, /daily-brief, /voice-command и другие эндпоинты,
+ * идущие через ClaudeService.chat()/this.openai. Клиент собирается из
+ * config.openaiApiKey (см. конструктор ниже), так что только этот ключ и имеет
+ * значение здесь.
+ *
+ * config.anthropicApiKey СОЗНАТЕЛЬНО не учитывается: в этом сервисе нет ни одного
+ * Anthropic SDK клиента, несмотря на название класса — только OpenAI-совместимый
+ * (см. конструктор). Переменная зарезервирована в конфиге на будущее и не должна
+ * давать ложное "AI настроен" — иначе оператор, задавший только ANTHROPIC_API_KEY,
+ * получит /health: ok и 500 вместо честного 501 на каждом AI-запросе.
+ */
+export function isAiClientConfigured(): boolean {
+  return Boolean(config.openaiApiKey);
+}
+
+/**
+ * Настроен ли клиент Advisory Board (this.advisorClient), которым пользуется
+ * advisorsRouter (routes/advisors.ts). Собирается из config.advisorApiKey с
+ * фолбэком на config.openaiApiKey (см. конструктор) — оба ключа реально его питают.
+ * config.anthropicApiKey не учитывается по той же причине, что и выше.
+ */
+export function isAdvisorClientConfigured(): boolean {
+  return Boolean(config.advisorApiKey || config.openaiApiKey);
+}
+
+// IPv4/IPv6-хосты не имеют содержательного "домена второго уровня" — для них
+// llmProviderName() должен отдавать нейтральную метку, а не обрезок адреса.
+const IP_HOST_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
+// Генерические вторые уровни, за которыми стоит двухбуквенный код страны
+// (co.uk, com.cn, ac.uk, gov.uk...) — здесь "второй с конца" сегмент домена не
+// идентифицирует провайдера, это часть составного TLD.
+const GENERIC_SLD_RE = /^(co|com|net|org|gov|edu|ac|mil|ne)$/;
+
+/**
+ * Короткая метка провайдера для /health и админ-кабинета: показывает, куда реально
+ * уходят запросы, без раскрытия полного URL/хоста (эндпоинт /health не защищён
+ * авторизацией). Переключение на другого провайдера — смена одной переменной
+ * окружения OPENAI_BASE_URL, без изменений кода.
+ */
+export function llmProviderName(): string {
+  const url = config.openaiBaseUrl;
+  if (!url) return 'default';
+  try {
+    const rawHost = new URL(url).hostname.toLowerCase();
+    // IPv6 хосты приходят в квадратных скобках ("[::1]") — двоеточие внутри
+    // однозначно отличает их от доменных имён (в которых двоеточий не бывает).
+    if (IP_HOST_RE.test(rawHost) || rawHost.includes(':')) return 'custom';
+
+    const labels = rawHost.split('.').filter(Boolean);
+    // Один сегмент (например "localhost") — нет домена второго уровня, который
+    // можно было бы показать как метку провайдера.
+    if (labels.length < 2) return 'custom';
+
+    const tld = labels[labels.length - 1]!;
+    const secondLevel = labels[labels.length - 2]!;
+    // Составной TLD вида *.co.uk / *.com.cn: "второй с конца" сегмент — это "co"/
+    // "com", а не имя провайдера. Отдаём нейтральную метку вместо мусора.
+    if (tld.length === 2 && GENERIC_SLD_RE.test(secondLevel)) return 'custom';
+
+    // Обычный случай: второй уровень домена (например, "yandex" из
+    // llm.api.cloud.yandex.net) — достаточно для узнаваемой метки провайдера.
+    return secondLevel;
+  } catch {
+    return 'custom';
+  }
+}
+
 export interface TaskSuggestion {
   title: string;
   description: string;
@@ -182,7 +261,7 @@ ${text}`;
   async generateProSummaries(transcript: string, title: string, people: string[], meetingType: string = 'meeting'): Promise<{ notes: string; qa: string; actions?: string }> {
     // 30 000 символов — это ~30 минут речи: у часовой встречи половина не доезжала
     // до конспекта. У модели контекст на порядки больше, берём с запасом.
-    const context = `Название: ${title}\nУчастники: ${people.join(', ') || 'не указаны'}\n\nТранскрипция:\n${transcript.slice(0, 300000)}`;
+    const context = `${PII_TOKEN_NOTE}\n\nНазвание: ${title}\nУчастники: ${people.join(', ') || 'не указаны'}\n\nТранскрипция:\n${transcript.slice(0, 300000)}`;
 
     const notesPrompt = this.getNotesPrompt(meetingType, context);
     const qaPrompt = this.getQaPrompt(meetingType, context);
@@ -204,7 +283,9 @@ ${text}`;
       // задачи из последней части в этот запрос просто не попадали. 60 000 заведомо
       // больше, чем может выдать модель при SUMMARY_MAX_TOKENS.
       const actionsLabel = meetingType === 'lecture' ? 'учебные задачи' : meetingType === 'interview' ? 'задачи и инсайты к применению' : 'задачи и обязательства';
-      const actionsResp = await this.chat([{ role: 'user', content: `Из двух документов ниже извлеки ВСЕ уникальные ${actionsLabel}. Убери дубли. Каждая задача — одна строка с чекбоксом.
+      const actionsResp = await this.chat([{ role: 'user', content: `${PII_TOKEN_NOTE}
+
+Из двух документов ниже извлеки ВСЕ уникальные ${actionsLabel}. Убери дубли. Каждая задача — одна строка с чекбоксом.
 
 ФОРМАТ:
 - [ ] Задача — [Ответственный] [срок если есть]
@@ -243,7 +324,9 @@ ${qa.slice(0, 60000)}` }], '', 'gpt-4.1-mini', false, false, null, SUMMARY_MAX_T
     const collected: Item[] = [];
 
     for (const chunk of chunks) {
-      const prompt = `Ты извлекаешь ТОЛЬКО реальные действия из встречи. Никаких выдумок.
+      const prompt = `${PII_TOKEN_NOTE}
+
+Ты извлекаешь ТОЛЬКО реальные действия из встречи. Никаких выдумок.
 
 Встреча: "${title}"
 Участники: ${people.join(', ') || 'не указаны'}
@@ -722,6 +805,8 @@ ${context}`;
       ? `\n\nСПИСОК ПРОЕКТОВ ПОЛЬЗОВАТЕЛЯ (выбирай из этого списка, НЕ придумывай новые):\n${existingProjectNames.map(n => `- ${n}`).join('\n')}\nЕсли тема совпадает с одним из проектов — используй ТОЧНОЕ название из списка в project_hints. Если ни один не подходит — оставь project_hints пустым.`
       : '';
     const systemPrompt = `Ты помощник который превращает транскрипт голосовой заметки или свободный текст в структурированную карточку.
+
+${PII_TOKEN_NOTE}
 
 Верни СТРОГО JSON без пояснений со следующей схемой:
 {

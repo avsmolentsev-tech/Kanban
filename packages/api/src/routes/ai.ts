@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { ClaudeService } from '../services/claude.service';
+import { ClaudeService, isAiClientConfigured } from '../services/claude.service';
 import { query, queryAll, queryOne, execute } from '../db/db';
 import { ok, fail } from '@pis/shared';
 import { ObsidianService } from '../services/obsidian.service';
@@ -14,6 +14,18 @@ import { checkAiLimit } from '../middleware/plan';
 export const aiRouter = Router();
 const claude = new ClaudeService();
 const obsidian = new ObsidianService(config.vaultPath);
+
+// Мягкая деградация: ключ основного клиента (OPENAI_API_KEY) не задан — все
+// AI-эндпоинты этого роутера идут через ClaudeService.chat()/this.openai, поэтому
+// именно этот ключ и проверяем (см. isAiClientConfigured). ANTHROPIC_API_KEY здесь
+// не считается — сервис не создаёт Anthropic-клиента, только OpenAI-совместимый.
+aiRouter.use((_req: Request, res: Response, next) => {
+  if (!isAiClientConfigured()) {
+    res.status(501).json({ success: false, error: 'AI-функции не настроены: не задан ключ модели' });
+    return;
+  }
+  next();
+});
 
 /** Enforce the per-user daily AI limit. Responds 429 and returns false if exceeded. */
 async function enforceAiLimit(req: AuthRequest, res: Response): Promise<boolean> {

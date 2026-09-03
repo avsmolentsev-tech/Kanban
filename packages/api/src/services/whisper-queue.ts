@@ -42,9 +42,8 @@ async function processJob(job: TranscribeJob): Promise<void> {
   try {
     const { isLocalWhisperAvailable, transcribeLocal, compressForTranscription } = require('./whisper-local.service');
 
-    // Always boost audio first for better recognition
-    let audioBuffer = await boostAudio(job.buffer, job.filename);
-    let audioFilename = job.filename.replace(/\.[^.]+$/, '.mp3');
+    let audioBuffer = job.buffer;
+    let audioFilename = job.filename;
 
     // Pre-compress large files
     const sizeMb = audioBuffer.length / (1024 * 1024);
@@ -85,50 +84,22 @@ async function processJob(job: TranscribeJob): Promise<void> {
 }
 
 /**
- * Loudness-normalize audio before transcription (EBU R128). Replaces the old raw
- * "+12 dB" boost, which had no limiter and clipped normal-volume speech into
- * distortion — whisper then heard only noise and returned empty text or looping
- * hallucinations. loudnorm levels quiet AND loud audio to a target, no clipping.
+ * 152-ФЗ chokepoint: единственное место в этом файле, где аудио реально уходит в
+ * OpenAI whisper-1 — сюда сходятся все три пути этого модуля: фолбэк после провала
+ * локальной расшифровки (processJob), прямой путь для плана pro_max (transcribeForUser
+ * — для него это НЕ фолбэк, а основной маршрут, но правило то же самое: без разрешения
+ * политики аудио не покидает сервер) и переполнение очереди (transcribeWithOverflow).
  */
-async function boostAudio(buffer: Buffer, filename: string): Promise<Buffer> {
-  const { execFile } = require('child_process');
-  const fs = require('fs');
-  const os = require('os');
-  const path = require('path');
-  const tmpIn = path.join(os.tmpdir(), `whisper-in-${Date.now()}${path.extname(filename) || '.mp3'}`);
-  const tmpOut = path.join(os.tmpdir(), `whisper-out-${Date.now()}.mp3`);
-  fs.writeFileSync(tmpIn, buffer);
-  return new Promise<Buffer>((resolve) => {
-    execFile('ffmpeg', [
-      '-y', '-i', tmpIn,
-      '-vn',
-      '-af', 'highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11',
-      '-ar', '16000', '-ac', '1', '-q:a', '6',
-      tmpOut,
-    ], { timeout: 900000 }, (err: Error | null, _stdout: string, stderr: string) => {
-      try { fs.unlinkSync(tmpIn); } catch {}
-      if (err || !fs.existsSync(tmpOut)) {
-        console.warn('[whisper-queue] audio boost failed, using original.', err?.message || '', stderr?.slice(0, 200) || '');
-        resolve(buffer);
-        return;
-      }
-      const boosted = fs.readFileSync(tmpOut);
-      try { fs.unlinkSync(tmpOut); } catch {}
-      console.log(`[whisper-queue] audio boosted: ${Math.round(buffer.length/1024)}KB → ${Math.round(boosted.length/1024)}KB`);
-      resolve(boosted);
-    });
-  });
-}
-
 export async function transcribeWithOpenAI(buffer: Buffer, filename: string): Promise<string> {
   const OpenAI = require('openai').default;
   const { config } = require('../config');
+  const { assertCloudFallbackAllowed } = require('./transcription-policy');
+  assertCloudFallbackAllowed(config.transcriptionAllowCloudFallback, 'Требуется отправка аудио в облачный OpenAI whisper-1 (whisper-queue)');
   console.log('[whisper-queue] using OpenAI API');
   const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
 
-  // Always boost audio for better recognition of quiet recordings
-  let audioBuffer = await boostAudio(buffer, filename);
-  let audioFilename = filename.replace(/\.[^.]+$/, '.mp3');
+  let audioBuffer: Buffer = buffer;
+  let audioFilename = filename;
 
   // Compress if over 24 MB (OpenAI limit 25 MB)
   const sizeMb = audioBuffer.length / (1024 * 1024);

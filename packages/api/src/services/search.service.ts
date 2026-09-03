@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { queryAll, queryOne, execute } from '../db/db';
 import { config } from '../config';
+import { redactPii, restorePiiDeepAndWarn, joinForRedaction, splitRedacted } from './pii-redact';
 
 export interface SearchHit {
   type: string;
@@ -10,6 +11,16 @@ export interface SearchHit {
   snippet: string;
   rank: number;
 }
+
+/**
+ * Минимальная длина тела встречи (символов), при которой запускаем извлечение
+ * обязательств через LLM. Совпадает с порогом, которым syncMeetingFromVault уже
+ * отсекал пустые/крошечные файлы (см. syncMeetingFromVault ниже) — тот же
+ * баланс: не тратить вызов модели и не давать ей выдумывать пункты на почти
+ * пустом тексте, но не задирать планку так, чтобы отсекать короткие, но
+ * содержательные заметки.
+ */
+export const MIN_MEETING_BODY_FOR_EXTRACTION = 50;
 
 export class SearchService {
   /** No-op: tsvector on tasks is maintained by DB trigger */
@@ -248,7 +259,7 @@ export class SearchService {
       // Parse frontmatter for metadata
       const fm = this.parseFrontmatter(content);
       const body = content.replace(/^---[\s\S]*?---\n*/, '').trim();
-      if (body.length < 50) return; // Skip empty/tiny files
+      if (body.length < MIN_MEETING_BODY_FOR_EXTRACTION) return; // Skip empty/tiny files
 
       // Extract title from filename or first heading
       const filename = vaultRelPath.split('/').pop()!.replace('.md', '');
@@ -293,8 +304,18 @@ export class SearchService {
     }
   }
 
-  /** Extract real, attributed, quote-backed action items from a meeting and create tasks. */
-  private async extractTasksFromMeeting(meetingId: number, title: string, body: string, projectId: number | null, userId?: number | null): Promise<void> {
+  /**
+   * Извлечь реальные, атрибутированные, подкреплённые цитатой action items из
+   * встречи и создать по ним задачи (commitment_type/commitment_owner/
+   * source_meeting_id — те самые поля, которые показывает экран /v1/commitments).
+   *
+   * Публичный метод: единственная точка входа для извлечения обязательств,
+   * общая для двух вызывающих путей — синхронизации из vault (syncMeetingFromVault
+   * выше) и создания встречи через API (meetingsRouter.post('/') в routes/meetings.ts).
+   * Идемпотентен: дедуп по `[meeting #N]` в description тасков делает повторный
+   * вызов для той же встречи безопасным.
+   */
+  async extractTasksFromMeeting(meetingId: number, title: string, body: string, projectId: number | null, userId?: number | null): Promise<void> {
     try {
       const { ClaudeService } = require('./claude.service');
       const claude = new ClaudeService();
@@ -306,7 +327,23 @@ export class SearchService {
       );
       const peopleNames = peopleRows.map(p => p.name);
 
-      const items = await claude.extractActionItems(body, title, peopleNames);
+      // 152-ФЗ: путь синхронизации из vault (сработавший, например, при ручном
+      // редактировании .md-файла встречи мимо API) раньше слал модели полный
+      // необезличенный текст встречи и реальные имена участников из таблицы
+      // `people`. Обезличиваем тело, заголовок и список участников ОДНИМ вызовом
+      // redactPii, чтобы одно и то же имя получило один и тот же токен, и
+      // восстанавливаем во всех строковых полях результата (включая owner и
+      // quote — они дальше используются для поиска person по имени и для текста
+      // задачи, поэтому должны содержать реальные значения, а не токены).
+      const { text: redactedCombined, map: piiMap } = redactPii(joinForRedaction([body, title, peopleNames.join('\n')]));
+      const redactedParts = splitRedacted(redactedCombined, 3);
+      const redactedBody = redactedParts[0] ?? '';
+      const redactedTitle = redactedParts[1] ?? '';
+      const redactedPeopleBlock = redactedParts[2] ?? '';
+      const redactedPeopleNames = redactedPeopleBlock ? redactedPeopleBlock.split('\n') : [];
+
+      const rawItems = await claude.extractActionItems(redactedBody, redactedTitle, redactedPeopleNames);
+      const items = restorePiiDeepAndWarn(rawItems, piiMap, `vault-sync meeting #${meetingId} extractTasksFromMeeting`);
       if (!Array.isArray(items) || items.length === 0) return;
 
       // Existing tasks from THIS meeting (dedup across re-syncs)

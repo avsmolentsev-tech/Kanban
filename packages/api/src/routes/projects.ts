@@ -56,13 +56,18 @@ const UpdateSchema = z.object({
   archived: z.boolean().optional(),
 });
 
-projectsRouter.get('/', async (req: AuthRequest, res: Response) => {
-  const scope = userScopeWhere(req);
-  const projects = await queryAll(
-    `SELECT * FROM projects WHERE archived = 0 AND ${scope.sql} ORDER BY order_index ASC, created_at DESC`,
-    scope.params
+/** Список проектов пользователя. Общий код для HTTP-роута GET / и MCP-инструмента list_projects. */
+export async function listProjectsForUser(userId: number): Promise<Record<string, unknown>[]> {
+  return queryAll(
+    'SELECT * FROM projects WHERE archived = 0 AND user_id = $1 ORDER BY order_index ASC, created_at DESC',
+    [userId]
   );
-  res.json(ok(projects));
+}
+
+projectsRouter.get('/', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (userId == null) { res.json(ok([])); return; } // fail-closed: без пользователя — пустой список
+  res.json(ok(await listProjectsForUser(userId)));
 });
 
 projectsRouter.patch('/reorder', async (req: AuthRequest, res: Response) => {

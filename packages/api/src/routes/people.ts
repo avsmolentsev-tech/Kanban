@@ -11,6 +11,7 @@ import { getUserId, userScopeWhere } from '../middleware/user-scope';
 import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
 import { fetchTelegramPhoto } from '../utils/telegram-photo';
+import { personPhotoFilename } from '../utils/upload-filter';
 
 export const peopleRouter = Router();
 const obsidian = new ObsidianService(config.vaultPath);
@@ -215,7 +216,9 @@ peopleRouter.post('/:id/photo', photoUpload.single('file'), async (req: AuthRequ
   if (!owner) { res.status(404).json(fail('Person not found')); return; }
   if (!req.file) { res.status(400).json(fail('Файл не передан')); return; }
   const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
-  const filename = `person-${id}-${Date.now()}${ext}`;
+  // Файл отдаётся публично (routes/index.ts) без авторизации — непредсказуемость
+  // имени держится на randomAttachmentToken() внутри generator'а, а не на id/времени.
+  const filename = personPhotoFilename(id, ext);
   try {
     fs.writeFileSync(path.join(attachDir, filename), req.file.buffer);
   } catch (err) {

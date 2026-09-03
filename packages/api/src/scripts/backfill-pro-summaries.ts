@@ -4,6 +4,7 @@
  */
 import { initPg, queryAll, execute } from '../db/db';
 import { ClaudeService } from '../services/claude.service';
+import { redactPii, restorePiiAndWarn, joinForRedaction, splitRedacted } from '../services/pii-redact';
 import { config } from '../config';
 
 initPg(config.databaseUrl);
@@ -67,7 +68,21 @@ async function main() {
     console.log(`[${m.id}] Processing: "${m.title}" (${transcript.length} chars, ${people.length} people)...`);
 
     try {
-      const summaries = await claude.generateProSummaries(transcript, m.title, people);
+      // 152-ФЗ: тот же приём, что и на живых путях (routes/meetings.ts, telegram.service.ts) —
+      // транскрипт, заголовок и список участников обезличиваются одним вызовом redactPii.
+      const { text: redactedCombined, map: piiMap } = redactPii(joinForRedaction([transcript, m.title, people.join('\n')]));
+      const redactedParts = splitRedacted(redactedCombined, 3);
+      const redactedTranscript = redactedParts[0] ?? '';
+      const redactedTitle = redactedParts[1] ?? '';
+      const redactedPeopleBlock = redactedParts[2] ?? '';
+      const redactedPeople = redactedPeopleBlock ? redactedPeopleBlock.split('\n') : [];
+
+      const rawSummaries = await claude.generateProSummaries(redactedTranscript, redactedTitle, redactedPeople);
+      const summaries = {
+        notes: restorePiiAndWarn(rawSummaries.notes, piiMap, `backfill meeting #${m.id} notes`),
+        qa: restorePiiAndWarn(rawSummaries.qa, piiMap, `backfill meeting #${m.id} qa`),
+        ...(rawSummaries.actions ? { actions: restorePiiAndWarn(rawSummaries.actions, piiMap, `backfill meeting #${m.id} actions`) } : {}),
+      };
 
       // Preserve existing structured data, add pro summaries
       let existing: Record<string, unknown> = {};

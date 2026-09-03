@@ -11,7 +11,11 @@ export const peopleApi = {
   uploadPhoto: async (id: number, file: File): Promise<{ photo_url: string }> => {
     const fd = new FormData();
     fd.append('file', file);
-    const res = await apiClient.post(`/people/${id}/photo`, fd);
+    // См. комментарий в transcribe.api.ts: без явного заголовка axios 1.x при
+    // дефолтном application/json отправляет `{"file":{}}` вместо файла.
+    const res = await apiClient.post(`/people/${id}/photo`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return res.data.data;
   },
 };

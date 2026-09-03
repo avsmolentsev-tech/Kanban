@@ -11,7 +11,7 @@ import { config } from '../config';
 import type { AuthRequest } from '../middleware/auth';
 import { getUserId, userScopeWhere } from '../middleware/user-scope';
 import { syncDocToVault } from '../services/obsidian-sync.service';
-import { attachmentFileFilter } from '../utils/upload-filter';
+import { attachmentFileFilter, documentAttachmentFilename } from '../utils/upload-filter';
 
 const attachDir = path.join(config.vaultPath, 'Attachments');
 if (!fs.existsSync(attachDir)) fs.mkdirSync(attachDir, { recursive: true });
@@ -209,7 +209,9 @@ documentsRouter.post('/:id/attachments', upload.single('file'), async (req: Auth
   if (!req.file) { res.status(400).json(fail('Файл не предоставлен')); return; }
 
   const ext = path.extname(req.file.originalname);
-  const filename = `${docId}-${Date.now()}${ext}`;
+  // Файл отдаётся публично (routes/index.ts) без авторизации — непредсказуемость
+  // имени держится на randomAttachmentToken() внутри generator'а, а не на id/времени.
+  const filename = documentAttachmentFilename(docId, ext);
   fs.writeFileSync(path.join(attachDir, filename), req.file.buffer);
 
   const inserted = await queryOne<{ id: number }>(

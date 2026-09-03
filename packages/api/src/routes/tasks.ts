@@ -9,8 +9,8 @@ import { searchService } from '../services/search.service';
 import { ObsidianService } from '../services/obsidian.service';
 import { config } from '../config';
 import type { AuthRequest } from '../middleware/auth';
-import { getUserId, userScopeWhere } from '../middleware/user-scope';
-import { attachmentFileFilter } from '../utils/upload-filter';
+import { getUserId } from '../middleware/user-scope';
+import { attachmentFileFilter, taskAttachmentFilename } from '../utils/upload-filter';
 
 const obsidian = new ObsidianService(config.vaultPath);
 
@@ -149,16 +149,38 @@ export async function getSelfPersonId(): Promise<number | null> {
   }
 }
 
-tasksRouter.get('/', async (req: AuthRequest, res: Response) => {
-  const scope = userScopeWhere(req);
-  let sql = 'SELECT * FROM tasks WHERE archived = 0 AND parent_id IS NULL AND ' + scope.sql;
-  const params: unknown[] = [...scope.params];
-  if (req.query['project']) { sql += ` AND project_id = $${params.length + 1}`; params.push(Number(req.query['project'])); }
-  if (req.query['status']) { sql += ` AND status = $${params.length + 1}`; params.push(req.query['status']); }
-  if (req.query['person']) { sql += ` AND id IN (SELECT task_id FROM task_people WHERE person_id = $${params.length + 1})`; params.push(Number(req.query['person'])); }
+export interface TaskListFilters {
+  project_id?: number | undefined;
+  status?: string | undefined;
+  person_id?: number | undefined;
+  /** Максимум строк в выборке. Без него запрос не ограничен — используется
+   *  HTTP-роутом (текущее поведение SPA не меняем), MCP-инструмент list_tasks
+   *  всегда передаёт значение (F4, см. routes/mcp.ts). */
+  limit?: number | undefined;
+}
+
+/** Список задач пользователя. Используется и HTTP-роутом, и MCP-инструментом list_tasks — одна и та же выборка. */
+export async function listTasksForUser(userId: number, filters: TaskListFilters = {}): Promise<Record<string, unknown>[]> {
+  let sql = 'SELECT * FROM tasks WHERE archived = 0 AND parent_id IS NULL AND user_id = $1';
+  const params: unknown[] = [userId];
+  if (filters.project_id != null) { sql += ` AND project_id = $${params.length + 1}`; params.push(filters.project_id); }
+  if (filters.status) { sql += ` AND status = $${params.length + 1}`; params.push(filters.status); }
+  if (filters.person_id != null) { sql += ` AND id IN (SELECT task_id FROM task_people WHERE person_id = $${params.length + 1})`; params.push(filters.person_id); }
   sql += ' ORDER BY order_index ASC, created_at DESC';
+  if (filters.limit != null) { sql += ` LIMIT $${params.length + 1}`; params.push(filters.limit); }
   const tasks = await queryAll<Record<string, unknown>>(sql, params);
-  res.json(ok(await enrichTasksWithPeople(tasks)));
+  return enrichTasksWithPeople(tasks);
+}
+
+tasksRouter.get('/', async (req: AuthRequest, res: Response) => {
+  const userId = getUserId(req);
+  if (userId == null) { res.json(ok([])); return; } // fail-closed: без пользователя — пустой список, а не 1=0-запрос
+  const tasks = await listTasksForUser(userId, {
+    project_id: req.query['project'] ? Number(req.query['project']) : undefined,
+    status: req.query['status'] ? String(req.query['status']) : undefined,
+    person_id: req.query['person'] ? Number(req.query['person']) : undefined,
+  });
+  res.json(ok(tasks));
 });
 
 tasksRouter.get('/:id', async (req: AuthRequest, res: Response) => {
@@ -169,19 +191,36 @@ tasksRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   res.json(ok(task));
 });
 
-tasksRouter.post('/', async (req: AuthRequest, res: Response) => {
-  const parsed = CreateSchema.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const { project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, person_ids, recurrence, goal_id } = parsed.data;
-  const userId = getUserId(req);
+export interface CreateTaskInput {
+  project_id?: number | null | undefined;
+  parent_id?: number | null | undefined;
+  title: string;
+  description?: string | undefined;
+  status?: string | undefined;
+  priority?: number | undefined;
+  urgency?: number | undefined;
+  due_date?: string | null | undefined;
+  start_date?: string | null | undefined;
+  person_ids?: number[] | undefined;
+  recurrence?: string | null | undefined;
+  goal_id?: number | null | undefined;
+}
+
+/** Создание задачи со всеми побочными эффектами (self-assign, sync в vault). Общий код для HTTP-роута и MCP-инструмента create_task. */
+export async function createTaskForUser(userId: number, input: CreateTaskInput): Promise<Record<string, unknown>> {
+  const {
+    project_id = null, parent_id = null, title, description = '', status = 'backlog',
+    priority = 3, urgency = 3, due_date = null, start_date = null, person_ids,
+    recurrence = null, goal_id = null,
+  } = input;
   // Security: verify project belongs to this user
   if (project_id) {
     const proj = await queryOne('SELECT id FROM projects WHERE id = $1 AND user_id = $2', [project_id, userId]);
-    if (!proj) { res.status(400).json(fail('Project not found or not yours')); return; }
+    if (!proj) throw new Error('Project not found or not yours');
   }
   const inserted = await queryOne<{ id: number }>(
     'INSERT INTO tasks (project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, recurrence, goal_id, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id',
-    [project_id ?? null, parent_id ?? null, title, description, status, priority, urgency, due_date ?? null, start_date ?? null, recurrence ?? null, goal_id ?? null, userId]
+    [project_id, parent_id, title, description, status, priority, urgency, due_date, start_date, recurrence, goal_id, userId]
   );
   const taskId = inserted!.id;
 
@@ -195,25 +234,54 @@ tasksRouter.post('/', async (req: AuthRequest, res: Response) => {
     await setTaskPeople(taskId, effectivePeople);
   }
   const task = await queryOne<Record<string, unknown>>('SELECT * FROM tasks WHERE id = $1', [taskId]);
-  searchService.indexRecord('task', taskId, parsed.data.title, parsed.data.description ?? '');
+  searchService.indexRecord('task', taskId, title, description);
   // Sync to vault
   try {
     const projectName = project_id ? (await queryOne<{ name: string }>('SELECT name FROM projects WHERE id = $1', [project_id]))?.name : undefined;
-    const vaultPath = await obsidian.forUser(getUserId(req)).writeTask({ title, status, priority, urgency, project: projectName, due_date });
+    const vaultPath = await obsidian.forUser(userId).writeTask({ title, status, priority, urgency, project: projectName, due_date });
     await execute('UPDATE tasks SET vault_path = $1 WHERE id = $2', [vaultPath, taskId]);
     (task as Record<string, unknown>)['vault_path'] = vaultPath;
   } catch {}
-  res.status(201).json(ok((await enrichTasksWithPeople([task!]))[0]));
+  return (await enrichTasksWithPeople([task!]))[0]!;
+}
+
+tasksRouter.post('/', async (req: AuthRequest, res: Response) => {
+  const parsed = CreateSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const userId = getUserId(req);
+  if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
+  try {
+    const task = await createTaskForUser(userId, parsed.data);
+    res.status(201).json(ok(task));
+  } catch (err) {
+    res.status(400).json(fail(err instanceof Error ? err.message : 'Failed to create task'));
+  }
 });
 
-tasksRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
-  const parsed = UpdateSchema.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
-  const { person_ids, ...rest } = parsed.data;
-  const taskId = Number(req.params['id']);
-  const userId = getUserId(req);
+export interface TaskPatch {
+  title?: string | undefined;
+  description?: string | undefined;
+  status?: string | undefined;
+  priority?: number | undefined;
+  urgency?: number | undefined;
+  due_date?: string | null | undefined;
+  start_date?: string | null | undefined;
+  archived?: boolean | undefined;
+  project_id?: number | null | undefined;
+  parent_id?: number | null | undefined;
+  recurrence?: string | null | undefined;
+  person_ids?: number[] | undefined;
+}
+
+/**
+ * Частичное обновление задачи со всеми побочными эффектами (sync в vault). Общий код для
+ * HTTP-роута PATCH /:id и MCP-инструментов (complete_task — частный случай с status: 'done').
+ * Возвращает null, если задача не найдена или принадлежит другому пользователю.
+ */
+export async function updateTaskForUser(userId: number, taskId: number, patch: TaskPatch): Promise<Record<string, unknown> | null> {
   const owner = await queryOne('SELECT id FROM tasks WHERE id = $1 AND user_id = $2', [taskId, userId]);
-  if (!owner) { res.status(404).json(fail('Task not found')); return; }
+  if (!owner) return null;
+  const { person_ids, ...rest } = patch;
   const entries = Object.entries(rest).filter(([, v]) => v !== undefined);
   if (entries.length > 0) {
     const fields = entries.map(([k], i) => `${k} = $${i + 1}`);
@@ -223,7 +291,7 @@ tasksRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
       [...values, taskId, userId]
     );
   } else if (person_ids === undefined) {
-    res.status(400).json(fail('No fields')); return;
+    throw new Error('No fields');
   }
   if (person_ids !== undefined) {
     await setTaskPeople(taskId, person_ids);
@@ -240,7 +308,7 @@ tasksRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
         const tagsRaw = task['tags'] as string | null;
         const tags = tagsRaw ? JSON.parse(tagsRaw) as string[] : undefined;
         const source = (task['source'] as string | null) ?? undefined;
-        obsidian.forUser(getUserId(req)).updateTask(vp, {
+        obsidian.forUser(userId).updateTask(vp, {
           title: task['title'] as string, status: task['status'] as string,
           priority: task['priority'] as number, urgency: task['urgency'] as number,
           project: projectName, due_date: task['due_date'] as string | null,
@@ -249,7 +317,27 @@ tasksRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
       }
     } catch {}
   }
-  res.json(ok((await enrichTasksWithPeople([task!]))[0]));
+  return (await enrichTasksWithPeople([task!]))[0]!;
+}
+
+/** Отметить задачу выполненной — частный случай updateTaskForUser, используется MCP-инструментом complete_task. */
+export async function completeTaskForUser(userId: number, taskId: number): Promise<Record<string, unknown> | null> {
+  return updateTaskForUser(userId, taskId, { status: 'done' });
+}
+
+tasksRouter.patch('/:id', async (req: AuthRequest, res: Response) => {
+  const parsed = UpdateSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const taskId = Number(req.params['id']);
+  const userId = getUserId(req);
+  if (userId == null) { res.status(401).json(fail('Not authenticated')); return; }
+  try {
+    const task = await updateTaskForUser(userId, taskId, parsed.data);
+    if (!task) { res.status(404).json(fail('Task not found')); return; }
+    res.json(ok(task));
+  } catch (err) {
+    res.status(400).json(fail(err instanceof Error ? err.message : 'Update failed'));
+  }
 });
 
 tasksRouter.patch('/:id/move', async (req: AuthRequest, res: Response) => {
@@ -374,7 +462,9 @@ tasksRouter.post('/:id/attachments', upload.single('file'), async (req: AuthRequ
   if (!req.file) { res.status(400).json(fail('Файл не предоставлен')); return; }
 
   const ext = path.extname(req.file.originalname);
-  const filename = `task-${taskId}-${Date.now()}${ext}`;
+  // Файл отдаётся публично (routes/index.ts) без авторизации — непредсказуемость
+  // имени держится на randomAttachmentToken() внутри generator'а, а не на id/времени.
+  const filename = taskAttachmentFilename(taskId, ext);
   fs.writeFileSync(path.join(attachDir, filename), req.file.buffer);
 
   const inserted = await queryOne<{ id: number }>(

@@ -9,12 +9,16 @@ import { ClaudeService } from './claude.service';
 import OpenAI from 'openai';
 import { moscowDateString, moscowDateTimeString } from '../utils/time';
 import { fetchBufferWithRetry, retryAsync, describeFetchError } from '../utils/fetch-retry';
+import { resolveDownloadUrl, looksLikeHtml } from '../utils/download-url';
+import { createDetachMiddleware } from '../utils/telegram-detach';
 import { generateBundle, findProjectByName } from './bundle.service';
 import { generateAllFormats } from './converter.service';
 import { DraftSession } from './draft-session';
 import type { ExtractionResult, DraftCard } from '@pis/shared';
 import { ObsidianService } from './obsidian.service';
 import { renderDraftCard, inlineKeyboard, parseCallbackData } from './card-renderer';
+import { assertCloudFallbackAllowed } from './transcription-policy';
+import { redactPii, restorePiiAndWarn, restorePiiDeepAndWarn, joinForRedaction, splitRedacted } from './pii-redact';
 
 export class TelegramService {
   private bot: Telegraf | null = null;
@@ -151,7 +155,22 @@ export class TelegramService {
       // Async: generate pro summaries (Notes, Q&A)
       if (draft.transcript && draft.transcript.length > 200) {
         const claude = new ClaudeService();
-        claude.generateProSummaries(draft.transcript, draft.title, draft.people, draft.meetingType || 'meeting').then(async (summaries) => {
+        // 152-ФЗ: главный канал захвата продукта — голосовая заметка из Telegram.
+        // Транскрипт, заголовок и список участников обезличиваются ОДНИМ вызовом
+        // redactPii (тот же приём, что и в routes/meetings.ts regenerate-summaries),
+        // чтобы одно и то же имя в трёх полях получило один и тот же токен.
+        const { text: redactedCombined, map: piiMap } = redactPii(joinForRedaction([draft.transcript, draft.title, draft.people.join('\n')]));
+        const redactedParts = splitRedacted(redactedCombined, 3);
+        const redactedTranscript = redactedParts[0] ?? '';
+        const redactedTitle = redactedParts[1] ?? '';
+        const redactedPeopleBlock = redactedParts[2] ?? '';
+        const redactedPeople = redactedPeopleBlock ? redactedPeopleBlock.split('\n') : [];
+        claude.generateProSummaries(redactedTranscript, redactedTitle, redactedPeople, draft.meetingType || 'meeting').then(async (rawSummaries) => {
+          const summaries = {
+            notes: restorePiiAndWarn(rawSummaries.notes, piiMap, `telegram draft meeting #${meetingId} pro-summary notes`),
+            qa: restorePiiAndWarn(rawSummaries.qa, piiMap, `telegram draft meeting #${meetingId} pro-summary qa`),
+            ...(rawSummaries.actions ? { actions: restorePiiAndWarn(rawSummaries.actions, piiMap, `telegram draft meeting #${meetingId} pro-summary actions`) } : {}),
+          };
           // Read-merge-write to avoid overwriting user edits
           const existingRow = await queryOne<{ summary_structured: string | null }>('SELECT summary_structured FROM meetings WHERE id = $1', [meetingId]);
           let merged: Record<string, unknown> = {};
@@ -313,7 +332,16 @@ export class TelegramService {
     const projectNames = existingProjects.map(p => p.name);
     const meetingType = (cType === 'lecture' || cType === 'interview') ? cType : 'meeting';
     const typeHint = cType === 'lecture' ? 'lecture' : (cType === 'interview' ? 'interview' : undefined);
-    const extraction: ExtractionResult = await claude.extractDraft(transcript, typeHint, projectNames);
+    // 152-ФЗ: это первый вызов модели на пути захвата встречи из Telegram — сюда
+    // приходит сырой транскрипт голосовой заметки. Обезличиваем перед отправкой,
+    // затем восстанавливаем ПД во ВСЕХ строковых полях структурированного ответа
+    // (title, summary, people[] и т.д.) — restorePiiDeepAndWarn создан ровно для
+    // такого случая: модель работает с токенами, а реальные значения (в т.ч. сами
+    // имена участников, которые дальше станут записями в таблице people) подставляет
+    // наш код, а не модель.
+    const { text: redactedTranscript, map: piiMap } = redactPii(transcript);
+    const rawExtraction = await claude.extractDraft(redactedTranscript, typeHint, projectNames);
+    const extraction: ExtractionResult = restorePiiDeepAndWarn(rawExtraction, piiMap, 'telegram draft extractDraft');
 
     // Safety net: save raw transcript to vault inbox immediately (survives PM2 restart)
     try {
@@ -875,6 +903,18 @@ BHAG (Большая Дерзкая Цель на год):
       console.error('[telegram] bot error:', err instanceof Error ? err.message : err);
     });
 
+    // ВАЖНО: регистрируется до всех остальных обработчиков — telegraf собирает
+    // цепочку в порядке регистрации.
+    //
+    // Цикл опроса telegraf ждёт завершения обработчиков пачки перед следующим
+    // getUpdates, а handlerTimeout: Infinity выше снимает единственный таймаут.
+    // Из-за этого бот глох на всё время расшифровки: 02.09.2026 запись на 7011 с
+    // сделала его недоступным на десятки минут, присланные файлы висели в очереди
+    // Telegram непрочитанными. Долгие апдейты теперь идут в фоне.
+    this.bot.use(createDetachMiddleware((err) => {
+      console.error('[telegram] фоновая обработка упала:', describeFetchError(err));
+    }));
+
     // /start
     this.bot.command('start', async (ctx) => {
       const tgId = ctx.from?.id ?? 0;
@@ -1058,14 +1098,41 @@ BHAG (Большая Дерзкая Цель на год):
       if (!url) { ctx.reply('Формат: /transcribe <ссылка на аудио>\n\nЗалей файл в Google Drive/Яндекс Диск, сделай публичную ссылку и отправь.'); return; }
       try {
         ctx.reply('⬇️ Скачиваю файл...');
-        const tmpFile = `/tmp/tg-download-${Date.now()}.mp3`;
-        const downloadRes = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(300000) });
-        if (!downloadRes.ok) throw new Error(`Download failed: ${downloadRes.status}`);
-        const buffer_dl = Buffer.from(await downloadRes.arrayBuffer());
+
+        // Кнопка «Поделиться» даёт ссылку на страницу просмотра, а не на файл.
+        // Без этого шага скачивался HTML: код 200, проверка статуса его пропускала,
+        // и страница уезжала в whisper под видом аудио.
+        const directUrl = await resolveDownloadUrl(url);
+
+        // Случайный суффикс, а не только Date.now(): две команды в одну миллисекунду
+        // писали бы в один и тот же файл и портили друг другу аудио.
+        const tmpFile = `/tmp/tg-download-${Date.now()}-${Math.random().toString(36).slice(2)}.mp3`;
+
+        // fetchBufferWithRetry вместо голого fetch: ретрай по нестабильной сети,
+        // явный таймаут, проверка статуса и маскирование секретов в тексте ошибки.
+        const buffer_dl = await fetchBufferWithRetry(directUrl, {
+          attempts: 3,
+          timeoutMs: 300000,
+          onRetry: (n, err) =>
+            console.warn(`[transcribe-url] попытка ${n} не удалась: ${describeFetchError(err)}`),
+        });
+
+        if (looksLikeHtml(buffer_dl)) {
+          ctx.reply(
+            '⚠️ По ссылке пришла веб-страница, а не аудиофайл.\n\n' +
+            'Обычно это значит, что доступ к файлу закрыт. Открой его: ' +
+            '«Доступ по ссылке» → «Все, у кого есть ссылка», — и пришли ссылку снова.'
+          );
+          return;
+        }
+
         require('fs').writeFileSync(tmpFile, buffer_dl);
 
         const stats = require('fs').statSync(tmpFile);
-        ctx.reply(`✅ Скачано (${Math.round(stats.size / 1024 / 1024)} MB). 🎤 Транскрибирую... (может занять 15-60 мин для длинных записей)`);
+        // Мелкий файл раньше округлялся в «0 MB» и выглядел как успех.
+        const sizeMb = stats.size / 1024 / 1024;
+        const sizeText = sizeMb >= 1 ? `${sizeMb.toFixed(1)} MB` : `${Math.round(stats.size / 1024)} KB`;
+        ctx.reply(`✅ Скачано (${sizeText}). 🎤 Транскрибирую... (может занять 15-60 мин для длинных записей)`);
 
         const { transcribeLocal, isLocalWhisperAvailable } = require('./whisper-local.service');
         const buffer = require('fs').readFileSync(tmpFile);
@@ -1077,6 +1144,8 @@ BHAG (Большая Дерзкая Цель на год):
         if (isLocalWhisperAvailable()) {
           transcript = await transcribeLocal(buffer, 'download.mp3');
         } else {
+          // 152-ФЗ: этот путь раньше звал OpenAI мимо проверки config.transcriptionAllowCloudFallback.
+          assertCloudFallbackAllowed(config.transcriptionAllowCloudFallback, 'Локальный whisper недоступен для команды /transcribe');
           const openai = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiBaseUrl });
           const file = new File([buffer], 'audio.mp3', { type: 'audio/mpeg' });
           const result = await openai.audio.transcriptions.create({ model: 'whisper-1', file, language: 'ru' });
@@ -1862,7 +1931,7 @@ BHAG (Большая Дерзкая Цель на год):
         const fileSizeMb = (doc.file_size ?? 0) / (1024 * 1024);
         // Local Bot API server removes 20MB limit; only block if no local API
         if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
-          await ctx.reply(`⚠️ Файл ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 500 МБ.`);
+          await ctx.reply(`⚠️ Файл ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 50 МБ.`);
           return;
         }
         if (fileSizeMb > 20) {
@@ -1932,7 +2001,7 @@ BHAG (Большая Дерзкая Цель на год):
         const audio = ctx.message.audio;
         const fileSizeMb = (audio.file_size ?? 0) / (1024 * 1024);
         if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
-          await ctx.reply(`⚠️ Аудио ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 500 МБ.`);
+          await ctx.reply(`⚠️ Аудио ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 50 МБ.`);
           return;
         }
         const tgId = ctx.from?.id ?? 0;
@@ -1983,7 +2052,7 @@ BHAG (Большая Дерзкая Цель на год):
         const video = ctx.message.video;
         const fileSizeMb = (video.file_size ?? 0) / (1024 * 1024);
         if (fileSizeMb > 20 && !process.env.TELEGRAM_LOCAL_API_ROOT) {
-          await ctx.reply(`⚠️ Видео ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 500 МБ.`);
+          await ctx.reply(`⚠️ Видео ${Math.round(fileSizeMb)} МБ — Telegram не отдаёт ботам файлы тяжелее 20 МБ.\n\nДва пути:\n1) Залей на Google Drive или Яндекс.Диск, сделай ссылку и пришли:\n/transcribe <ссылка>\n2) Загрузи через веб-интерфейс clarity-space.ru — там лимит 50 МБ.`);
           return;
         }
         const tgId = ctx.from?.id ?? 0;

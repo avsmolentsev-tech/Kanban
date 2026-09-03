@@ -27,7 +27,7 @@ describe('приоритет бэкендов при веб-загрузке', (
     expect(localAt).toBeGreaterThan(-1);
     expect(openAiAt).toBeGreaterThan(-1);
     // ветка локального вызова стоит раньше, чем реальный вызов облака
-    expect(body.indexOf('if (localReady)')).toBeLessThan(body.indexOf('} else if (canUseOpenAI)'));
+    expect(body.indexOf('if (localReady)')).toBeLessThan(body.indexOf('} else if (canUseOpenAI && cloudFallbackAllowed)'));
   });
 
   test('готовность локального бэкенда учитывает и микросервис, и whisper.cpp', () => {
@@ -35,7 +35,7 @@ describe('приоритет бэкендов при веб-загрузке', (
   });
 
   test('облако вызывается только после провала локального', () => {
-    const localBlock = body.slice(body.indexOf('if (localReady)'), body.indexOf('} else if (canUseOpenAI)'));
+    const localBlock = body.slice(body.indexOf('if (localReady)'), body.indexOf('} else if (canUseOpenAI && cloudFallbackAllowed)'));
     // внутри локальной ветки облако появляется исключительно в catch
     const catchAt = localBlock.indexOf('} catch (err) {');
     const fallbackAt = localBlock.indexOf('viaOpenAI()');
@@ -49,7 +49,7 @@ describe('приоритет бэкендов при веб-загрузке', (
 
   test('лимит 24 МБ остаётся только для облачной ветки, локальную не ограничивает', () => {
     expect(body).toMatch(/const canUseOpenAI = canOpenAI && finalMb <= OPENAI_LIMIT_MB/);
-    const localBlock = body.slice(body.indexOf('if (localReady)'), body.indexOf('} else if (canUseOpenAI)'));
+    const localBlock = body.slice(body.indexOf('if (localReady)'), body.indexOf('} else if (canUseOpenAI && cloudFallbackAllowed)'));
     expect(localBlock).not.toMatch(/OPENAI_LIMIT_MB/);
   });
 

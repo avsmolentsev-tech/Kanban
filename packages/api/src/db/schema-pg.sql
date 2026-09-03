@@ -480,3 +480,38 @@ ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS summary TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_type TEXT;      -- my_task | their_commitment | mutual_agreement
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS commitment_owner TEXT;     -- who is responsible (name / "я")
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_meeting_id INTEGER; -- meeting it was extracted from
+
+-- Служебные API-токены (сервисный доступ, отзываемый, с опциональным сроком жизни).
+-- В базе хранится только SHA-256 сырого токена — сам токен нигде не сохраняется.
+-- token_hash TEXT UNIQUE уже создаёт уникальный индекс — отдельный CREATE INDEX
+-- по этому же столбцу был бы избыточен и здесь не заводится.
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id          SERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  token_hash  TEXT NOT NULL UNIQUE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at  TIMESTAMPTZ,
+  revoked_at  TIMESTAMPTZ,
+  last_used_at TIMESTAMPTZ
+);
+
+-- На инстансах, где api_tokens уже существовала до этого фикса, CREATE TABLE
+-- IF NOT EXISTS выше ничего не меняет — FK добавляем отдельно и идемпотентно.
+-- Если в таблице уже есть строки user_id, ссылающиеся на удалённых пользователей
+-- (та самая уязвимость, которую этот FK закрывает), ALTER упадёт с
+-- foreign_key_violation; ловим это, чтобы не блокировать старт API, и оставляем
+-- предупреждение в логе — такие строки требуют ручной очистки.
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'api_tokens_user_id_fkey'
+  ) THEN
+    BEGIN
+      ALTER TABLE api_tokens ADD CONSTRAINT api_tokens_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+    EXCEPTION WHEN foreign_key_violation THEN
+      RAISE WARNING 'api_tokens: не удалось добавить FK user_id -> users(id) — есть токены, выпущенные на несуществующих пользователей. Требуется ручная очистка (см. schema-pg.sql).';
+    END;
+  END IF;
+END $$;
