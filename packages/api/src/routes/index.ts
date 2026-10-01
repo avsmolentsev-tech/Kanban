@@ -1,7 +1,4 @@
 import { Router } from 'express';
-import * as fs from 'fs';
-import * as path from 'path';
-import { config } from '../config';
 import { projectsRouter } from './projects';
 import { tasksRouter } from './tasks';
 import { meetingsRouter } from './meetings';
@@ -37,13 +34,12 @@ router.use('/google-calendar', googleCalendarRouter);
 router.use('/todoist', todoistRouter);
 router.use('/yandex-calendar', yandexCalendarRouter);
 
-// Public: serve attachment files (images in documents) without auth — filenames are random/unguessable
-router.get('/documents/attachments/file/:filename', (req, res) => {
-  const attachDir = path.join(config.vaultPath, 'Attachments');
-  const filePath = path.join(attachDir, req.params['filename']!);
-  if (!fs.existsSync(filePath)) { res.status(404).json({ success: false, error: 'File not found' }); return; }
-  res.sendFile(filePath);
-});
+// NOTE: attachment files are served by the authenticated, ownership-checked
+// route in documents.ts (`GET /documents/attachments/file/:filename`). The
+// previous public route here served ANY file in the Attachments dir with no
+// auth and no user scoping (predictable `${docId}-${ts}` filenames + path
+// traversal) — removed. Browser <img>/<a> load attachments with a `?token=`
+// query param, which authMiddleware accepts.
 
 // All routes below require authentication
 router.use(requireAuth);

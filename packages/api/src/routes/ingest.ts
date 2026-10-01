@@ -57,7 +57,10 @@ ingestRouter.post('/', upload.single('file'), async (req: AuthRequest, res: Resp
 });
 
 ingestRouter.get('/status/:id', (req: AuthRequest, res: Response) => {
-  const item = ingestService.getStatus(Number(req.params['id']));
+  const userId = getUserId(req);
+  if (userId == null) { res.status(401).json(fail('Authentication required')); return; }
+  // Scope to the current user so B cannot read A's inbox item by id.
+  const item = getDb().prepare('SELECT * FROM inbox_items WHERE id = ? AND user_id = ?').get(Number(req.params['id']), userId);
   if (!item) { res.status(404).json(fail('Inbox item not found')); return; }
   res.json(ok(item));
 });

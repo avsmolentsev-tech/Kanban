@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { SlidePanel } from '../ui/SlidePanel';
 import { apiPatch, apiGet, apiDelete, apiClient } from '../../api/client';
 import type { Project } from '@pis/shared';
+import { attachmentUrl } from '../../lib/attachments';
 
 export interface Document {
   id: number;
@@ -220,7 +221,7 @@ export function DocumentDetailPanel({ document, projects, onClose, onUpdated, on
                 {attachments.map(a => (
                   <div key={a.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg text-sm group">
                     <span className="text-gray-400">📎</span>
-                    <a href={`/v1/documents/attachments/file/${a.filename}`} target="_blank" rel="noopener noreferrer"
+                    <a href={attachmentUrl(a.filename)} target="_blank" rel="noopener noreferrer"
                       className="text-indigo-600 hover:text-indigo-800 truncate flex-1">
                       {a.original_name}
                     </a>

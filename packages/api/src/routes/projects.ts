@@ -68,8 +68,11 @@ projectsRouter.get('/', async (req: AuthRequest, res: Response) => {
 projectsRouter.patch('/reorder', async (req: AuthRequest, res: Response) => {
   const parsed = z.array(z.object({ id: z.number(), order_index: z.number() })).safeParse(req.body);
   if (!parsed.success) { res.status(400).json(fail(parsed.error.message)); return; }
+  const uid = getUserId(req);
+  if (uid === null) { res.status(401).json(fail('Authentication required')); return; }
   for (const { id, order_index } of parsed.data) {
-    await execute('UPDATE projects SET order_index = $1 WHERE id = $2', [order_index, id]);
+    // Scope to the current user so B cannot reorder A's projects.
+    await execute('UPDATE projects SET order_index = $1 WHERE id = $2 AND user_id = $3', [order_index, id, uid]);
   }
   const scope = userScopeWhere(req);
   const projects = await queryAll(

@@ -8,7 +8,10 @@ export const emailWebhookRouter = Router();
 // Works with: Zapier, Make.com, n8n, or direct webhook
 emailWebhookRouter.post('/', async (req: Request, res: Response) => {
   const secret = req.query['token'] || req.headers['x-webhook-secret'];
-  if (secret !== process.env['WEBHOOK_SECRET'] && secret !== 'pis-webhook-2026') {
+  const expected = process.env['WEBHOOK_SECRET'];
+  // Require a configured secret; no hardcoded fallback (the old default leaked
+  // via the public repo and let anyone write tasks into any account).
+  if (!expected || secret !== expected) {
     res.status(403).json(fail('Invalid webhook token'));
     return;
   }

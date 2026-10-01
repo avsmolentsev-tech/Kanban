@@ -19,6 +19,7 @@ import { useDocumentsStore } from '../../store/documents.store';
 import { useLangStore } from '../../store/lang.store';
 import { apiClient } from '../../api/client';
 import { documentsApi } from '../../api/documents.api';
+import { attachmentUrl, addTokenToAttachments, stripTokenFromAttachments } from '../../lib/attachments';
 
 interface Props {
   documentId: number;
@@ -60,7 +61,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
       });
       const attachment = res.data?.data;
       if (attachment?.filename) {
-        return `/v1/documents/attachments/file/${attachment.filename}`;
+        return attachmentUrl(attachment.filename);
       }
     } catch (err) {
       console.warn('Image upload failed:', err);
@@ -81,7 +82,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
     const ed = editorRef.current;
     if (ed) {
       setSaving(true);
-      await updateDocument(docIdRef.current, { body: ed.getHTML() });
+      await updateDocument(docIdRef.current, { body: stripTokenFromAttachments(ed.getHTML()) });
       setLastSaved(new Date().toISOString());
       setSaving(false);
     }
@@ -181,7 +182,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
           },
         }),
       ],
-      content: initialContent,
+      content: addTokenToAttachments(initialContent),
       editorProps: {
         attributes: {
           class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] px-8 py-4',
@@ -231,7 +232,7 @@ export function TiptapEditor({ documentId, initialContent, title, onTitleChange 
         },
       },
       onUpdate: ({ editor: ed }) => {
-        saveContent(ed.getHTML());
+        saveContent(stripTokenFromAttachments(ed.getHTML()));
       },
     },
     [documentId],

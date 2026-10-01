@@ -33,9 +33,11 @@ googleCalendarRouter.get('/auth', (req: AuthRequest, res: Response) => {
   const clientId = config.googleClientId;
   if (!clientId) { res.status(400).json(fail('GOOGLE_CLIENT_ID not configured')); return; }
 
-  // Get user_id from JWT or query param
-  const userId = getUserId(req) || (req.query['uid'] ? Number(req.query['uid']) : null);
-  if (!userId) { res.status(401).json(fail('Not authenticated. Add ?uid=YOUR_USER_ID')); return; }
+  // Identify the user from the authenticated session only (JWT via header or
+  // ?token=). The old ?uid= fallback let anyone start OAuth for an arbitrary
+  // user id and bind their calendar into the victim's account.
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json(fail('Not authenticated')); return; }
 
   const redirectUri = `${config.webappUrl}/v1/google-calendar/callback`;
   const state = jwt.sign({ userId }, config.jwtSecret, { expiresIn: '10m' });
