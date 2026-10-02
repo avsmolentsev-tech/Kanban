@@ -61,7 +61,8 @@ async function getYandexToken(userId: number): Promise<string | null> {
 
 yandexCalendarRouter.get('/auth', (req: AuthRequest, res: Response) => {
   if (!config.yandexClientId) { res.status(400).json(fail('YANDEX_CLIENT_ID not configured')); return; }
-  const userId = getUserId(req) || (req.query['uid'] ? Number(req.query['uid']) : null);
+  // Authenticated session only — no ?uid= fallback (identity spoofing).
+  const userId = getUserId(req);
   if (!userId) { res.status(401).json(fail('Not authenticated')); return; }
   const state = jwt.sign({ userId }, config.jwtSecret, { expiresIn: '10m' });
   const redirectUri = `${config.webappUrl}/v1/yandex-calendar/callback`;

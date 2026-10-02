@@ -107,7 +107,11 @@ documentsRouter.get('/attachments/file/:filename', (req: AuthRequest, res: Respo
   // Verify the attachment belongs to a document owned by this user
   const att = getDb().prepare('SELECT a.id FROM attachments a JOIN documents d ON d.id = a.document_id WHERE a.filename = ? AND d.user_id = ?').get(req.params['filename']!, userId);
   if (!att) { res.status(404).json(fail('Файл не найден')); return; }
-  const filePath = path.join(attachDir, req.params['filename']!);
+  // Defense in depth: ensure the resolved path stays inside attachDir (no `../` traversal)
+  const filePath = path.resolve(attachDir, req.params['filename']!);
+  if (filePath !== attachDir && !filePath.startsWith(attachDir + path.sep)) {
+    res.status(404).json(fail('Файл не найден')); return;
+  }
   if (!fs.existsSync(filePath)) { res.status(404).json(fail('Файл не найден')); return; }
   res.sendFile(filePath);
 });

@@ -118,8 +118,8 @@ aiRouter.post('/voice-command', async (req: AuthRequest, res: Response) => {
     const claudeMatch = parsed.data.text.match(/^(клод|claude)[:\s,-]+([\s\S]+)$/i);
     if (claudeMatch) {
       const content = claudeMatch[2].trim();
-      db.prepare('INSERT INTO claude_notes (content, source) VALUES (?, ?)').run(content, 'web');
-      const pending = (db.prepare('SELECT COUNT(*) as c FROM claude_notes WHERE processed = 0').get() as { c: number }).c;
+      db.prepare('INSERT INTO claude_notes (content, source, user_id) VALUES (?, ?, ?)').run(content, 'web', userId);
+      const pending = (db.prepare(`SELECT COUNT(*) as c FROM claude_notes WHERE processed = 0${userFilter}`).get(...userParams) as { c: number }).c;
       res.json(ok({
         actions: [],
         results: [],
@@ -678,9 +678,11 @@ aiRouter.post('/productivity-analysis', async (req: AuthRequest, res: Response) 
 aiRouter.get('/search', async (req: AuthRequest, res: Response) => {
   const q = req.query['q'];
   if (typeof q !== 'string' || !q) { res.status(400).json(fail('Query parameter q is required')); return; }
+  const userId = getUserId(req);
+  if (userId === null) { res.status(401).json(fail('Authentication required')); return; }
   try {
-    const tasks = getDb().prepare("SELECT title FROM tasks WHERE title LIKE ? LIMIT 10").all(`%${q}%`);
-    const meetings = getDb().prepare("SELECT title, summary_raw FROM meetings WHERE title LIKE ? OR summary_raw LIKE ? LIMIT 5").all(`%${q}%`, `%${q}%`);
+    const tasks = getDb().prepare("SELECT title FROM tasks WHERE title LIKE ? AND user_id = ? LIMIT 10").all(`%${q}%`, userId);
+    const meetings = getDb().prepare("SELECT title, summary_raw FROM meetings WHERE (title LIKE ? OR summary_raw LIKE ?) AND user_id = ? LIMIT 5").all(`%${q}%`, `%${q}%`, userId);
     const result = await claude.searchKnowledge(q, JSON.stringify({ tasks, meetings }));
     res.json(ok(result));
   } catch (err) {

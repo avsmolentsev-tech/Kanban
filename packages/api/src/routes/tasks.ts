@@ -333,6 +333,11 @@ tasksRouter.post('/:id/dependencies', (req: AuthRequest, res: Response) => {
   const { depends_on_id } = req.body;
   if (!depends_on_id || typeof depends_on_id !== 'number') { res.status(400).json(fail('depends_on_id required')); return; }
   if (depends_on_id === taskId) { res.status(400).json(fail('Cannot depend on itself')); return; }
+  // The dependency target must also belong to this user, else B could link to
+  // (and then read via GET) A's task by id.
+  const depUserId = getUserId(req);
+  const target = getDb().prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?').get(depends_on_id, depUserId);
+  if (!target) { res.status(404).json(fail('Dependency task not found')); return; }
   try {
     getDb().prepare('INSERT OR IGNORE INTO task_dependencies (task_id, depends_on_id) VALUES (?, ?)').run(taskId, depends_on_id);
     res.json(ok({ task_id: taskId, depends_on_id }));
